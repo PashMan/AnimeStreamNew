@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /profile
+Disallow: /auth
+Disallow: /admin
+
+Sitemap: https://kamianime.club/sitemap.xml

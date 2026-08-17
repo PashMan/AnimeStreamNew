@@ -1,0 +1,6 @@
+{
+  "name": "KamiAnime",
+  "description": "A premium, unified single-page application for streaming anime, featuring a modern dark UI, catalog filtering, and responsive design.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

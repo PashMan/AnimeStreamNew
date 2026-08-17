@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="ru" class="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="shortcut icon" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#020617" />
+    <link rel="canonical" href="https://kamianime.club/" />
+    
+    <meta name="description" content="Смотрите аниме онлайн бесплатно в хорошем качестве. Огромная база аниме, новинки сезона, удобный плеер и активное сообщество." />
+    <meta name="keywords" content="аниме, смотреть аниме, аниме онлайн, аниме бесплатно, новинки аниме, топ аниме, KamiAnime" />
+    <meta name="robots" content="index, follow" />
+    
+    <title>KamiAnime - Смотреть аниме онлайн бесплатно</title>
+    
+    <!-- Preload Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+    <link rel="preconnect" href="https://shikimori.one">
+    <link rel="preconnect" href="https://desu.shikimori.one">
+    
+    <link rel="dns-prefetch" href="https://shikimori.one">
+    <link rel="dns-prefetch" href="https://desu.shikimori.one">
+    <link rel="dns-prefetch" href="https://ulumbarwutnsodmzxpst.supabase.co">
+    
+    <!-- Non-blocking font loading -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&amp;family=Outfit:wght@500;700;800;900&amp;display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+    <noscript>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&amp;family=Outfit:wght@500;700;800;900&amp;display=swap" rel="stylesheet">
+    </noscript>
+
+    <!-- Global Shim & Error Shield for 3rd-party player tracking scripts (e.g. 200.js / M_ID) -->
+    <script>
+      (function() {
+        try {
+          if (!window.M_ID) {
+            window.M_ID = {};
+          }
+        } catch (_) {}
+        window.addEventListener('unhandledrejection', function(event) {
+          try {
+            var reasonStr = String(event.reason || '');
+            var stackStr = String(event.reason && event.reason.stack ? event.reason.stack : '');
+            if (reasonStr.includes('M_ID') || stackStr.includes('200.js') || reasonStr.includes('200.js')) {
+              event.preventDefault();
+            }
+          } catch (_) {}
+        });
+        window.addEventListener('error', function(event) {
+          try {
+            var msg = String(event.message || '');
+            var filename = String(event.filename || '');
+            if (msg.includes('M_ID') || filename.includes('200.js')) {
+              event.preventDefault();
+              return true;
+            }
+          } catch (_) {}
+        });
+      })();
+    </script>
+
+    <!-- Early script/style load failure and stale chunk cache buster -->
+    <script>
+      (function() {
+        function bustStaleCacheAndReload(reason) {
+          console.warn('[KamiAnime CacheBuster] Stale chunk or stylesheet failure detected:', reason);
+          var reloadKey = 'kami_stale_reload_timestamp';
+          var lastReload = sessionStorage.getItem(reloadKey);
+          var now = Date.now();
+          
+          // Prevent infinite reload loops (cooldown 4 seconds)
+          if (!lastReload || (now - parseInt(lastReload, 10)) > 4000) {
+            sessionStorage.setItem(reloadKey, String(now));
+            
+            // 1. Unregister all ServiceWorkers
+            if ('serviceWorker' in navigator) {
+              try {
+                navigator.serviceWorker.getRegistrations().then(function(regs) {
+                  for (var i = 0; i < regs.length; i++) {
+                    regs[i].unregister();
+                  }
+                });
+              } catch (_) {}
+            }
+
+            // 2. Clear Cache Storage API
+            if ('caches' in window) {
+              try {
+                caches.keys().then(function(names) {
+                  for (var i = 0; i < names.length; i++) {
+                    caches.delete(names[i]);
+                  }
+                });
+              } catch (_) {}
+            }
+
+            // 3. Force hard navigation bypassing HTTP/CDN cache
+            var url = new URL(window.location.href);
+            url.searchParams.set('_v', String(now));
+            window.location.replace(url.toString());
+          }
+        }
+
+        // Intercept asset (script/link) load errors
+        window.addEventListener('error', function(e) {
+          try {
+            var target = e.target;
+            var src = target ? (target.src || target.href || '') : '';
+            var isAppAsset = target && (target.tagName === 'SCRIPT' || target.tagName === 'LINK') && (
+              src.indexOf('/assets/') !== -1 || src.indexOf('/index.') !== -1
+            );
+            var msg = String(e.message || '');
+            var isMimeOrModuleError = 
+              msg.indexOf('Failed to load module script') !== -1 ||
+              msg.indexOf('Strict MIME type') !== -1 ||
+              msg.indexOf('supported stylesheet MIME type') !== -1 ||
+              msg.indexOf('dynamically imported module') !== -1 ||
+              msg.indexOf('error loading dynamically imported module') !== -1 ||
+              msg.indexOf('Importing a module script failed') !== -1;
+
+            if (isAppAsset || isMimeOrModuleError) {
+              bustStaleCacheAndReload(msg || src || 'Asset load error');
+            }
+          } catch (_) {}
+        }, true);
+
+        // Intercept unhandled dynamic import promise rejections
+        window.addEventListener('unhandledrejection', function(e) {
+          try {
+            var reason = e.reason;
+            var msg = String((reason && (reason.message || reason)) || '');
+            if (
+              msg.indexOf('dynamically imported module') !== -1 ||
+              msg.indexOf('Failed to fetch dynamically imported module') !== -1 ||
+              msg.indexOf('error loading dynamically imported module') !== -1 ||
+              msg.indexOf('Importing a module script failed') !== -1
+            ) {
+              bustStaleCacheAndReload(msg);
+            }
+          } catch (_) {}
+        });
+      })();
+    </script>
+
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-LVD0M2PPJN"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+
+      gtag('config', 'G-LVD0M2PPJN');
+    </script>
+</head>
+  <body>
+    <div id="root"></div>
+    <script>
+      // Unregister any old service workers that might be caching the old index.html
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function(registrations) {
+          for(let registration of registrations) {
+            registration.unregister();
+          }
+        });
+      }
+    </script>
+    <div class="loader-overlay">
+        <div class="brand-container">
+            <div class="logo-box">
+                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg>
+            </div>
+            <div class="brand-text">Kami<span>Anime</span></div>
+        </div>
+        <div class="loading-dots">
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+        </div>
+    </div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>

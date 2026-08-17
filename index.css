@@ -1,0 +1,315 @@
+@import "tailwindcss";
+@config "./tailwind.config.js";
+
+/* Global Scrollbar Styles */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #070709;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(139, 92, 246, 0.15);
+  border-radius: 10px;
+  border: 2px solid #070709;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(139, 92, 246, 0.4);
+}
+
+html, body {
+  background-color: #070709;
+  color: #f8fafc;
+  font-family: 'Inter', sans-serif;
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  width: 100%;
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: hidden;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+#root:not(:empty) + .loader-overlay {
+  display: none;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.loader-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background-color: #070709;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.5s ease;
+}
+
+.brand-container {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 40px;
+  animation: fade-in-up 0.8s ease-out;
+}
+
+.logo-box {
+  width: 56px;
+  height: 56px;
+  background: linear-gradient(135deg, #8B5CF6, #A855F7);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+}
+
+.brand-text {
+  font-family: 'Outfit', sans-serif;
+  font-size: 40px;
+  font-weight: 900;
+  color: white;
+  letter-spacing: -0.025em;
+  line-height: 1;
+}
+
+.brand-text span {
+  color: #8B5CF6;
+}
+
+.loading-dots {
+  display: flex;
+  gap: 8px;
+}
+
+.dot {
+  width: 12px;
+  height: 12px;
+  background-color: #8B5CF6;
+  border-radius: 50%;
+  animation: bounce 0.6s infinite alternate;
+}
+
+.dot:nth-child(2) { animation-delay: 0.2s; background-color: #A855F7; }
+.dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes bounce {
+  to { transform: translateY(-10px); opacity: 0.5; }
+}
+
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Global Markdown Styles */
+.markdown-body {
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  word-break: break-word;
+}
+.markdown-body p { margin-bottom: 1em; }
+.markdown-body p:last-child { margin-bottom: 0; }
+.markdown-body strong { font-weight: 900; color: white; }
+.markdown-body em { font-style: italic; color: #cbd5e1; }
+.markdown-body blockquote { 
+  border-left: 4px solid #8B5CF6; 
+  padding-left: 1rem; 
+  padding-right: 1rem;
+  margin: 1rem 0; 
+  color: #94a3b8; 
+  font-style: italic; 
+  background: rgba(139, 92, 246, 0.05); 
+  padding-top: 0.5rem; 
+  padding-bottom: 0.5rem; 
+  border-radius: 0 0.5rem 0.5rem 0; 
+}
+.markdown-body-me blockquote {
+  border-left-color: rgba(255, 255, 255, 0.5);
+  background: rgba(0, 0, 0, 0.15);
+  color: rgba(255, 255, 255, 0.9);
+}
+.markdown-body-other blockquote {
+  border-left-color: #8B5CF6;
+  background: rgba(139, 92, 246, 0.1);
+  color: #cbd5e1;
+}
+.markdown-body u { text-decoration: underline; text-decoration-color: #8B5CF6; text-underline-offset: 4px; }
+.markdown-body img { max-width: 100%; border-radius: 1rem; margin: 1rem 0; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3); }
+
+/* Mobile Performance & Smooth Scroll Optimizations */
+@media (max-width: 768px) {
+  /* Disable heavy GPU-repaint filters on mobile screens */
+  *, *::before, *::after {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    /* Optional: reduce animations/transitions where appropriate to keep scrolling buttery-smooth */
+  }
+
+  /* Help mobile scroll behaviors stay hardware-accelerated and smooth */
+  .overflow-x-auto, .overflow-y-auto, [class*="overflow-"] {
+    -webkit-overflow-scrolling: touch !important;
+  }
+}
+
+/* Premium Cinema Design Enhancements */
+.bg-surface {
+  background-color: #111116 !important;
+}
+
+/* Redesigning all layouts to premium violet-amethyst movie highlights */
+.from-violet-900\/40, .from-violet-800\/80, .from-purple-500\/80, .from-violet-400\/80, .from-violet-800, .from-purple-500, .from-violet-400, .from-violet-900 {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.45), rgba(7, 7, 9, 0.95)) !important;
+}
+
+.to-purple-950\/90, .to-violet-800\/90, .to-purple-600\/90, .to-black\/90, .to-purple-950, .to-violet-800, .to-purple-600 {
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.4), rgba(7, 7, 9, 0.98)) !important;
+}
+
+/* Glassmorphic premium header overrides */
+header {
+  background: rgba(7, 7, 9, 0.82) !important;
+  backdrop-filter: blur(30px) -webkit-backdrop-filter(30px) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+}
+
+/* Smooth motion for links and buttons to emulate Apple TV & Netflix */
+a, button, .group {
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+/* High-contrast colors & brand purple styling */
+.bg-primary {
+  background-color: #8B5CF6 !important;
+  color: #fff !important;
+}
+
+.hover\:bg-primary:hover {
+  background-color: #7C3AED !important;
+}
+
+.border-primary\/50 {
+  border-color: rgba(139, 92, 246, 0.4) !important;
+}
+
+.text-primary {
+  color: #8B5CF6 !important;
+}
+
+.text-accent {
+  color: #A855F7 !important;
+}
+
+.bg-accent {
+  background-color: #A855F7 !important;
+}
+
+.bg-violet-500\/20 {
+  background-color: rgba(139, 92, 246, 0.12) !important;
+}
+
+.text-violet-400 {
+  color: #8B5CF6 !important;
+}
+
+.shadow-violet-500\/10 {
+  box-shadow: 0 10px 15px -3px rgba(139, 92, 246, 0.08) !important;
+}
+
+/* Premium glowing active selection states */
+.border-primary {
+  border-color: #8B5CF6 !important;
+}
+
+.focus-within\:border-primary:focus-within {
+  border-color: #8B5CF6 !important;
+}
+
+.shadow-glow {
+  box-shadow: 0 0 25px rgba(139, 92, 246, 0.35);
+}
+
+/* Cinematic glowing poster borders on hover */
+.group:hover {
+  border-color: rgba(139, 92, 246, 0.5) !important;
+}
+
+.group:hover .group-hover\:border-primary\/50 {
+  border-color: rgba(139, 92, 246, 0.5) !important;
+}
+
+/* Selection and link accents */
+::selection {
+  background: rgba(139, 92, 246, 0.25) !important;
+  color: #fff !important;
+}
+
+/* Custom Artplayer KamiAnime Theme Styling */
+.art-video-player {
+  border-radius: 1.5rem !important;
+  overflow: hidden !important;
+  background-color: #0d0e12 !important;
+  font-family: 'Inter', sans-serif !important;
+}
+
+.art-video-player .art-bottom {
+  padding: 0 16px 12px 16px !important;
+  background: linear-gradient(to top, rgba(7, 7, 9, 0.95), rgba(7, 7, 9, 0.4) 60%, transparent) !important;
+}
+
+.art-video-player .art-control-progress-inner {
+  background-color: #8B5CF6 !important;
+  box-shadow: 0 0 10px rgba(139, 92, 246, 0.5) !important;
+}
+
+.art-video-player .art-control-progress-indicator {
+  background-color: #A855F7 !important;
+  box-shadow: 0 0 12px rgba(168, 85, 247, 0.8) !important;
+}
+
+.art-video-player .art-control-volume-inner {
+  background-color: #8B5CF6 !important;
+}
+
+.art-video-player .art-notice {
+  background: rgba(18, 19, 24, 0.9) !important;
+  border: 1px solid rgba(139, 92, 246, 0.3) !important;
+  border-radius: 12px !important;
+  color: #fff !important;
+  font-weight: 700 !important;
+  backdrop-filter: blur(12px) !important;
+}
+
+.art-video-player .art-contextmenus {
+  background: #121318 !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 16px !important;
+  backdrop-filter: blur(20px) !important;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5) !important;
+}
+
+.art-video-player .art-contextmenu-item:hover {
+  background: rgba(139, 92, 246, 0.15) !important;
+  color: #8B5CF6 !important;
+}
+
+

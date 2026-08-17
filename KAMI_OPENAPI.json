@@ -1,0 +1,426 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "KamiAnime Hub API",
+    "description": "Официальная спецификация бэкенда KamiAnime для интеграции нативных Android/iOS клиентов, синхронизации плеера, работы с БД и ИИ-рекомендациями.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://ais-pre-xrtc32traso3yympeghpvg-56932099569.us-east1.run.app",
+      "description": "Production Server"
+    },
+    {
+      "url": "https://ais-dev-xrtc32traso3yympeghpvg-56932099569.us-east1.run.app",
+      "description": "Development Server"
+    }
+  ],
+  "paths": {
+    "/api/balancer": {
+      "get": {
+        "summary": "Получить балансировщик озвучек (Kodik, Collaps, Anilibria)",
+        "description": "Принимает Shikimori ID и возвращает список iframe-ссылок для плееров и прямых потоков.",
+        "parameters": [
+          {
+            "name": "shikimori_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Shikimori ID тайтла (например, 40748)"
+          },
+          {
+            "name": "title",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Русское или оригинальное название аниме"
+          },
+          {
+            "name": "year",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Год выпуска"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Объект со списком переводов",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BalancerResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/media/playlist": {
+      "get": {
+        "summary": "Декриптовать iframe во встречный .m3u8 стрим",
+        "description": "Конвертирует iframe ссылку балансировщика во фреймворк прямых видео-потоков HLS (.m3u8).",
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "URL iframe из озвучек балансировщика (например, https://kodikplayer.com/seria/1032581/...)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Плейлист ссылок на HLS потоки разного качества",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaylistResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/image/{path}": {
+      "get": {
+        "summary": "Прокси для обхода CORS и Referrer блокировок Shikimori",
+        "description": "Проксирует изображения (постеры, аватары) с серверов Shikimori с инжекцией Referer: https://shikimori.one/. При ошибке переключается на Jikan API.",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Относительный путь к картинке на Шкимори (например: system/animes/original/40748.jpg)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Бинарный файл изображения с долговечным кэшем",
+            "content": {
+              "image/jpeg": {},
+              "image/png": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/ai/recommend": {
+      "post": {
+        "summary": "Чат-бот рекомендации аниме на базе Gemini",
+        "description": "Отправляет контекст диалога ИИ и получает текстовые рекомендации с разметкой markdown ссылок [Тайтл](/anime/ID).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AIRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Ответ рекомендательного бота",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AIResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/db/query": {
+      "post": {
+        "summary": "Универсальный SQL API клиент к Cloudflare D1",
+        "description": "Управляет всеми таблицами базы данных через единый структурированный JSON-шлюз CRUD (select, insert, update, delete, rpc).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DbQueryRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Результат запроса базы данных",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DbQueryResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/media/download/start": {
+      "get": {
+        "summary": "Запустить конвертацию HLS в MP4 на сервере",
+        "description": "Начинает фоновую задачу склейки сетевых сегментов m3u8 в единый MP4 файл.",
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Закодированный URL iframe серии"
+          },
+          {
+            "name": "quality",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "720"
+            }
+          },
+          {
+            "name": "title",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "episode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "taskId": { "type": "string" },
+                    "fileName": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/media/download/progress": {
+      "get": {
+        "summary": "Узнать статус и прогресс конвертации скачивания",
+        "description": "Проверяет состояние выполняемой задачи по созданию MP4 по её taskId.",
+        "parameters": [
+          {
+            "name": "taskId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DownloadStatusResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/media/download/file": {
+      "get": {
+        "summary": "Скачать готовый MP4-файл",
+        "description": "Осуществляет прямую раздачу готового MP4 файла после успешной конвертации.",
+        "parameters": [
+          {
+            "name": "taskId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Поток файла с типом video/mp4",
+            "content": {
+              "video/mp4": {}
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "BalancerResponse": {
+        "type": "object",
+        "properties": {
+          "shikimori_id": { "type": "string" },
+          "kinopoisk_id": { "type": "string", "nullable": true },
+          "translations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Translation"
+            }
+          }
+        }
+      },
+      "Translation": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "title": { "type": "string", "description": "Студия озвучки (например: AniLibria, Studio Band)" },
+          "type": { "type": "string", "enum": ["voice", "subtitles"] },
+          "iframe": { "type": "string", "description": "Официальная плеер-ссылка для декриптора" }
+        }
+      },
+      "PlaylistResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "links": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/HlsStream"
+              }
+            },
+            "description": "M3U8 потоки, например: '360', '480', '720', '1080'"
+          }
+        }
+      },
+      "HlsStream": {
+        "type": "object",
+        "properties": {
+          "src": { "type": "string", "description": "Нативный URL потока для ExoPlayer с нашего сегмент-семейства /api/media/segment" },
+          "type": { "type": "string", "example": "application/x-mpegURL" }
+        }
+      },
+      "AIRequest": {
+        "type": "object",
+        "properties": {
+          "messages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "role": { "type": "string", "enum": ["user", "assistant", "system"] },
+                "content": { "type": "string" }
+              },
+              "required": ["role", "content"]
+            }
+          }
+        },
+        "required": ["messages"]
+      },
+      "AIResponse": {
+        "type": "object",
+        "properties": {
+          "text": { "type": "string", "description": "Ответ Gemini, содержащий рекомендуемые ссылки [Тайтл](/anime/ID)" }
+        }
+      },
+      "DbQueryRequest": {
+        "type": "object",
+        "properties": {
+          "table": { "type": "string", "description": "Название таблицы (например, 'profiles', 'comments', 'reviews', 'clubs')" },
+          "action": { "type": "string", "enum": ["select", "insert", "update", "delete", "rpc"] },
+          "cols": { "type": "string", "default": "*", "description": "Спецификация колонок. Можно использовать 'profiles(name, avatar)' для связывания" },
+          "wheres": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WhereClause"
+            }
+          },
+          "orders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrderClause"
+            }
+          },
+          "limit": { "type": "integer", "nullable": true },
+          "payload": { "type": "object", "nullable": true, "description": "Объект для insert (новые данные) или update или rpc параметры" },
+          "isSingle": { "type": "boolean", "default": false, "description": "Если true, вернет единственный объект вместо массива со значением" }
+        },
+        "required": ["table", "action"]
+      },
+      "WhereClause": {
+        "type": "object",
+        "properties": {
+          "col": { "type": "string" },
+          "op": { "type": "string", "enum": ["=", "LIKE", "ILIKE", "IN", "!=", "OR", ">", "<"] },
+          "val": { "oneOf": [{ "type": "string" }, { "type": "integer" }, { "type": "array", "items": { "type": "string" } }] }
+        },
+        "required": ["col", "op", "val"]
+      },
+      "OrderClause": {
+        "type": "object",
+        "properties": {
+          "col": { "type": "string" },
+          "ascending": { "type": "boolean", "default": true }
+        },
+        "required": ["col"]
+      },
+      "DbQueryResponse": {
+        "type": "object",
+        "properties": {
+          "data": { "oneOf": [{ "type": "array", "items": { "type": "object" } }, { "type": "object", "nullable": true }] },
+          "error": {
+            "type": "object",
+            "properties": {
+              "message": { "type": "string" }
+            },
+            "nullable": true
+          }
+        }
+      },
+      "DownloadStatusResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "stage": { "type": "string", "enum": ["resolving", "downloading", "muxing", "completed", "failed"] },
+          "processed": { "type": "integer" },
+          "total": { "type": "integer" },
+          "progress": { "type": "number", "format": "float" },
+          "status": { "type": "string", "enum": ["running", "completed", "failed"] },
+          "error": { "type": "string", "nullable": true },
+          "fileName": { "type": "string" }
+        }
+      }
+    }
+  }
+}

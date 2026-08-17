@@ -1,0 +1,21 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "animestream",
+  "pages_build_output_dir": "dist",
+  "compatibility_date": "2024-03-01",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "anime_db",
+      "database_id": "ad809227-f5d7-4d42-b16e-62eed38f9bf3"
+    },
+    {
+      "binding": "DB_PROD",
+      "database_name": "anime_dp_prod",
+      "database_id": "cf7bfd13-bab0-4a90-83bf-7ce67d02c446"
+    }
+  ]
+}

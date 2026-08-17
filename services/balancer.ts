@@ -1,0 +1,103 @@
+import { fetchKodikData } from './kodik';
+import { getFromStorage, saveToStorage } from './cache';
+
+export interface PlayerInfo {
+  name: string;
+  iframe: string | null;
+  isCustom?: boolean;
+}
+
+export interface KodikTranslation {
+  id: number | string;
+  title: string;
+  type: string;
+  iframe: string;
+  episodes_count?: number;
+  last_episode?: number;
+  provider?: string;
+  has_1080_collaps?: boolean;
+  collaps_iframe?: string | null;
+  kodik_iframe?: string | null;
+  collaps_episodes_count?: number;
+  kodik_episodes_count?: number;
+  quality_label?: string;
+}
+
+export interface BalancerData {
+  players: PlayerInfo[];
+  kodik_translations: KodikTranslation[];
+}
+
+export const fetchPlayersClientSide = async (shikimoriId: string, title: string, year: string): Promise<BalancerData> => {
+  if (!shikimoriId) return { players: [], kodik_translations: [] };
+
+  const cacheKey = `balancer_v6_${shikimoriId}`;
+  const cached = getFromStorage(cacheKey);
+
+  // TTL: 24 hours for balancer data (prevents domain rot but keeps it ultra fast)
+  const ttl = 24 * 60 * 60 * 1000;
+  if (cached && (Date.now() - cached.timestamp < ttl)) {
+    console.log(`[Balancer Service] Loaded from cache for ID ${shikimoriId}`);
+    return cached.data;
+  }
+
+  try {
+    const res = await fetch(`/api/balancer?title=${encodeURIComponent(title)}&year=${year}&shikimori_id=${shikimoriId}`);
+    if (res.ok) {
+      const data = await res.json();
+      
+      let playersList: PlayerInfo[] = [];
+      let translationsList: KodikTranslation[] = data.kodik_translations || [];
+
+      // Handle the new response format: { players: [], ids: {} }
+      if (data && data.players && Array.isArray(data.players)) {
+        if (data.ids) {
+          console.log('[BALANCER] Anime IDs used for search:', data.ids);
+        }
+        playersList = data.players;
+      } else if (Array.isArray(data)) {
+        // Fallback for old format
+         playersList = data;
+      }
+
+      // Filter out Anilibria
+      playersList = playersList.filter(p => p.name !== 'Anilibria');
+
+      // Add custom player for 1080p encodes OR any anime containing Kodik/Aniboom/Collaps stream
+      const hasKodik = playersList.some(p => p.name === 'Kodik' && p.iframe);
+      const hasAniboom = playersList.some(p => p.name === 'Aniboom' && p.iframe);
+      const hasCollaps = playersList.some(p => p.name === 'Collaps' && p.iframe);
+      const isNative1080 = shikimoriId === '32281' || shikimoriId === '50594' || shikimoriId === '62568' || shikimoriId === '38826' || shikimoriId === '16782';
+
+      if (isNative1080 || hasKodik || hasAniboom || hasCollaps) {
+        if (!playersList.some(p => p.name === 'KamiPlayer (1080p)')) {
+          playersList.unshift({
+            name: 'KamiPlayer (1080p)',
+            iframe: null,
+            isCustom: true
+          });
+        }
+      }
+
+      const result: BalancerData = {
+        players: playersList,
+        kodik_translations: translationsList
+      };
+
+      saveToStorage(cacheKey, result);
+      return result;
+    } else {
+      if (cached) {
+        console.warn(`[Balancer Service] API failed, using stale balancer cache for ${shikimoriId}`);
+        return cached.data;
+      }
+    }
+  } catch (e) {
+    console.error('Balancer fetch failed', e);
+    if (cached) {
+      console.warn(`[Balancer Service] Balancer request error, using stale cache for ${shikimoriId}`);
+      return cached.data;
+    }
+  }
+  return { players: [], kodik_translations: [] };
+};

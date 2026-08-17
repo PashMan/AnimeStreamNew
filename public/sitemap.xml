@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <sitemap>
+    <loc>https://kamianime.club/sitemap-main.xml</loc>
+    <lastmod>2026-03-18T12:03:01.168Z</lastmod>
+  </sitemap>
+  <sitemap>
+    <loc>https://kamianime.club/sitemap-anime.xml</loc>
+    <lastmod>2026-03-18T12:03:01.168Z</lastmod>
+  </sitemap>
+  <sitemap>
+    <loc>https://kamianime.club/sitemap-news.xml</loc>
+    <lastmod>2026-03-18T12:03:01.168Z</lastmod>
+  </sitemap>
+</sitemapindex>

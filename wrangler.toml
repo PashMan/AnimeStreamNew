@@ -1,0 +1,13 @@
+name = "animestream"
+main = "./server.ts"
+
+[[durable_objects.bindings]]
+name = "ROOM_DO"
+class_name = "RoomDO"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["RoomDO"]
+
+[durable_objects]
+bindings = [{ name = "ROOM_DO", class_name = "RoomDO" }]
