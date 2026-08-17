@@ -3347,7 +3347,7 @@ app.get('/api/media/playlist', async (c) => {
             if (hlsSrc.startsWith('//')) hlsSrc = `https:${hlsSrc}`;
 
             if (c.req.query('resolve') === 'true') {
-              return c.json({ url: hlsSrc, poster: decoded.poster, qualities: [1080, 720, 480, 360] });
+              return c.json({ success: true, url: hlsSrc, poster: decoded.poster, qualities: [1080, 720, 480, 360] });
             }
 
             const targetQuality = c.req.query('quality');

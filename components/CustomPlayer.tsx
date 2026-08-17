@@ -19,6 +19,9 @@ import {
   Pause,
   Maximize2,
   Sliders,
+  Users,
+  Film,
+  Sparkles,
 } from "lucide-react";
 import { isTvDevice } from "../utils/tvDetection";
 
@@ -32,9 +35,13 @@ interface CustomPlayerProps {
   autoPlay?: boolean;
   animeId?: string;
   episodeNumber?: string;
+  animeTitle?: string;
   onNextEpisode?: () => void;
   onPrevEpisode?: () => void;
   onPlayerError?: () => void;
+  onOpenWatchTogether?: () => void;
+  onOpenDownload?: () => void;
+  isWatchTogetherActive?: boolean;
   streamType?: "dash" | "hls";
   provider?: "aniboom" | "kodik" | "collaps" | "custom" | string;
   translationTitle?: string;
@@ -601,9 +608,13 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
       autoPlay,
       animeId,
       episodeNumber,
+      animeTitle,
       onNextEpisode,
       onPrevEpisode,
       onPlayerError,
+      onOpenWatchTogether,
+      onOpenDownload,
+      isWatchTogetherActive,
       streamType,
       provider,
       translationTitle,
@@ -1152,8 +1163,14 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                 if ((artInstance as any).hls)
                   (artInstance as any).hls.destroy();
                 const hls = new Hls({
-                  maxMaxBufferLength: 30,
-                  maxBufferSize: 60 * 1000 * 1000,
+                  enableWorker: true,
+                  maxBufferLength: 30,
+                  maxMaxBufferLength: 90,
+                  maxBufferSize: 120 * 1000 * 1000,
+                  capLevelToPlayerSize: true,
+                  progressive: true,
+                  fragLoadingTimeOut: 15000,
+                  manifestLoadingTimeOut: 10000,
                 });
                 (artInstance as any).hls = hls;
                 hls.attachMedia(video);
@@ -1639,17 +1656,67 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
           </div>
         )}
 
-        {/* Top-Right Quick Settings Floating Button for Instant Access */}
-        <button
-          onClick={() => {
-            setActiveSubmenu("main");
-            setIsSettingsOpen(true);
-          }}
-          className="absolute top-4 right-4 z-20 w-9 h-9 rounded-xl bg-black/60 hover:bg-black/80 text-white/75 hover:text-white border border-white/10 hover:border-[#8B5CF6]/50 flex items-center justify-center backdrop-blur-md opacity-0 group-hover/player:opacity-100 transition-all duration-200 cursor-pointer"
-          title="Настройки плеера"
-        >
-          <Settings className="w-4 h-4" />
-        </button>
+        {/* Top Overlay Bar with Title and Action Controls */}
+        <div className="absolute top-4 left-4 right-4 z-20 flex items-center justify-between pointer-events-none opacity-0 group-hover/player:opacity-100 transition-opacity duration-300">
+          {/* Top Left: Title Badge */}
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-black/70 border border-white/10 rounded-xl backdrop-blur-md shadow-lg pointer-events-auto">
+            <Film className="w-3.5 h-3.5 text-[#8B5CF6]" />
+            <span className="text-xs font-bold text-white max-w-[160px] sm:max-w-[280px] truncate">
+              {animeTitle || "KamiAnime"}
+            </span>
+            {episodeNumber && (
+              <span className="bg-[#8B5CF6]/20 text-[#A78BFA] border border-[#8B5CF6]/30 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold">
+                Серия {episodeNumber}
+              </span>
+            )}
+          </div>
+
+          {/* Top Right: Integrated Action Buttons */}
+          <div className="flex items-center gap-2 pointer-events-auto">
+            {onOpenWatchTogether && (
+              <button
+                onClick={onOpenWatchTogether}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all shadow-lg backdrop-blur-md cursor-pointer active:scale-95 ${
+                  isWatchTogetherActive
+                    ? "bg-[#8B5CF6] text-white border-[#A78BFA] shadow-[#8B5CF6]/30"
+                    : "bg-black/70 hover:bg-[#8B5CF6]/80 text-white/90 hover:text-white border-white/15 hover:border-[#8B5CF6]"
+                }`}
+                title="Совместный просмотр"
+              >
+                <Users className="w-3.5 h-3.5 text-purple-300" />
+                <span className="hidden sm:inline">Совместный просмотр</span>
+                {isWatchTogetherActive && (
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-purple-300"></span>
+                  </span>
+                )}
+              </button>
+            )}
+
+            {onOpenDownload && (
+              <button
+                onClick={onOpenDownload}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-black/70 hover:bg-cyan-600/80 text-white/90 hover:text-white border border-white/15 hover:border-cyan-400 rounded-xl text-xs font-bold transition-all shadow-lg backdrop-blur-md cursor-pointer active:scale-95"
+                title="Скачать серию"
+              >
+                <Download className="w-3.5 h-3.5 text-cyan-400" />
+                <span className="hidden sm:inline">Скачать</span>
+              </button>
+            )}
+
+            <button
+              onClick={() => {
+                setActiveSubmenu("main");
+                setIsSettingsOpen(true);
+              }}
+              className="w-9 h-9 rounded-xl bg-black/70 hover:bg-black/90 text-white/80 hover:text-white border border-white/15 hover:border-[#8B5CF6]/50 flex items-center justify-center backdrop-blur-md transition-all cursor-pointer active:scale-95"
+              title="Настройки плеера"
+            >
+              <Settings className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
 
         {/* REFERENCE-PERFECT POPUP SETTINGS MODAL / BOTTOM SHEET */}
         {isSettingsOpen && createPortal(
@@ -1861,17 +1928,50 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
 
                   <div className="my-2 border-t border-white/5" />
 
-                  {/* 7. Скачать серию */}
+                  {/* 7. Совместный просмотр */}
+                  {onOpenWatchTogether && (
+                    <button
+                      onClick={() => {
+                        setIsSettingsOpen(false);
+                        onOpenWatchTogether();
+                      }}
+                      className="flex items-center justify-between py-3 px-2.5 rounded-xl hover:bg-white/5 transition-colors cursor-pointer text-left group"
+                    >
+                      <div className="flex items-center gap-3.5">
+                        <div className="w-8 h-8 rounded-lg bg-purple-500/10 flex items-center justify-center text-purple-400 group-hover:text-purple-300 transition-colors">
+                          <Users className="w-4 h-4" />
+                        </div>
+                        <div className="flex flex-col">
+                          <span className="text-sm font-bold text-white">
+                            Совместный просмотр
+                          </span>
+                          <span className="text-[10px] text-purple-300/70 font-medium">
+                            {isWatchTogetherActive ? "Комната активна" : "Создать комнату для друзей"}
+                          </span>
+                        </div>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-white transition-colors" />
+                    </button>
+                  )}
+
+                  {/* 8. Скачать серию */}
                   <button
-                    onClick={handleDownloadEpisode}
+                    onClick={() => {
+                      setIsSettingsOpen(false);
+                      if (onOpenDownload) {
+                        onOpenDownload();
+                      } else {
+                        handleDownloadEpisode();
+                      }
+                    }}
                     className="flex items-center justify-between py-3 px-2.5 rounded-xl hover:bg-white/5 transition-colors cursor-pointer text-left group"
                   >
                     <div className="flex items-center gap-3.5">
-                      <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-white/80 group-hover:text-[#8B5CF6] transition-colors">
+                      <div className="w-8 h-8 rounded-lg bg-cyan-500/10 flex items-center justify-center text-cyan-400 group-hover:text-cyan-300 transition-colors">
                         <Download className="w-4 h-4" />
                       </div>
                       <span className="text-sm font-bold text-white">
-                        Скачать серию
+                        Скачать серию (.MP4)
                       </span>
                     </div>
                     <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-white transition-colors" />
