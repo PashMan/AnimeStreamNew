@@ -314,10 +314,17 @@ const Details: React.FC = () => {
         aniboomStreamUrl = null;
       }
 
+      const rawVoiceTitle = selectedTranslation?.title || "";
+      const cleanVoiceTitle = rawVoiceTitle
+        .replace(/\s*\((?:4K|1080p|720p|360p|HD|FHD|QHD)\)/gi, "")
+        .replace(/\s*\[(?:4K|1080p|720p|360p|HD|FHD|QHD)\]/gi, "")
+        .replace(/\s*(?:4K|1080p|720p|360p)/gi, "")
+        .trim();
+
       try {
         const fetchUrl = aniboomStreamUrl
-          ? `/api/media/aniboom/resolve?url=${encodeURIComponent(aniboomStreamUrl)}&shikimori_id=${id}&episode=${epNum}`
-          : `/api/media/aniboom/resolve?shikimori_id=${id}&episode=${epNum}&translation_id=${encodeURIComponent(selectedTranslation?.title || "")}`;
+          ? `/api/media/aniboom/resolve?url=${encodeURIComponent(aniboomStreamUrl)}&shikimori_id=${id}&episode=${epNum}&translation_id=${encodeURIComponent(cleanVoiceTitle)}`
+          : `/api/media/aniboom/resolve?shikimori_id=${id}&episode=${epNum}&translation_id=${encodeURIComponent(cleanVoiceTitle)}`;
 
         const res = await fetch(fetchUrl, {
           signal: abortController.signal

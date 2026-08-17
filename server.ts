@@ -2866,6 +2866,18 @@ function buildAniboomMasterPlaylist(hlsSrc: string, maxQuality: number | string 
   return masterLines.join('\n');
 }
 
+function normalizeVoiceTitle(title: string): string {
+  if (!title) return '';
+  return title
+    .replace(/%20/g, ' ')
+    .replace(/%26/g, '&')
+    .replace(/\s*\((?:4K|1080p|720p|360p|HD|FHD|QHD)\)/gi, '')
+    .replace(/\s*\[(?:4K|1080p|720p|360p|HD|FHD|QHD)\]/gi, '')
+    .replace(/\s*(?:4K|1080p|720p|360p)/gi, '')
+    .replace(/&amp;/gi, '&')
+    .trim();
+}
+
 const handleAniboomResolve = async (c: any) => {
   let shikimori_id: string | undefined;
   let episode: number = 1;
@@ -2895,6 +2907,11 @@ const handleAniboomResolve = async (c: any) => {
     if (epQuery) episode = parseInt(epQuery) || 1;
     translation_id = c.req.query('translation_id');
     embed_url = c.req.query('embed_url') || c.req.query('url');
+  }
+
+  // Normalize translation_id if string passed
+  if (translation_id) {
+    translation_id = normalizeVoiceTitle(translation_id);
   }
 
   const cacheKey = embed_url
@@ -2955,11 +2972,30 @@ const handleAniboomResolve = async (c: any) => {
       if (animegoData) {
         let matchedUrl: string | null = null;
         if (translation_id && animegoData.aniboomMap.length > 0) {
+          const cleanTitle = normalizeVoiceTitle(translation_id);
+          const subVoices = cleanTitle
+            .split(/[\&\/\+,]|\s+and\s+/i)
+            .map(s => s.trim().toLowerCase())
+            .filter(Boolean);
+
           const found = animegoData.aniboomMap.find(m => {
-            const voiceLower = m.voice.toLowerCase();
-            const transLower = String(translation_id).toLowerCase();
-            return voiceLower === transLower || voiceLower.includes(transLower) || transLower.includes(voiceLower);
+            const voiceClean = normalizeVoiceTitle(m.voice).toLowerCase();
+            const cleanLower = cleanTitle.toLowerCase();
+
+            // 1. Exact match (cleaned)
+            if (voiceClean === cleanLower) return true;
+
+            // 2. Any subvoice match (e.g. "AniStar & DEEP" matches "AniStar" or "DEEP")
+            if (subVoices.length > 0 && subVoices.some(sv => voiceClean === sv || voiceClean.includes(sv) || sv.includes(voiceClean))) {
+              return true;
+            }
+
+            // 3. Partial match
+            if (voiceClean.includes(cleanLower) || cleanLower.includes(voiceClean)) return true;
+
+            return false;
           });
+
           if (found) {
             matchedUrl = found.url;
           }
@@ -3078,7 +3114,9 @@ const handleAniboomResolve = async (c: any) => {
   try {
     const u = new URL(cleanEmbedUrl);
     u.searchParams.set('episode', String(episode));
-    if (translation_id && !u.searchParams.has('translation')) {
+    // CRITICAL: Only set translation param if translation_id is numeric!
+    // Never put non-numeric strings (e.g. "AniStar & DEEP") into aniboom.one's translation param!
+    if (translation_id && /^\d+$/.test(String(translation_id))) {
       u.searchParams.set('translation', String(translation_id));
     } else if (!u.searchParams.has('translation')) {
       u.searchParams.set('translation', '16');
@@ -3089,7 +3127,11 @@ const handleAniboomResolve = async (c: any) => {
       cleanEmbedUrl += (cleanEmbedUrl.includes('?') ? '&' : '?') + `episode=${episode}`;
     }
     if (!cleanEmbedUrl.includes('translation=')) {
-      cleanEmbedUrl += (cleanEmbedUrl.includes('?') ? '&' : '?') + `translation=${translation_id || '16'}`;
+      if (translation_id && /^\d+$/.test(String(translation_id))) {
+        cleanEmbedUrl += (cleanEmbedUrl.includes('?') ? '&' : '?') + `translation=${translation_id}`;
+      } else {
+        cleanEmbedUrl += (cleanEmbedUrl.includes('?') ? '&' : '?') + `translation=16`;
+      }
     }
   }
 

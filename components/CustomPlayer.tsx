@@ -1686,10 +1686,10 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
           </div>
         </div>
 
-        {/* REFERENCE-PERFECT POPUP SETTINGS MODAL / BOTTOM SHEET */}
+        {/* REFERENCE-PERFECT POPUP SETTINGS MODAL */}
         {isSettingsOpen && createPortal(
           <div
-            className="fixed inset-0 z-[9999999] bg-black/75 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4 pb-20 sm:pb-0 animate-in fade-in duration-200"
+            className="fixed inset-0 z-[9999999] bg-black/75 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200"
             style={{ pointerEvents: "auto" }}
             onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => {
@@ -1701,7 +1701,7 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
             }}
           >
             <div
-              className="w-full sm:max-w-md bg-[#121318] border border-white/10 rounded-t-[1.75rem] sm:rounded-[1.75rem] p-5 sm:p-6 mb-16 sm:mb-0 shadow-2xl font-sans text-white animate-in slide-in-from-bottom-5 duration-200 max-h-[80vh] overflow-y-auto custom-scrollbar"
+              className="w-full max-w-md bg-[#121318] border border-white/10 rounded-[1.5rem] p-5 sm:p-6 shadow-2xl font-sans text-white animate-in zoom-in-95 duration-200 max-h-[85vh] overflow-y-auto custom-scrollbar my-auto"
               onClick={(e) => e.stopPropagation()}
               onPointerDown={(e) => e.stopPropagation()}
             >
