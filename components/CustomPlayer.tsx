@@ -1656,7 +1656,7 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
           </div>
         )}
 
-        {/* Top Overlay Bar with Title and Action Controls */}
+        {/* Top Overlay Bar with Title and Settings Button */}
         <div className="absolute top-4 left-4 right-4 z-20 flex items-center justify-between pointer-events-none opacity-0 group-hover/player:opacity-100 transition-opacity duration-300">
           {/* Top Left: Title Badge */}
           <div className="flex items-center gap-2 px-3 py-1.5 bg-black/70 border border-white/10 rounded-xl backdrop-blur-md shadow-lg pointer-events-auto">
@@ -1671,46 +1671,14 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
             )}
           </div>
 
-          {/* Top Right: Integrated Action Buttons */}
+          {/* Top Right: Player Settings Button */}
           <div className="flex items-center gap-2 pointer-events-auto">
-            {onOpenWatchTogether && (
-              <button
-                onClick={onOpenWatchTogether}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all shadow-lg backdrop-blur-md cursor-pointer active:scale-95 ${
-                  isWatchTogetherActive
-                    ? "bg-[#8B5CF6] text-white border-[#A78BFA] shadow-[#8B5CF6]/30"
-                    : "bg-black/70 hover:bg-[#8B5CF6]/80 text-white/90 hover:text-white border-white/15 hover:border-[#8B5CF6]"
-                }`}
-                title="Совместный просмотр"
-              >
-                <Users className="w-3.5 h-3.5 text-purple-300" />
-                <span className="hidden sm:inline">Совместный просмотр</span>
-                {isWatchTogetherActive && (
-                  <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-purple-300"></span>
-                  </span>
-                )}
-              </button>
-            )}
-
-            {onOpenDownload && (
-              <button
-                onClick={onOpenDownload}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-black/70 hover:bg-cyan-600/80 text-white/90 hover:text-white border border-white/15 hover:border-cyan-400 rounded-xl text-xs font-bold transition-all shadow-lg backdrop-blur-md cursor-pointer active:scale-95"
-                title="Скачать серию"
-              >
-                <Download className="w-3.5 h-3.5 text-cyan-400" />
-                <span className="hidden sm:inline">Скачать</span>
-              </button>
-            )}
-
             <button
               onClick={() => {
                 setActiveSubmenu("main");
                 setIsSettingsOpen(true);
               }}
-              className="w-9 h-9 rounded-xl bg-black/70 hover:bg-black/90 text-white/80 hover:text-white border border-white/15 hover:border-[#8B5CF6]/50 flex items-center justify-center backdrop-blur-md transition-all cursor-pointer active:scale-95"
+              className="w-9 h-9 rounded-xl bg-black/70 hover:bg-black/90 text-white/80 hover:text-white border border-white/15 hover:border-[#8B5CF6]/50 flex items-center justify-center backdrop-blur-md transition-all cursor-pointer active:scale-95 shadow-lg"
               title="Настройки плеера"
             >
               <Settings className="w-4 h-4" />
@@ -1721,7 +1689,7 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
         {/* REFERENCE-PERFECT POPUP SETTINGS MODAL / BOTTOM SHEET */}
         {isSettingsOpen && createPortal(
           <div
-            className="fixed inset-0 z-[9999999] bg-black/75 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200"
+            className="fixed inset-0 z-[9999999] bg-black/75 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4 pb-20 sm:pb-0 animate-in fade-in duration-200"
             style={{ pointerEvents: "auto" }}
             onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => {
@@ -1733,7 +1701,7 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
             }}
           >
             <div
-              className="w-full sm:max-w-md bg-[#121318] border border-white/10 rounded-t-[1.75rem] sm:rounded-[1.75rem] p-5 sm:p-6 shadow-2xl font-sans text-white animate-in slide-in-from-bottom-5 duration-200 max-h-[90%] overflow-y-auto custom-scrollbar"
+              className="w-full sm:max-w-md bg-[#121318] border border-white/10 rounded-t-[1.75rem] sm:rounded-[1.75rem] p-5 sm:p-6 mb-16 sm:mb-0 shadow-2xl font-sans text-white animate-in slide-in-from-bottom-5 duration-200 max-h-[80vh] overflow-y-auto custom-scrollbar"
               onClick={(e) => e.stopPropagation()}
               onPointerDown={(e) => e.stopPropagation()}
             >

@@ -290,7 +290,7 @@ const Details: React.FC = () => {
     const isKimiNoNaWa = id === "32281";
     const isNative1080 = isSuzume || isWeathering || isGardenOfWords || isKimiNoNaWa;
 
-    if (selectedPlayer !== "KamiPlayer (1080p)" || isNative1080) {
+    if ((selectedPlayer !== "KamiPlayer (1080p)" && selectedPlayer !== "Aniboom") || isNative1080) {
       setResolvedStream(null);
       setIsResolvingStream(false);
       return;
@@ -1688,16 +1688,8 @@ const Details: React.FC = () => {
                   <span className="w-1.5 h-6 bg-primary rounded-full inline-block animate-pulse" />
                   Смотреть онлайн
                 </h3>
-                <div className="flex flex-wrap gap-2.5 items-center w-full md:w-auto">
-                  {!roomId && (
-                    <button
-                      onClick={handleCreateRoom}
-                      className="px-4 py-2.5 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 text-purple-400 rounded-lg text-xs font-bold uppercase tracking-widest transition-all flex items-center gap-2 whitespace-nowrap"
-                    >
-                      <Users className="w-4 h-4" /> Совместный просмотр
-                    </button>
-                  )}
-                  {anime?.status !== "released" && (
+                {anime?.status !== "released" && (
+                  <div className="flex flex-wrap gap-2.5 items-center w-full md:w-auto">
                     <button
                       onClick={() => {
                         const botUsername =
@@ -1712,14 +1704,8 @@ const Details: React.FC = () => {
                     >
                       <Bell className="w-4 h-4" /> Уведомлять о сериях
                     </button>
-                  )}
-                  <button
-                    onClick={() => setIsDownloadModalOpen(true)}
-                    className="px-4 py-2.5 bg-gradient-to-r from-primary to-accent hover:from-primary/95 hover:to-accent/95 text-white rounded-lg text-xs font-bold uppercase tracking-widest transition-all hover:scale-[1.03] active:scale-95 flex items-center gap-2 whitespace-nowrap shadow-lg shadow-primary/20"
-                  >
-                    <Download className="w-4 h-4" /> Скачать серию
-                  </button>
-                </div>
+                  </div>
+                )}
               </div>
 
               {roomId && (
@@ -1964,7 +1950,7 @@ const Details: React.FC = () => {
                           const player = players.find(
                             (p) => p.name === selectedPlayer,
                           )!;
-                          if (player.isCustom) {
+                          if (player.isCustom || player.name === "Aniboom") {
                             const isSuzume = id === "50594" || id === "62568";
                             const isWeathering = id === "38826";
                             const isGardenOfWords = id === "16782";

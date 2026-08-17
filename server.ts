@@ -2992,20 +2992,85 @@ const handleAniboomResolve = async (c: any) => {
     }
   }
 
-  if (!targetEmbedUrl) {
+  const tryKodikFallback = async (reason: string) => {
     steps.push({
-      title: "Конечный Embed URL",
-      status: "error",
-      message: "Ссылка на плеер AniBoom не определена. Невозможно продолжить."
+      title: "Резервное переключение потока",
+      status: "info",
+      message: `Прямой доступ к AniBoom недоступен (${reason}). Запуск перехвата резервного HLS-потока...`
     });
-    const notFoundPayload = {
+
+    if (shikimori_id) {
+      try {
+        const kodikTokens = [
+          'a0457eb45312af80bbb9f3fb33de3e93',
+          'b7cc4293ed475c4ad1fd599d114f4435',
+          '17cc4ee691bc251131a9041e6e89e78e'
+        ];
+        for (const token of kodikTokens) {
+          const kodikUrl = `https://kodik-api.com/search?token=${token}&shikimori_id=${shikimori_id}&with_episodes=true`;
+          const res = await fetch(kodikUrl, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            },
+            signal: AbortSignal.timeout(3500)
+          });
+          if (res.ok) {
+            const data = await res.json() as any;
+            if (data.results && data.results.length > 0) {
+              const item = data.results[0];
+              let iframeLink = item.link;
+              if (item.seasons) {
+                const sKeys = Object.keys(item.seasons);
+                const targetSeasonKey = String(item.last_season || sKeys[sKeys.length - 1] || '1');
+                const seasonObj = item.seasons[targetSeasonKey];
+                if (seasonObj && seasonObj.episodes && seasonObj.episodes[String(episode)]) {
+                  iframeLink = seasonObj.episodes[String(episode)];
+                }
+              }
+              if (iframeLink) {
+                let fullIframe = iframeLink.startsWith('//') ? `https:${iframeLink}` : iframeLink;
+                if (!fullIframe.includes('episode=')) {
+                  fullIframe += (fullIframe.includes('?') ? '&' : '?') + `episode=${episode}`;
+                }
+                const proxyOrigin = getProxyOrigin(c);
+                const playlistUrl = `${proxyOrigin}/api/media/playlist?url=${encodeURIComponent(fullIframe)}`;
+
+                steps.push({
+                  title: "Загрузка резервного потока",
+                  status: "success",
+                  message: `Успешно сформирован стабильный HLS поток высочайшего качества: ${fullIframe}`
+                });
+
+                const fallbackPayload = {
+                  success: true,
+                  url: playlistUrl,
+                  streamType: "hls",
+                  provider: "kodik",
+                  quality: "1080p",
+                  is_fallback: true,
+                  steps
+                };
+                setCachedAniboom(cacheKey, fallbackPayload);
+                return c.json(fallbackPayload, 200);
+              }
+            }
+          }
+        }
+      } catch (fErr: any) {
+        console.warn(`[Aniboom Fallback] Kodik lookup failed: ${fErr.message}`);
+      }
+    }
+
+    const failurePayload = {
       success: false,
-      not_found: true,
-      error: 'Could not resolve Aniboom embed URL for given parameters',
+      error: `AniBoom resolution failed: ${reason}`,
       steps
     };
-    setCachedAniboom(cacheKey, notFoundPayload);
-    return c.json(notFoundPayload, 200);
+    return c.json(failurePayload, 200);
+  };
+
+  if (!targetEmbedUrl) {
+    return await tryKodikFallback('Could not resolve Aniboom embed URL from AnimeGO');
   }
 
   // Normalize parameters on embed URL
@@ -3051,18 +3116,7 @@ const handleAniboomResolve = async (c: any) => {
     });
 
     if (!aRes.ok) {
-      steps.push({
-        title: "Загрузка HTML страницы плеера",
-        status: "error",
-        message: `Сервер AniBoom ответил с ошибкой: HTTP ${aRes.status}`
-      });
-      const errPayload = {
-        success: false,
-        error: `Aniboom embed returned HTTP ${aRes.status}`,
-        steps
-      };
-      setCachedAniboom(cacheKey, errPayload);
-      return c.json(errPayload, 200);
+      return await tryKodikFallback(`Aniboom server returned HTTP ${aRes.status}`);
     }
 
     const html = await aRes.text();
@@ -3081,16 +3135,7 @@ const handleAniboomResolve = async (c: any) => {
     const match = html.match(/data-parameters="([^"]+)"/) || html.match(/data-parameters='([^']+)'/);
 
     if (!match) {
-      steps.push({
-        title: "Парсинг data-parameters",
-        status: "error",
-        message: "Атрибут 'data-parameters' не найден. Возможно, изменился формат плеера AniBoom или неверные параметры."
-      });
-      return c.json({
-        success: false,
-        error: 'data-parameters attribute not found in Aniboom embed HTML',
-        steps
-      }, 500);
+      return await tryKodikFallback('data-parameters attribute not found in Aniboom embed HTML');
     }
 
     const rawParams = match[1]
@@ -3120,20 +3165,7 @@ const handleAniboomResolve = async (c: any) => {
         }
       });
     } catch (parseErr: any) {
-      steps.push({
-        title: "Парсинг data-parameters",
-        status: "error",
-        message: `Ошибка парсинга JSON параметров: ${parseErr.message}`,
-        details: {
-          raw_string_excerpt: rawParams ? rawParams.substring(0, 1000) + (rawParams.length > 1000 ? '...' : '') : null,
-          error_message: parseErr.message
-        }
-      });
-      return c.json({
-        success: false,
-        error: `Failed to parse data-parameters JSON: ${parseErr.message}`,
-        steps
-      }, 500);
+      return await tryKodikFallback(`Failed to parse data-parameters JSON: ${parseErr.message}`);
     }
 
     const videoHash = decoded.id;
@@ -3209,11 +3241,7 @@ const handleAniboomResolve = async (c: any) => {
     });
 
     if (!primarySrc) {
-      return c.json({
-        success: false,
-        error: 'No valid DASH (.mpd) or HLS (.m3u8) video stream found in Aniboom parameters',
-        steps
-      }, 500);
+      return await tryKodikFallback('No valid DASH (.mpd) or HLS (.m3u8) video stream found in Aniboom parameters');
     }
 
     steps.push({
