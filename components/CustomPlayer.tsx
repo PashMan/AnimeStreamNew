@@ -1239,9 +1239,14 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                   fragLoadingMaxRetry: 3,
                 });
                 (artInstance as any).hls = hls;
+
+                const streamUrl = url.startsWith('http')
+                  ? url
+                  : `${window.location.origin}${url.startsWith('/') ? '' : '/'}${url}`;
+
                 hls.attachMedia(video);
                 hls.on(Hls.Events.MEDIA_ATTACHED, () => {
-                  hls.loadSource(url);
+                  hls.loadSource(streamUrl);
                 });
 
                 hls.on(Hls.Events.ERROR, function (event, data) {

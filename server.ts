@@ -3366,20 +3366,20 @@ const handleAniboomResolve = async (c: any) => {
     if (dashSrc.startsWith('//')) dashSrc = `https:${dashSrc}`;
     if (hlsSrc.startsWith('//')) hlsSrc = `https:${hlsSrc}`;
 
-    // Prefer DASH (.mpd) directly from Aniboom parameters
-    const primarySrc = dashSrc || hlsSrc;
-    const streamType = dashSrc ? 'dash' : (hlsSrc ? 'hls' : 'dash');
+    // Prefer HLS (.m3u8) from Aniboom parameters
+    const primarySrc = hlsSrc || dashSrc;
+    const streamType = hlsSrc ? 'hls' : (dashSrc ? 'dash' : 'hls');
 
     steps.push({
       title: "Анализ медиа-потоков",
       status: primarySrc ? "success" : "error",
       message: primarySrc 
         ? `Найдены потоки. Выбран формат: ${streamType.toUpperCase()}. Ссылка: ${primarySrc}`
-        : "Не найдено ни одного валидного потока DASH (.mpd) или HLS (.m3u8) в параметрах AniBoom."
+        : "Не найдено ни одного валидного потока HLS (.m3u8) или DASH (.mpd) в параметрах AniBoom."
     });
 
     if (!primarySrc) {
-      return await tryKodikFallback('No valid DASH (.mpd) or HLS (.m3u8) video stream found in Aniboom parameters');
+      return await tryKodikFallback('No valid HLS (.m3u8) or DASH (.mpd) video stream found in Aniboom parameters');
     }
 
     steps.push({
@@ -3389,15 +3389,14 @@ const handleAniboomResolve = async (c: any) => {
     });
 
     const proxyOrigin = getProxyOrigin(c);
-    const proxiedDashUrl = dashSrc ? `${proxyOrigin}/api/proxy-4k?url=${encodeURIComponent(dashSrc)}` : undefined;
     const proxiedHlsUrl = hlsSrc ? `${proxyOrigin}/api/proxy-4k?url=${encodeURIComponent(hlsSrc)}` : undefined;
-    const mainProxiedUrl = proxiedDashUrl || proxiedHlsUrl || '';
-    const mainUrl = streamType === 'dash' ? (dashSrc || primarySrc) : mainProxiedUrl;
+    const proxiedDashUrl = dashSrc ? `${proxyOrigin}/api/proxy-4k?url=${encodeURIComponent(dashSrc)}` : undefined;
+    const mainProxiedUrl = proxiedHlsUrl || proxiedDashUrl || '';
 
     steps.push({
       title: "Настройка 4K прокси",
       status: "success",
-      message: `Ссылка на поток готова: ${mainUrl.substring(0, 80)}...`
+      message: `Ссылка на поток готова: ${mainProxiedUrl.substring(0, 80)}...`
     });
 
     steps.push({
@@ -3410,7 +3409,7 @@ const handleAniboomResolve = async (c: any) => {
       success: true,
       is_cache_hit: false,
       stream_type: streamType as 'dash' | 'hls',
-      url: mainUrl,
+      url: mainProxiedUrl,
       direct_url: primarySrc,
       dash_url: dashSrc || proxiedDashUrl,
       hls_url: proxiedHlsUrl,

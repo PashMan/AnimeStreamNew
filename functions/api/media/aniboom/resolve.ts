@@ -250,8 +250,8 @@ export async function onRequest(context: any) {
     if (hlsSrc && hlsSrc.startsWith('//')) hlsSrc = `https:${hlsSrc}`;
     if (dashSrc && dashSrc.startsWith('//')) dashSrc = `https:${dashSrc}`;
 
-    const primarySrc = dashSrc || hlsSrc;
-    const streamType = dashSrc ? 'dash' : 'hls';
+    const primarySrc = hlsSrc || dashSrc;
+    const streamType = hlsSrc ? 'hls' : (dashSrc ? 'dash' : 'hls');
 
     if (!primarySrc) {
       return new Response(JSON.stringify({
@@ -267,13 +267,12 @@ export async function onRequest(context: any) {
     }
 
     const proxiedUrl = `/api/proxy-4k?url=${encodeURIComponent(primarySrc)}&referer=${encodeURIComponent('https://aniboom.one/')}`;
-    const mainUrl = streamType === 'dash' ? primarySrc : proxiedUrl;
 
     return new Response(JSON.stringify({
       success: true,
       streamType: streamType,
       stream_type: streamType,
-      url: mainUrl,
+      url: proxiedUrl,
       direct_url: primarySrc,
       quality: decoded.qualityVideo ? `${decoded.qualityVideo}p` : '1080p'
     }), {
