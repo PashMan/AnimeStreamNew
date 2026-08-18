@@ -1058,6 +1058,18 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
 
               const player = dashjs.MediaPlayer().create();
 
+              // Перехватываем каждый запрос (включая манифест и чанки .m4s) и заворачиваем через proxy-4k
+              (player as any).extend("RequestModifier", () => {
+                return {
+                  modifyRequest: (request: any) => {
+                    if (request.url && !request.url.includes('/api/proxy-4k')) {
+                      request.url = `/api/proxy-4k?url=${encodeURIComponent(request.url)}&referer=${encodeURIComponent('https://aniboom.one/')}`;
+                    }
+                    return request;
+                  }
+                };
+              }, true);
+
               // Оптимальные стандартные настройки dash.js без устаревших параметров
               (player as any).updateSettings({
                 streaming: {
