@@ -57,8 +57,8 @@ export const fetchPlayersClientSide = async (shikimoriId: string, title: string,
          playersList = data;
       }
 
-      // Filter out Anilibria and Collaps
-      playersList = playersList.filter(p => p.name !== 'Anilibria' && p.name !== 'Collaps' && !p.name.toLowerCase().includes('collaps'));
+      // Filter out Anilibria
+      playersList = playersList.filter(p => p.name !== 'Anilibria');
 
       // Add custom player for 1080p encodes OR any anime containing Kodik/Aniboom stream
       const hasKodik = playersList.some(p => p.name === 'Kodik' && p.iframe);

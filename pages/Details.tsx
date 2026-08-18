@@ -268,7 +268,6 @@ const Details: React.FC = () => {
   } | null>(null);
   const [isResolvingStream, setIsResolvingStream] = useState(false);
   const [streamResolutionError, setStreamResolutionError] = useState<string | null>(null);
-  const [downloadProvider, setDownloadProvider] = useState<"aniboom" | "kodik" | "collaps">("aniboom");
 
   const [translationQualityOverrides, setTranslationQualityOverrides] = useState<Record<string, string>>({});
 
@@ -2804,64 +2803,14 @@ const Details: React.FC = () => {
               const epNum = parseInt(paramEpisode || "1") || 1;
               const defaultAniboom = players.find((p) => p.name === "Aniboom")?.iframe;
               const defaultKodik = players.find((p) => p.name === "Kodik")?.iframe;
-              const defaultCollaps = players.find((p) => p.name === "Collaps")?.iframe;
 
+              // Automatic best stream resolution: Prioritize AniBoom (1080p), fallback to Kodik (720p)
               const aniboomIframe = getResolvedAniboomUrl(selectedTranslation, epNum, defaultAniboom);
               const kodikIframe = getResolvedKodikUrl(selectedTranslation, epNum, defaultKodik);
-              const collapsIframe = getResolvedCollapsUrl(selectedTranslation, epNum, defaultCollaps);
-
-              let targetUrl = "";
-              if (downloadProvider === "aniboom") {
-                targetUrl = aniboomIframe || kodikIframe || collapsIframe || "";
-              } else if (downloadProvider === "kodik") {
-                targetUrl = kodikIframe || aniboomIframe || collapsIframe || "";
-              } else {
-                targetUrl = collapsIframe || aniboomIframe || kodikIframe || "";
-              }
+              const targetUrl = aniboomIframe || kodikIframe || "";
 
               return (
                 <div className="space-y-4">
-                  {/* Source Provider Switcher */}
-                  <div className="flex items-center gap-2 p-1.5 bg-black/40 border border-white/10 rounded-2xl overflow-x-auto custom-scrollbar">
-                    {aniboomIframe && (
-                      <button
-                        onClick={() => setDownloadProvider("aniboom")}
-                        className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap ${
-                          downloadProvider === "aniboom"
-                            ? "bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-lg shadow-emerald-500/20"
-                            : "text-slate-400 hover:text-white hover:bg-white/5"
-                        }`}
-                      >
-                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                        <span>AniBoom (Рекомендуется)</span>
-                      </button>
-                    )}
-                    {kodikIframe && (
-                      <button
-                        onClick={() => setDownloadProvider("kodik")}
-                        className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap ${
-                          downloadProvider === "kodik"
-                            ? "bg-amber-500 text-white shadow-lg shadow-amber-500/20"
-                            : "text-slate-400 hover:text-white hover:bg-white/5"
-                        }`}
-                      >
-                        <span>Kodik</span>
-                      </button>
-                    )}
-                    {collapsIframe && (
-                      <button
-                        onClick={() => setDownloadProvider("collaps")}
-                        className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap ${
-                          downloadProvider === "collaps"
-                            ? "bg-blue-600 text-white shadow-lg shadow-blue-500/20"
-                            : "text-slate-400 hover:text-white hover:bg-white/5"
-                        }`}
-                      >
-                        <span>Collaps</span>
-                      </button>
-                    )}
-                  </div>
-
                   {targetUrl ? (
                     <BrowserDownloadWidget
                       episodeUrl={targetUrl}
@@ -2876,7 +2825,7 @@ const Details: React.FC = () => {
                         Прямое скачивание недоступно
                       </p>
                       <p className="text-xs text-slate-400">
-                        Для выбранной озвучки отсутствует медиа-источник для сборки файлов.
+                        Для выбранной серии или озвучки отсутствует медиа-источник для сборки файлов.
                       </p>
                     </div>
                   )}

@@ -700,6 +700,7 @@ app.get('/api/balancer', async (c) => {
     }
 
     // Prepare placeholders for prospective providers
+    let collaps_iframe: string | null = null;
     let bhcesh_iframe: string | null = null;
     let videocdn_iframe: string | null = null;
     let bazon_iframe: string | null = null;
@@ -710,6 +711,33 @@ app.get('/api/balancer', async (c) => {
 
     // Concurrently fetch alternate providers to minimize response latency
     const jobs: Promise<void>[] = [];
+
+    // 3. Collaps (for iframe viewing playback)
+    jobs.push((async () => {
+      try {
+        let collapsUrl = '';
+        if (kinopoisk_id) {
+          collapsUrl = `https://apicollaps.cc/list?token=eedefb541aeba871dcfc756e6b31c02e&kinopoisk_id=${kinopoisk_id}`;
+        } else if (imdb_id) {
+          collapsUrl = `https://apicollaps.cc/list?token=eedefb541aeba871dcfc756e6b31c02e&imdb_id=${imdb_id}`;
+        } else if (title) {
+          collapsUrl = `https://apicollaps.cc/list?token=eedefb541aeba871dcfc756e6b31c02e&name=${encodeURIComponent(title)}`;
+        }
+
+        if (collapsUrl) {
+          const res = await fetchWithTimeout(collapsUrl, {}, 3000);
+          if (res.ok) {
+            const d = await res.json() as any;
+            if (d.results && d.results.length > 0 && d.results[0].iframe_url) {
+              collaps_iframe = d.results[0].iframe_url;
+              addLog(`Collaps found for viewing: ${collaps_iframe}`);
+            }
+          }
+        }
+      } catch (e: any) {
+        addLog('[COLLAPS] failed', { error: e.message });
+      }
+    })());
 
     // 4. Bhcesh
     if (kinopoisk_id) {
@@ -888,6 +916,7 @@ app.get('/api/balancer', async (c) => {
     if (kodik_iframe) {
       players.push({ name: 'Kodik', iframe: kodik_iframe });
     }
+    if (collaps_iframe) players.push({ name: 'Collaps', iframe: collaps_iframe });
     if (bhcesh_iframe) players.push({ name: 'Bhcesh', iframe: bhcesh_iframe });
     if (videocdn_iframe) players.push({ name: 'VideoCDN', iframe: videocdn_iframe });
     if (bazon_iframe) players.push({ name: 'Bazon', iframe: bazon_iframe });
