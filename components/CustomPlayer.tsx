@@ -1390,13 +1390,15 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
 
                   const finalQuals: { html: string; level: number; targetH?: number; isAi?: boolean }[] = [];
 
+                  const maxLevelIndex = Math.max(0, (levels?.length || 1) - 1);
+
                   // RULE:
                   // 1080p native source (e.g. Aniboom) -> upscales to 4K: "4K (Anime4K AI)"
                   // 720p native source (e.g. Kodik) -> upscales to 1080p: "1080p (Anime4K AI)"
                   if (hasNative1080) {
-                    finalQuals.push({ html: "4K (Anime4K AI)", level: 0, targetH: 2160, isAi: true });
+                    finalQuals.push({ html: "4K (Anime4K AI)", level: maxLevelIndex, targetH: 2160, isAi: true });
                   } else {
-                    finalQuals.push({ html: "1080p (Anime4K AI)", level: 0, targetH: 1080, isAi: true });
+                    finalQuals.push({ html: "1080p (Anime4K AI)", level: maxLevelIndex, targetH: 1080, isAi: true });
                   }
 
                   mappedLevels.forEach((item) => {
@@ -1414,7 +1416,15 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                 hls.on(Hls.Events.MANIFEST_PARSED, (_, data) => {
                   if (isQualityAdded) return;
                   isQualityAdded = true;
-                  updateQualitiesFromLevels(data.levels || hls.levels || []);
+                  const parsedLevels = data.levels || hls.levels || [];
+                  updateQualitiesFromLevels(parsedLevels);
+
+                  const curQ = selectedQualityRef.current;
+                  const maxLvl = Math.max(0, parsedLevels.length - 1);
+                  if (curQ.includes("4K") || curQ.includes("1080p (Anime4K")) {
+                    hls.currentLevel = maxLvl;
+                    hls.loadLevel = maxLvl;
+                  }
                 });
 
                 hls.on(Hls.Events.LEVEL_SWITCHED, (_, data) => {
@@ -1650,9 +1660,10 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
             hls.loadLevel = -1;
             hls.nextLevel = -1;
           } else if (item.isAi) {
-            hls.currentLevel = 0;
-            hls.loadLevel = 0;
-            hls.nextLevel = 0;
+            const maxLvl = (hls.levels && hls.levels.length > 0) ? hls.levels.length - 1 : (item.level >= 0 ? item.level : 0);
+            hls.currentLevel = maxLvl;
+            hls.loadLevel = maxLvl;
+            hls.nextLevel = maxLvl;
           } else {
             hls.currentLevel = item.level;
             hls.loadLevel = item.level;

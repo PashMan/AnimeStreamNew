@@ -2126,8 +2126,8 @@ const Details: React.FC = () => {
                   )}
                 </div>
 
-                {/* Voice Translations & Clean Episode List Widget */}
-                {anime && (
+                {/* Voice Translations & Clean Episode List Widget (Hidden when Kodik iframe is active as Kodik iframe has built-in selectors) */}
+                {anime && selectedPlayer !== "Kodik" && !selectedPlayer?.toLowerCase().includes("kodik") && (
                   <div className="bg-[#1c1d21]/60 border border-white/5 p-5 md:p-6 rounded-[1.5rem] md:rounded-[2rem] flex flex-col gap-6 font-sans shadow-xl backdrop-blur-sm">
                     {/* Controls Row: Voice/Translation selector & Search input */}
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-white/5">
