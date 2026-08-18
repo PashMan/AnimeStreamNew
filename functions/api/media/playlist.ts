@@ -55,7 +55,7 @@ export async function onRequest(context: any) {
   }
 
   const urlObj = new URL(request.url);
-  const urlParam = urlObj.searchParams.get('url');
+  let urlParam = urlObj.searchParams.get('url');
   const fallbackUrl = urlObj.searchParams.get('fallback_url');
   const resolveOnly = urlObj.searchParams.get('resolve') === 'true';
   const requestedQuality = urlObj.searchParams.get('quality');

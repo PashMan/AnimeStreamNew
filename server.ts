@@ -3370,36 +3370,6 @@ app.post('/api/media/aniboom/resolve', handleAniboomResolve);
 // In-memory 4-hour cache for direct AniBoom Master HLS links
 const playlistCache = new Map<string, { streamUrl: string; rawUrl: string; exp: number }>();
 
-function convertChar(char: string, rotNum: number): string {
-  if (!char.match(/[a-zA-Z]/)) return char;
-  const code = char.charCodeAt(0);
-  let start = 65; // 'A'
-  if (code >= 97) start = 97; // 'a'
-  return String.fromCharCode(((code - start + rotNum) % 26) + start);
-}
-
-function decodeKodikUrl(encoded: string, rotNum?: number): string {
-  if (rotNum !== undefined) {
-    const crypted = encoded.split('').map(c => convertChar(c, rotNum)).join('');
-    const padding = (4 - (crypted.length % 4)) % 4;
-    try {
-      const decoded = atob(crypted + '='.repeat(padding));
-      if (decoded.includes('mp4:hls:manifest')) return decoded;
-    } catch {}
-  }
-  for (let rot = 0; rot < 26; rot++) {
-    const crypted = encoded.split('').map(c => convertChar(c, rot)).join('');
-    const padding = (4 - (crypted.length % 4)) % 4;
-    try {
-      const decoded = atob(crypted + '='.repeat(padding));
-      if (decoded.includes('mp4:hls:manifest')) {
-         return decoded;
-      }
-    } catch {}
-  }
-  throw new Error('Decryption of Kodik stream URL failed');
-}
-
 async function extractKodikStream(iframeUrl: string, requestedQuality?: string, resolveOnly?: boolean, c?: any) {
   let normalizedIframe = iframeUrl.startsWith('//') ? `https:${iframeUrl}` : iframeUrl;
   normalizedIframe = normalizedIframe.replace(/(kodik\.info|kodik\.cc|kodik\.biz|kodik\.net|kodik\.tv|kodik\.club|kodik\.site|kodik\.space|kodik\.ru|kodikonline\.com|kodikhd\.club|kodik-api\.com)/g, 'kodikplayer.com');
