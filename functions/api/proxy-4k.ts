@@ -55,13 +55,17 @@ export async function onRequest(context: any) {
   }
 
   const urlObj = new URL(request.url);
-  const targetUrl = urlObj.searchParams.get('url');
+  let targetUrl = urlObj.searchParams.get('url');
   if (!targetUrl) {
     return new Response('Missing url parameter', {
       status: 400,
       headers: { 'Access-Control-Allow-Origin': '*' }
     });
   }
+
+  try {
+    targetUrl = decodeURIComponent(targetUrl);
+  } catch (_) {}
 
   try {
     const refererParam = urlObj.searchParams.get('referer');
@@ -91,32 +95,24 @@ export async function onRequest(context: any) {
 
     // Handle DASH manifest (.mpd)
     if (contentType.includes('dash+xml') || contentType.includes('application/xml') || targetUrl.includes('.mpd')) {
-      let text = await res.text();
-      const parentUrl = targetUrl.substring(0, targetUrl.lastIndexOf('/') + 1);
-      const safeReferer = encodeURIComponent(refererParam || 'https://aniboom.one/');
-      const originBase = getProxyOrigin(request);
+      let xmlText = await res.text();
+      
+      // Получаем базовый путь к папке с чанками на CDN AniBoom (со слэшем на конце)
+      const lastSlashIndex = targetUrl.lastIndexOf('/');
+      const baseCdnUrl = targetUrl.substring(0, lastSlashIndex + 1);
 
-      const hasBaseUrl = /<BaseURL>/i.test(text);
-      if (hasBaseUrl) {
-        text = text.replace(/<BaseURL>([^<]+)<\/BaseURL>/gi, (match, p1) => {
-          let absUrl = p1.trim();
-          if (!absUrl.startsWith('http')) {
-            absUrl = absUrl.startsWith('/') ? new URL(absUrl, targetUrl).toString() : parentUrl + absUrl;
-          }
-          if (!absUrl.endsWith('/')) absUrl += '/';
-          const fullProxyUrl = `${originBase}/api/proxy-4k?url=${encodeURIComponent(absUrl)}&referer=${refererParam || 'https://aniboom.one/'}`;
-          return `<BaseURL>${fullProxyUrl.replace(/&/g, '&amp;')}</BaseURL>`;
-        });
-      } else {
-        const fullProxyBaseUrl = `${originBase}/api/proxy-4k?url=${encodeURIComponent(parentUrl)}&referer=${refererParam || 'https://aniboom.one/'}`;
-        const escapedProxyBaseUrl = fullProxyBaseUrl.replace(/&/g, '&amp;');
-        text = text.replace(/(<MPD[^>]*>)/i, `$1\n  <BaseURL>${escapedProxyBaseUrl}</BaseURL>`);
-      }
+      // Формируем префикс прокси с кодированной папкой CDN
+      const safeReferer = refererParam ? `&referer=${encodeURIComponent(refererParam)}` : '';
+      const proxyPrefix = `/api/proxy-4k?url=${encodeURIComponent(baseCdnUrl)}${safeReferer}`;
 
-      return new Response(text, {
+      // Удаляем любые существующие BaseURL и добавляем наш слитный префикс
+      xmlText = xmlText.replace(/<BaseURL>[\s\S]*?<\/BaseURL>/gi, '');
+      xmlText = xmlText.replace(/<MPD(\s|>)/i, `<MPD $1<BaseURL>${proxyPrefix.replace(/&/g, '&amp;')}</BaseURL>`);
+
+      return new Response(xmlText, {
         status: 200,
         headers: {
-          'Content-Type': 'application/dash+xml',
+          'Content-Type': 'application/dash+xml; charset=utf-8',
           'Access-Control-Allow-Origin': '*',
           'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
           'Access-Control-Allow-Headers': '*',
