@@ -2424,6 +2424,7 @@ app.get('/api/proxy-4k', async (c) => {
       }
 
       const parentUrl = targetUrl.substring(0, targetUrl.lastIndexOf('/') + 1);
+      const safeReferer = refererParam ? `&referer=${encodeURIComponent(refererParam)}` : '&referer=https%3A%2F%2Faniboom.one%2F';
       
       // Clean CRLF and split cleanly to avoid breaking tags
       const lines = text.replace(/\r/g, '').split('\n');
@@ -2437,7 +2438,7 @@ app.get('/api/proxy-4k', async (c) => {
               if (!p1.startsWith('http')) {
                 absUrl = p1.startsWith('/') ? new URL(p1, targetUrl).toString() : parentUrl + p1;
               }
-              return `URI="/api/proxy-4k?url=${encodeURIComponent(absUrl)}"`;
+              return `URI="/api/proxy-4k?url=${encodeURIComponent(absUrl)}${safeReferer}"`;
             });
           }
           return line;
@@ -2449,7 +2450,7 @@ app.get('/api/proxy-4k', async (c) => {
             ? new URL(trimmed, targetUrl).toString()
             : parentUrl + trimmed;
         }
-        return `/api/proxy-4k?url=${encodeURIComponent(absUrl)}`;
+        return `/api/proxy-4k?url=${encodeURIComponent(absUrl)}${safeReferer}`;
       });
       
       return new Response(rewrittenLines.join('\n'), {

@@ -1223,8 +1223,13 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
             },
             m3u8: function (video, url, artInstance) {
               if (Hls.isSupported()) {
-                if ((artInstance as any).hls)
-                  (artInstance as any).hls.destroy();
+                if ((artInstance as any).hls) {
+                  try {
+                    (artInstance as any).hls.stopLoad();
+                    (artInstance as any).hls.detachMedia();
+                    (artInstance as any).hls.destroy();
+                  } catch (_) {}
+                }
                 const hls = new Hls({
                   enableWorker: true,
                   maxBufferLength: 30,
@@ -1463,7 +1468,13 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                   }
                 });
 
-                artInstance.on("destroy", () => hls.destroy());
+                artInstance.on("destroy", () => {
+                  try {
+                    hls.stopLoad();
+                    hls.detachMedia();
+                    hls.destroy();
+                  } catch (_) {}
+                });
               } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
                 video.src = url;
               }
