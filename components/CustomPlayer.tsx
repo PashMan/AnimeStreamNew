@@ -940,16 +940,17 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
 
         if (isCancelled || !artRef.current) return;
 
+        const isDashStream = Boolean(
+          streamType === "dash" ||
+          src.includes(".mpd") ||
+          (src.includes("url=") && decodeURIComponent(src).includes(".mpd"))
+        );
+
         art = new Artplayer({
           container: artRef.current,
           url: finalUrl,
           poster: "",
-          type:
-            src.includes(".m3u8") || src.includes("/playlist") || streamType === "hls"
-              ? "m3u8"
-              : src.includes(".mpd") || streamType === "dash"
-                ? "mpd"
-                : undefined,
+          type: isDashStream ? "mpd" : "m3u8",
           theme: "#8B5CF6", // KamiAnime Signature Violet Color
           volume: 0.7,
           moreVideoAttr: {
@@ -1057,16 +1058,11 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
 
               const player = dashjs.MediaPlayer().create();
 
-              // Извлекаем чистый оригинальный URL CDN
-              let rawMpdUrl = url;
-              if (url.includes("url=")) {
-                try {
-                  rawMpdUrl = decodeURIComponent(url.split("url=")[1]);
-                } catch (_) {}
+              // Формируем безопасный прокси-URL для Dash.js
+              let proxyUrl = url;
+              if (!proxyUrl.startsWith("/api/proxy-4k") && !proxyUrl.startsWith("http://localhost") && proxyUrl.startsWith("http")) {
+                proxyUrl = `/api/proxy-4k?url=${encodeURIComponent(url)}&referer=${encodeURIComponent("https://aniboom.one/")}`;
               }
-
-              // Собираем сквозной path-based URL
-              const proxyUrl = `https://tight-sky-85f8.oshxycfdjab.workers.dev/${rawMpdUrl}`;
 
               const shouldAutoPlay = Boolean(autoPlay);
               player.initialize(video, proxyUrl, shouldAutoPlay);
