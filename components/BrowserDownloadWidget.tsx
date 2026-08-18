@@ -58,17 +58,35 @@ export const BrowserDownloadWidget: React.FC<BrowserDownloadWidgetProps> = ({
       // Attempt 1: Try primary URL (AniBoom prioritized)
       try {
         const primaryUrl = getCleanPlaylistUrl(episodeUrl, fallbackUrl, null, true);
+        const isAniboom = episodeUrl.includes("aniboom") || preferredProvider === "aniboom" || primaryUrl.includes("proxy-4k");
+
         const res = await fetch(primaryUrl);
         const text = await res.text();
-        const trimmed = text.trim().toLowerCase();
-        const isHtml = trimmed.startsWith("<!doctype") || trimmed.startsWith("<html") || trimmed.startsWith("<head") || trimmed.startsWith("<body");
+        const trimmed = text.trim();
+        const isXmlOrMpd = trimmed.startsWith("<?xml") || trimmed.startsWith("<MPD") || trimmed.startsWith("<mpd") || primaryUrl.includes(".mpd");
+        const isHtml = trimmed.toLowerCase().startsWith("<!doctype") || trimmed.toLowerCase().startsWith("<html") || trimmed.toLowerCase().startsWith("<head") || trimmed.toLowerCase().startsWith("<body");
+
+        if (isXmlOrMpd || (isAniboom && !isHtml && res.ok)) {
+          if (isMounted) {
+            setQualities(["1080", "720", "480", "360"]);
+            setActiveUrl(episodeUrl);
+            setResolvedProvider("aniboom");
+            setLoadingQualities(false);
+            return;
+          }
+        }
 
         if (!isHtml && res.ok) {
-          const data = JSON.parse(text);
-          if (data.success && Array.isArray(data.qualities) && data.qualities.length > 0) {
+          let data: any = null;
+          try {
+            data = JSON.parse(text);
+          } catch (_) {
+            data = null;
+          }
+
+          if (data && data.success && Array.isArray(data.qualities) && data.qualities.length > 0) {
             if (isMounted) {
               let qualList: (string | number)[] = [...data.qualities];
-              const isAniboom = episodeUrl.includes("aniboom") || preferredProvider === "aniboom";
               if (isAniboom && !qualList.includes(1080) && !qualList.includes("1080")) {
                 qualList.push(1080);
               }
@@ -82,7 +100,7 @@ export const BrowserDownloadWidget: React.FC<BrowserDownloadWidgetProps> = ({
           }
         }
       } catch (primaryErr) {
-        console.warn("Primary AniBoom resolution attempt failed, trying fallback:", primaryErr);
+        console.warn("Primary AniBoom resolution attempt handled gracefully:", primaryErr);
       }
 
       // Attempt 2: If primary failed and fallbackUrl exists, try fallback (Kodik)
