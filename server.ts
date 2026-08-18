@@ -3958,7 +3958,8 @@ app.get('/api/media/playlist', async (c) => {
 
     console.warn(`[Playlist Resolver Error]: ${err.message}. Returning 502.`);
     return c.json({
-      error: 'aniboom_stream_failed',
+      error: 'aniboom_stream_unavailable',
+      fallback_url: activeFallback || '',
       message: err.message
     }, 502);
   }
