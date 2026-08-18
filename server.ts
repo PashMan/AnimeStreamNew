@@ -2,6 +2,8 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { serve } from '@hono/node-server';
+import axios from 'axios';
+import * as cheerio from 'cheerio';
 import { makeRoomWebSocketHandler } from './utils/socketServer';
 import { upgradeWebSocket as nodeUpgradeWebSocket } from '@hono/node-server';
 import { upgradeWebSocket as cfUpgradeWebSocket } from 'hono/cloudflare-workers';
@@ -3376,476 +3378,116 @@ app.get('/api/media/aniboom/master.m3u8', async (c) => {
 app.get('/api/media/aniboom/resolve', handleAniboomResolve);
 app.post('/api/media/aniboom/resolve', handleAniboomResolve);
 
-// In-memory 4-hour LRU/Map cache for direct AniBoom Master HLS links
-interface AniboomStreamCache {
-  hlsSrc: string;
-  poster?: string;
-  decoded: any;
-  timestamp: number;
-}
-const aniboomStreamMemoryCache = new Map<string, AniboomStreamCache>();
-const ANIBOOM_CACHE_DURATION_MS = 4 * 60 * 60 * 1000; // 4 hours
+// In-memory 4-hour cache for direct AniBoom Master HLS links
+const playlistCache = new Map<string, { streamUrl: string; exp: number }>();
 
 app.get('/api/media/playlist', async (c) => {
-  let urlParam = c.req.query('url');
+  const targetUrl = c.req.query('url');
   const fallbackUrl = c.req.query('fallback_url');
 
-  if (!urlParam) {
-    return c.json({ error: 'url parameter is required' }, 400);
+  if (!targetUrl) {
+    if (fallbackUrl) {
+      return c.redirect(`/api/proxy-4k?url=${encodeURIComponent(fallbackUrl)}`, 302);
+    }
+    return c.json({ error: 'Missing url parameter' }, 400);
   }
 
-  // If Aniboom URL, extract M3U8 directly from data-parameters
-  const isAniboom = urlParam.includes('aniboom') || urlParam.includes('boom-img');
-  if (isAniboom) {
-    console.log(`🔍 [ANIBOOM PARSER] Received request for URL: ${urlParam}`);
-    try {
-      let aniboomUrl = urlParam.startsWith('//') ? `https:${urlParam}` : urlParam;
-      // Ensure episode and translation params are present (Aniboom returns 404 without translation param)
-      if (!aniboomUrl.includes('episode=')) {
-        aniboomUrl += (aniboomUrl.includes('?') ? '&' : '?') + 'episode=1';
-      }
-      if (!aniboomUrl.includes('translation=')) {
-        aniboomUrl += (aniboomUrl.includes('?') ? '&' : '?') + 'translation=16';
-      }
-
-      // Check 4-hour memory cache first
-      const cached = aniboomStreamMemoryCache.get(aniboomUrl);
-      if (cached && (Date.now() - cached.timestamp) < ANIBOOM_CACHE_DURATION_MS) {
-        console.log(`⚡ [ANIBOOM PARSER] Cache HIT (4h TTL): Reusing direct HLS stream: ${cached.hlsSrc}`);
-        const proxyOrigin = getProxyOrigin(c);
-        const targetQuality = c.req.query('quality');
-        if (!targetQuality) {
-          return c.redirect(`${proxyOrigin}/api/proxy-4k?url=${encodeURIComponent(cached.hlsSrc)}`, 302);
-        }
-        const baseUrl = cached.hlsSrc.substring(0, cached.hlsSrc.lastIndexOf('/') + 1);
-        const variantUrl = `${baseUrl}${targetQuality}.m3u8`;
-        return c.redirect(`${proxyOrigin}/api/proxy-4k?url=${encodeURIComponent(variantUrl)}`, 302);
-      }
-
-      // Extract parent parameter to set Referer: https://animego.me/anime/${slug}
-      let aniboomReferer = 'https://animego.me/';
-      try {
-        const parsedUrl = new URL(aniboomUrl);
-        const parentQuery = parsedUrl.searchParams.get('parent');
-        if (parentQuery) {
-          aniboomReferer = parentQuery;
-        }
-      } catch (_) {}
-
-      console.log(`🌐 [ANIBOOM PARSER] Normalized embed URL: ${aniboomUrl} | Referer: ${aniboomReferer}`);
-
-      const aRes = await fetch(aniboomUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-          'Referer': aniboomReferer,
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-        }
-      });
-
-      console.log('[ANIBOOM PARSER] Status:', aRes.status);
-      const aHtml = await aRes.text();
-
-      if (aRes.ok) {
-        const match = aHtml.match(/data-parameters="([^"]+)"/) || aHtml.match(/data-parameters='([^']+)'/);
-        if (match) {
-          const rawParams = match[1]
-            .replace(/&quot;/g, '"')
-            .replace(/&amp;/g, '&')
-            .replace(/&#039;/g, "'")
-            .replace(/&lt;/g, '<')
-            .replace(/&gt;/g, '>');
-
-          const decoded = JSON.parse(rawParams);
-          let hlsSrc = '';
-          if (decoded.hls) {
-            const hlsObj = typeof decoded.hls === 'string' ? JSON.parse(decoded.hls) : decoded.hls;
-            hlsSrc = hlsObj.src || hlsObj.url || '';
-          }
-
-          console.log(`📦 [ANIBOOM PARSER] Parsed metadata:`, {
-            id: decoded.id,
-            maxQuality: decoded.qualityVideo ? `${decoded.qualityVideo}p` : 'Auto',
-            durationSec: decoded.duration,
-            poster: decoded.poster,
-            hlsMasterUrl: hlsSrc
-          });
-
-          if (hlsSrc) {
-            if (hlsSrc.startsWith('//')) hlsSrc = `https:${hlsSrc}`;
-
-            // Save to 4-hour memory cache
-            aniboomStreamMemoryCache.set(aniboomUrl, {
-              hlsSrc,
-              poster: decoded.poster,
-              decoded,
-              timestamp: Date.now()
-            });
-
-            if (c.req.query('resolve') === 'true') {
-              return c.json({ success: true, url: hlsSrc, poster: decoded.poster, qualities: [1080, 720, 480, 360] });
-            }
-
-            const targetQuality = c.req.query('quality');
-            const proxyOrigin = getProxyOrigin(c);
-
-            // Directly proxy the full Master Playlist with all resolutions & audio streams
-            if (!targetQuality) {
-              console.log(`🎬 [ANIBOOM PARSER] Proxying authentic Master Playlist: ${hlsSrc}`);
-              return c.redirect(`${proxyOrigin}/api/proxy-4k?url=${encodeURIComponent(hlsSrc)}`, 302);
-            }
-
-            // If a specific quality was requested, redirect to proxy for that specific variant
-            const baseUrl = hlsSrc.substring(0, hlsSrc.lastIndexOf('/') + 1);
-            const variantUrl = `${baseUrl}${targetQuality}.m3u8`;
-            return c.redirect(`${proxyOrigin}/api/proxy-4k?url=${encodeURIComponent(variantUrl)}`, 302);
-          } else {
-            console.error(`❌ [ANIBOOM PARSER] 'hls' parameter missing in decoded JSON`);
-          }
-        } else {
-          console.error(`❌ [ANIBOOM PARSER] Could not find data-parameters attribute in embed HTML`);
-        }
-      } else {
-        console.error(`❌ [ANIBOOM PARSER] Embed HTML fetch failed with status: ${aRes.status}`);
-      }
-
-      // Safe fallback on Aniboom non-200 or extraction miss
-      if (fallbackUrl) {
-        console.log(`[MEDIA PROXY] Aniboom extraction missed/failed, falling back immediately to secondary stream URL: ${fallbackUrl}`);
-        urlParam = fallbackUrl;
-      } else {
-        return c.json({
-          source: 'kodik_fallback',
-          error: `Aniboom extraction failed (Status: ${aRes.status}).`,
-          warning: 'Stream unavailable on Aniboom'
-        }, 200);
-      }
-    } catch (aErr: any) {
-      console.warn(`❌ [ANIBOOM PARSER] Exception occurred: ${aErr.message}`);
-      if (fallbackUrl) {
-        console.log(`[MEDIA PROXY] Aniboom exception, falling back immediately to secondary stream URL: ${fallbackUrl}`);
-        urlParam = fallbackUrl;
-      } else {
-        return c.json({
-          source: 'kodik_fallback',
-          error: `Aniboom proxy exception: ${aErr.message}`,
-          warning: 'Stream unavailable on Aniboom'
-        }, 200);
-      }
-    }
+  // 1. Проверяем кэш в памяти (TTL 4 часа)
+  const now = Date.now();
+  const cached = playlistCache.get(targetUrl);
+  if (cached && cached.exp > now) {
+    console.log(`⚡ [Playlist Cache HIT]: Reusing ${cached.streamUrl}`);
+    return c.redirect(cached.streamUrl, 302);
   }
 
-  // If Collaps URL, attempt Collaps extraction first
-  const isCollaps = urlParam.includes('collaps') || urlParam.includes('ortified');
-  if (isCollaps) {
-    console.log(`[COLLAPS PROXY] Attempting playlist extraction for: ${urlParam}`);
-    try {
-      let iframeUrl = urlParam.startsWith('//') ? `https:${urlParam}` : urlParam;
-      const cRes = await fetch(iframeUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-          'Referer': 'https://apicollaps.cc/'
-        }
-      });
-      if (cRes.ok) {
-        const cHtml = await cRes.text();
-        const m3u8Match = cHtml.match(/https?:\/\/[^"'\s]+\.m3u8[^"'\s]*/i) ||
-                          cHtml.match(/["']([^"']+\.m3u8[^"']*)["']/i);
-        if (m3u8Match) {
-          let streamUrl = m3u8Match[1] || m3u8Match[0];
-          if (streamUrl.startsWith('//')) streamUrl = `https:${streamUrl}`;
-          console.log(`[COLLAPS PROXY] Resolved direct m3u8: ${streamUrl}`);
-          return c.redirect(streamUrl, 302);
-        }
-      }
-    } catch (cErr: any) {
-      console.warn(`[COLLAPS PROXY] Collaps extraction failed: ${cErr.message}`);
-    }
-    // If Collaps extraction failed and fallbackUrl exists, use fallbackUrl
-    if (fallbackUrl && !fallbackUrl.includes('collaps') && !fallbackUrl.includes('ortified')) {
-      console.log(`[MEDIA PROXY] Falling back to secondary stream URL: ${fallbackUrl}`);
-      urlParam = fallbackUrl;
-    } else {
-      return c.json({ error: 'Collaps streaming proxy is unavailable. Please use direct iframe player.' }, 400);
-    }
+  // 2. Если передан не Aniboom — обрабатываем как Kodik/Collaps
+  if (!targetUrl.includes('aniboom')) {
+    const finalUrl = `/api/proxy-4k?url=${encodeURIComponent(targetUrl)}`;
+    return c.redirect(finalUrl, 302);
   }
 
   try {
-    let iframeUrl = urlParam.startsWith('//') ? `https:${urlParam}` : urlParam;
-    iframeUrl = iframeUrl.replace(/(kodik\.info|kodik\.cc|kodik\.biz|kodik\.net|kodik\.tv|kodik\.club|kodik\.site|kodik\.space|kodik\.ru|kodikonline\.com|kodikhd\.club|kodik-api\.com)/g, 'kodikplayer.com');
-    console.log(`[KODIK PROXY] Extracting playlist from: ${iframeUrl}`);
+    // Извлекаем parent для заголовка Referer
+    const parentMatch = targetUrl.match(/[?&]parent=([^&]+)/);
+    const referer = parentMatch ? decodeURIComponent(parentMatch[1]) : 'https://animego.me/';
 
-    // 1. Fetch iframe page
-    const iframeRes = await fetch(iframeUrl, {
+    console.log(`🌐 [Aniboom Fetch]: ${targetUrl} | Referer: ${referer}`);
+
+    const response = await axios.get(targetUrl, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-        'Referer': 'https://shikimori.one/'
-      }
-    });
-    const html = await iframeRes.text();
-
-    // 2. Extract parameters
-    const urlParamsMatch = html.match(/urlParams\s*=\s*'([^']+)'/) || html.match(/urlParams\s*=\s*"([^"]+)"/) || html.match(/urlParams\s*=\s*({[^;]+})/);
-    const hashMatch = html.match(/\.hash\s*=\s*'([^']+)'/) || html.match(/\.hash\s*=\s*"([^"]+)"/) || html.match(/\.hash\s*=\s*['"]([^'"]+)['"]/);
-    const idMatch = html.match(/\.id\s*=\s*'([^']+)'/) || html.match(/\.id\s*=\s*"([^"]+)"/) || html.match(/\.id\s*=\s*['"]([^'"]+)['"]/);
-    const typeMatch = html.match(/\.type\s*=\s*'([^']+)'/) || html.match(/\.type\s*=\s*"([^"]+)"/) || html.match(/\.type\s*=\s*['"]([^'"]+)['"]/);
-
-    if (!urlParamsMatch || !hashMatch || !idMatch || !typeMatch) {
-      console.error('[KODIK PROXY] Failed to parse iframe params');
-      return c.json({ error: 'Failed to parse iframe parameters. Stream might be offline.' }, 404);
-    }
-
-    const urlParams = JSON.parse(urlParamsMatch[1]);
-    const videoHash = hashMatch[1];
-    const videoId = idMatch[1];
-    const videoType = typeMatch[1];
-
-    // Find script url (preferring serial/player minified js in assets)
-    let scriptUrl = '';
-    const scriptTagRegex = /<script\b[^>]*?\bsrc\s*=\s*["']([^"']+\.js[^"']*)["']/gi;
-    let match;
-    const candidateScripts: string[] = [];
-    while ((match = scriptTagRegex.exec(html)) !== null) {
-      candidateScripts.push(match[1]);
-    }
-
-    const assetScript = candidateScripts.find(s => s.includes('/assets/'));
-    if (assetScript) {
-      scriptUrl = assetScript;
-    } else if (candidateScripts.length > 0) {
-      scriptUrl = candidateScripts[0];
-    }
-
-    if (!scriptUrl) {
-      const inlineJsMatch = html.match(/["'](\/assets\/js\/app\.[^"']+\.js)["']/);
-      if (inlineJsMatch) {
-        scriptUrl = inlineJsMatch[1];
-      }
-    }
-
-    if (!scriptUrl) {
-      scriptUrl = '/assets/js/app.serial.js'; // fallback
-    }
-
-    const baseUrlObj = new URL(iframeUrl);
-    const scriptAbsoluteUrl = scriptUrl.startsWith('http') ? scriptUrl : `${baseUrlObj.protocol}//${baseUrlObj.host}${scriptUrl}`;
-
-    // 3. Request script to get Gbox Ajax link
-    const scriptRes = await fetch(scriptAbsoluteUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Referer': iframeUrl
-      }
-    });
-    const scriptHtml = await scriptRes.text();
-
-    const ajaxMatch = scriptHtml.match(/\$.ajax\([\s\S]*?url:\s*atob\("([^"]+)"\)/) || 
-                      scriptHtml.match(/atob\("([^"'\(\)]+)"\)/);
-    if (!ajaxMatch) {
-      console.error('[KODIK PROXY] Gbox ajax match failed');
-      return c.json({ error: 'Could not extract player API script' }, 500);
-    }
-
-    const gboxPath = atob(ajaxMatch[1]);
-    const gboxUrl = `${baseUrlObj.protocol}//${baseUrlObj.host}${gboxPath}`;
-
-    // 4. Request video links from gbox
-    const payload = new URLSearchParams({
-      hash: videoHash,
-      id: videoId,
-      type: videoType,
-      d: urlParams.d || 'kodik.info',
-      d_sign: urlParams.d_sign || '',
-      pd: urlParams.pd || '',
-      pd_sign: urlParams.pd_sign || '',
-      ref: safeDecodeURIComponent(urlParams.ref || ''),
-      ref_sign: urlParams.ref_sign || '',
-      bad_user: 'true',
-      cdn_is_working: 'true'
-    });
-
-    const gboxRes = await fetch(gboxUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Referer': iframeUrl
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Referer': referer,
+        'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8'
       },
-      body: payload.toString()
+      timeout: 6000
     });
 
-    const gboxData = await gboxRes.json() as any;
-    if (!gboxData || !gboxData.links) {
-      console.error('[KODIK PROXY] Gbox returned no links', gboxData);
-      return new Response('Error: Failed to retrieve stream links from Kodik', {
-        status: 500,
-        headers: {
-          'Content-Type': 'text/plain',
-          'Access-Control-Allow-Origin': '*'
-        }
-      });
+    const $ = cheerio.load(response.data);
+    let rawParams = $('#video, [data-parameters]').attr('data-parameters');
+
+    if (!rawParams) {
+      const match = typeof response.data === 'string'
+        ? (response.data.match(/data-parameters="([^"]+)"/) || response.data.match(/data-parameters='([^']+)'/))
+        : null;
+      if (match) rawParams = match[1];
     }
 
-    // 5. Build dynamic Master Playlist or yield single-quality playlist based on query parameters
-    const targetQuality = c.req.query('quality');
-    const qualities = Object.keys(gboxData.links).map(Number).sort((a,b) => b - a); // descending quality: 720, 480, 360
-
-    if (c.req.query('resolve') === 'true') {
-      const resolvedLinks: Record<string, string> = {};
-      for (const qual of Object.keys(gboxData.links)) {
-        const listSources = gboxData.links[qual];
-        if (listSources && listSources.length > 0) {
-          try {
-            const rawSrc = listSources[0].src;
-            const decryptedUrl = rawSrc.includes('mp4:hls:manifest') ? rawSrc : decodeKodikUrl(rawSrc);
-            resolvedLinks[qual] = decryptedUrl.startsWith('//') ? `https:${decryptedUrl}` : decryptedUrl;
-          } catch (de_err: any) {
-            console.error(`[KODIK PROXY] Decryption failed for quality ${qual}:`, de_err.message);
-          }
-        }
-      }
-      c.header('Access-Control-Allow-Origin', '*');
-      c.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
-      c.header('Access-Control-Allow-Headers', '*');
-      return c.json({
-        success: true,
-        links: resolvedLinks,
-        qualities
-      });
+    if (!rawParams) {
+      throw new Error('data-parameters container not found in Aniboom embed');
     }
 
-    if (!targetQuality && qualities.length > 1) {
-      console.log(`[KODIK PROXY] Building Master Playlist for available qualities: ${qualities.join(', ')}`);
-      const masterLines = ['#EXTM3U', '#EXT-X-VERSION:3'];
-      
-      qualities.forEach(q => {
-        let width = 1280, height = 720, bandwidth = 2200000;
-        if (q === 480) {
-          width = 854; height = 480; bandwidth = 1100000;
-        } else if (q === 360) {
-          width = 640; height = 360; bandwidth = 600000;
-        } else if (q === 1080) {
-          width = 1920; height = 1080; bandwidth = 4500000;
-        }
-        
-        masterLines.push(`#EXT-X-STREAM-INF:BANDWIDTH=${bandwidth},RESOLUTION=${width}x${height},NAME="${q}p"`);
-        masterLines.push(`/api/media/playlist?url=${encodeURIComponent(iframeUrl)}&quality=${q}`);
-      });
+    // Декодируем сущности и парсим первый уровень
+    const decodedHtml = rawParams
+      .replace(/&quot;/g, '"')
+      .replace(/&amp;/g, '&')
+      .replace(/&#039;/g, "'")
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>');
+    const params = JSON.parse(decodedHtml);
 
-      return new Response(masterLines.join('\n'), {
-        status: 200,
-        headers: {
-          'Content-Type': 'application/x-mpegURL',
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, OPTIONS',
-          'Access-Control-Allow-Headers': '*',
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-        }
-      });
+    // ВАЖНО: HLS и DASH в Aniboom хранятся как сериализованные строки внутри JSON
+    let hlsData = params.hls;
+    if (typeof hlsData === 'string') {
+      try {
+        hlsData = JSON.parse(hlsData);
+      } catch (_) {}
     }
 
-    const selectedQual = targetQuality || String(qualities[0] || 720);
-    const listSources = gboxData.links[selectedQual] || gboxData.links[String(qualities[0] || 720)];
-    if (!listSources || listSources.length === 0) {
-      return new Response('Error: No video stream matches found for target quality', {
-        status: 500,
-        headers: {
-          'Content-Type': 'text/plain',
-          'Access-Control-Allow-Origin': '*'
-        }
-      });
+    let dashData = params.dash;
+    if (typeof dashData === 'string') {
+      try {
+        dashData = JSON.parse(dashData);
+      } catch (_) {}
     }
 
-    const rawSrc = listSources[0].src;
-    // Decrypt the URL if it doesn't already contain manifest
-    const decryptedUrl = rawSrc.includes('mp4:hls:manifest') ? rawSrc : decodeKodikUrl(rawSrc);
-    const playlistUrl = decryptedUrl.startsWith('//') ? `https:${decryptedUrl}` : decryptedUrl;
+    let rawStreamUrl = (typeof hlsData === 'string' ? hlsData : (hlsData?.src || hlsData?.url || hlsData?.file)) ||
+                       (typeof dashData === 'string' ? dashData : (dashData?.src || dashData?.url || dashData?.file));
 
-    console.log(`[KODIK PROXY] Fetched decrypted stream. Base HLS: ${playlistUrl}`);
-
-    // 6. Fetch the actual M3U8 file contents
-    const m3u8Res = await fetch(playlistUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Referer': 'https://kodik.info/'
-      }
-    });
-
-    if (!m3u8Res.ok) {
-      console.error(`[KODIK PROXY] Failed to fetch M3U8, status: ${m3u8Res.status}`);
-      return new Response(`Error: Kodik manifest loading failed with status ${m3u8Res.status}`, {
-        status: m3u8Res.status,
-        headers: {
-          'Content-Type': 'text/plain',
-          'Access-Control-Allow-Origin': '*'
-        }
-      });
+    if (!rawStreamUrl) {
+      throw new Error('Direct video source URL not found in data-parameters');
     }
 
-    const m3u8Text = await m3u8Res.text();
-
-    // Validation: Ensure the playlist starts with #EXTM3U (not HTML error or blank page)
-    if (!m3u8Text || !m3u8Text.trim().startsWith('#EXTM3U')) {
-      console.error(`[KODIK PROXY ERROR] Manifest from Kodik is empty or invalid. Res length: ${m3u8Text?.length || 0}. Starts with:`, m3u8Text ? m3u8Text.slice(0, 500) : "empty");
-      return new Response('Error: Proxy loaded an invalid M3U8 manifest from Kodik. The source might be blocking or offline.', {
-        status: 502,
-        headers: {
-          'Content-Type': 'text/plain',
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, OPTIONS',
-          'Access-Control-Allow-Headers': '*'
-        }
-      });
+    if (rawStreamUrl.startsWith('//')) {
+      rawStreamUrl = 'https:' + rawStreamUrl;
     }
 
-    // 7. Rewrite chunk entries in M3U8
-    const m3u8Base = playlistUrl.substring(0, playlistUrl.lastIndexOf('/') + 1);
+    console.log(`✅ [Aniboom Stream Resolved]: ${rawStreamUrl}`);
+
+    const finalStreamUrl = `/api/proxy-4k?url=${encodeURIComponent(rawStreamUrl)}&referer=${encodeURIComponent('https://aniboom.one/')}`;
     
-    // Clean CRLF and split cleanly to avoid breaking tags
-    const lines = m3u8Text.replace(/\r/g, '').split('\n');
-    const proxyUrlBase = `${getProxyOrigin(c)}/api/media/segment?url=`;
+    // Сохраняем в кэш
+    playlistCache.set(targetUrl, { streamUrl: finalStreamUrl, exp: now + 4 * 3600 * 1000 });
+    return c.redirect(finalStreamUrl, 302);
 
-    const rewrittenLines = lines.map(line => {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#')) {
-        return line;
-      }
-      
-      // Resolve path
-      let absSegmentUrl = trimmed;
-      if (!trimmed.startsWith('http')) {
-        absSegmentUrl = trimmed.startsWith('/') 
-          ? new URL(trimmed, playlistUrl).toString()
-          : m3u8Base + trimmed;
-      }
-
-      // Add segment proxy URL
-      return `${proxyUrlBase}${encodeURIComponent(absSegmentUrl)}`;
-    });
-
-    const rewrittenText = rewrittenLines.join('\n');
-
-    return new Response(rewrittenText, {
-       status: 200,
-       headers: {
-         'Content-Type': 'application/x-mpegURL',
-         'Access-Control-Allow-Origin': '*',
-         'Access-Control-Allow-Methods': 'GET, OPTIONS',
-         'Access-Control-Allow-Headers': '*',
-         'Cache-Control': 'no-cache, no-store, must-revalidate',
-       }
-    });
-
-  } catch (error: any) {
-    console.error('[KODIK PROXY ERROR]', error);
-    return new Response('Error: Failed to compile streaming proxy playlist. ' + error.message, {
-      status: 500,
-      headers: {
-        'Content-Type': 'text/plain',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, OPTIONS',
-        'Access-Control-Allow-Headers': '*'
-      }
-    });
+  } catch (err: any) {
+    console.warn(`[Playlist Resolver Warning]: ${err.message}. Safe-fallback to Kodik.`);
+    
+    // Гарантированное исключение 500 ошибки: отдаем рабочий Kodik
+    if (fallbackUrl) {
+      return c.redirect(`/api/proxy-4k?url=${encodeURIComponent(fallbackUrl)}`, 302);
+    }
+    
+    return c.json({ error: 'Stream extraction failed', fallback: true }, 200);
   }
 });
 

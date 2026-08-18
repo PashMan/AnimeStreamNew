@@ -56,7 +56,12 @@ export async function onRequest(context: any) {
 
   const urlObj = new URL(request.url);
   const urlParam = urlObj.searchParams.get('url');
+  const fallbackUrl = urlObj.searchParams.get('fallback_url');
+
   if (!urlParam) {
+    if (fallbackUrl) {
+      return Response.redirect(`${getProxyOrigin(request)}/api/proxy-4k?url=${encodeURIComponent(fallbackUrl)}`, 302);
+    }
     return new Response(JSON.stringify({ error: 'url parameter is required' }), {
       status: 400,
       headers: {
@@ -64,6 +69,74 @@ export async function onRequest(context: any) {
         'Access-Control-Allow-Origin': '*'
       }
     });
+  }
+
+  // If Aniboom URL
+  if (urlParam.includes('aniboom')) {
+    try {
+      const parentMatch = urlParam.match(/[?&]parent=([^&]+)/);
+      const referer = parentMatch ? decodeURIComponent(parentMatch[1]) : 'https://animego.me/';
+
+      const aRes = await fetch(urlParam, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          'Referer': referer,
+          'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8'
+        }
+      });
+
+      if (aRes.ok) {
+        const aHtml = await aRes.text();
+        const match = aHtml.match(/data-parameters="([^"]+)"/) || aHtml.match(/data-parameters='([^']+)'/);
+        if (match) {
+          const decodedHtml = match[1]
+            .replace(/&quot;/g, '"')
+            .replace(/&amp;/g, '&')
+            .replace(/&#039;/g, "'")
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>');
+          const params = JSON.parse(decodedHtml);
+
+          let hlsData = params.hls;
+          if (typeof hlsData === 'string') {
+            try {
+              hlsData = JSON.parse(hlsData);
+            } catch (_) {}
+          }
+
+          let dashData = params.dash;
+          if (typeof dashData === 'string') {
+            try {
+              dashData = JSON.parse(dashData);
+            } catch (_) {}
+          }
+
+          let rawStreamUrl = (typeof hlsData === 'string' ? hlsData : (hlsData?.src || hlsData?.url || hlsData?.file)) ||
+                             (typeof dashData === 'string' ? dashData : (dashData?.src || dashData?.url || dashData?.file));
+
+          if (rawStreamUrl) {
+            if (rawStreamUrl.startsWith('//')) {
+              rawStreamUrl = 'https:' + rawStreamUrl;
+            }
+            const finalStreamUrl = `${getProxyOrigin(request)}/api/proxy-4k?url=${encodeURIComponent(rawStreamUrl)}&referer=${encodeURIComponent('https://aniboom.one/')}`;
+            return Response.redirect(finalStreamUrl, 302);
+          }
+        }
+      }
+      throw new Error('Aniboom stream extraction failed');
+    } catch (aErr: any) {
+      console.warn(`[CF Playlist Resolver Warning]: ${aErr.message}. Safe-fallback to Kodik.`);
+      if (fallbackUrl) {
+        return Response.redirect(`${getProxyOrigin(request)}/api/proxy-4k?url=${encodeURIComponent(fallbackUrl)}`, 302);
+      }
+      return new Response(JSON.stringify({ error: 'Stream extraction failed', fallback: true }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*'
+        }
+      });
+    }
   }
 
   try {
