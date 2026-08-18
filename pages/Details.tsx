@@ -2332,36 +2332,42 @@ const Details: React.FC = () => {
 
             {/* Direct Browser Downloader Card */}
             {(() => {
-              if (selectedPlayer === "Kodik") {
-                const baseIframe =
-                  selectedTranslation?.iframe ||
-                  players.find((p) => p.name === "Kodik")?.iframe;
-                if (baseIframe) {
-                  let kodikIframeWithEpisode = baseIframe;
-                  try {
-                    const url = new URL(
-                      kodikIframeWithEpisode.startsWith("//")
-                        ? `https:${kodikIframeWithEpisode}`
-                        : kodikIframeWithEpisode,
-                    );
-                    if (paramEpisode) {
-                      url.searchParams.set("episode", paramEpisode);
-                    }
-                    kodikIframeWithEpisode = url.toString();
-                  } catch (e) {}
-                  
-                  return (
-                    <BrowserDownloadWidget
-                      episodeUrl={kodikIframeWithEpisode}
-                      animeTitle={anime?.title || "Anime"}
-                      episodeNumber={paramEpisode || "1"}
-                      shikimoriId={anime?.id || id}
-                      translationId={selectedTranslation?.id ? String(selectedTranslation.id) : undefined}
-                    />
-                  );
+              const epNum = parseInt(paramEpisode || "1") || 1;
+              const defaultAniboom = players.find((p) => p.name === "Aniboom")?.iframe;
+              const defaultKodik = players.find((p) => p.name === "Kodik")?.iframe;
+
+              // 1. AniBoom URL (Prioritized for 1080p Ultra HD)
+              let aniboomIframe = getResolvedAniboomUrl(selectedTranslation, epNum, defaultAniboom);
+              if (!aniboomIframe && resolvedStream?.provider === "aniboom" && resolvedStream?.url) {
+                aniboomIframe = resolvedStream.url;
+              }
+              if (!aniboomIframe) {
+                const trWithAniboom = translations.find((tr: any) => tr?.aniboom_iframe || (tr?.iframe && tr.iframe.includes("aniboom")));
+                if (trWithAniboom) {
+                  aniboomIframe = getResolvedAniboomUrl(trWithAniboom, epNum, defaultAniboom);
                 }
               }
-              return null;
+
+              // 2. Kodik URL (Fallback for 720p HD)
+              const kodikIframe = getResolvedKodikUrl(selectedTranslation, epNum, defaultKodik);
+
+              const primaryUrl = aniboomIframe || kodikIframe || "";
+              const fallbackUrl = aniboomIframe ? (kodikIframe || undefined) : undefined;
+              const preferredProvider = aniboomIframe ? "aniboom" : "kodik";
+
+              if (!primaryUrl) return null;
+
+              return (
+                <BrowserDownloadWidget
+                  episodeUrl={primaryUrl}
+                  fallbackUrl={fallbackUrl}
+                  preferredProvider={preferredProvider}
+                  animeTitle={anime?.title || "Anime"}
+                  episodeNumber={paramEpisode || "1"}
+                  shikimoriId={anime?.id || id}
+                  translationId={selectedTranslation?.id ? String(selectedTranslation.id) : undefined}
+                />
+              );
             })()}
           </div>
         </div>
@@ -2793,16 +2799,32 @@ const Details: React.FC = () => {
               const defaultAniboom = players.find((p) => p.name === "Aniboom")?.iframe;
               const defaultKodik = players.find((p) => p.name === "Kodik")?.iframe;
 
-              // Automatic best stream resolution: Prioritize AniBoom (1080p), fallback to Kodik (720p)
-              const aniboomIframe = getResolvedAniboomUrl(selectedTranslation, epNum, defaultAniboom);
+              // 1. AniBoom URL (Prioritized for 1080p Ultra HD)
+              let aniboomIframe = getResolvedAniboomUrl(selectedTranslation, epNum, defaultAniboom);
+              if (!aniboomIframe && resolvedStream?.provider === "aniboom" && resolvedStream?.url) {
+                aniboomIframe = resolvedStream.url;
+              }
+              if (!aniboomIframe) {
+                const trWithAniboom = translations.find((tr: any) => tr?.aniboom_iframe || (tr?.iframe && tr.iframe.includes("aniboom")));
+                if (trWithAniboom) {
+                  aniboomIframe = getResolvedAniboomUrl(trWithAniboom, epNum, defaultAniboom);
+                }
+              }
+
+              // 2. Kodik URL (Fallback for 720p HD)
               const kodikIframe = getResolvedKodikUrl(selectedTranslation, epNum, defaultKodik);
-              const targetUrl = aniboomIframe || kodikIframe || "";
+
+              const primaryUrl = aniboomIframe || kodikIframe || "";
+              const fallbackUrl = aniboomIframe ? (kodikIframe || undefined) : undefined;
+              const preferredProvider = aniboomIframe ? "aniboom" : "kodik";
 
               return (
                 <div className="space-y-4">
-                  {targetUrl ? (
+                  {primaryUrl ? (
                     <BrowserDownloadWidget
-                      episodeUrl={targetUrl}
+                      episodeUrl={primaryUrl}
+                      fallbackUrl={fallbackUrl}
+                      preferredProvider={preferredProvider}
                       animeTitle={anime?.title || "Anime"}
                       episodeNumber={paramEpisode || "1"}
                       shikimoriId={anime?.id || id}

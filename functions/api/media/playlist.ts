@@ -98,18 +98,32 @@ export async function onRequest(context: any) {
     try {
       let referer = 'https://animego.me/';
       const parentMatch = cleanUrlParam.match(/[?&]parent=([^&]+)/i);
-      let targetFetchUrl = cleanUrlParam;
       if (parentMatch) {
         const decodedParent = safeUnescapeUrl(parentMatch[1]);
         if (decodedParent.startsWith('http://') || decodedParent.startsWith('https://')) {
           referer = decodedParent;
         }
-      } else {
-        // Automatically inject parent param matching the default referer so AniBoom validation succeeds
-        targetFetchUrl += (targetFetchUrl.includes('?') ? '&' : '?') + `parent=${encodeURIComponent(referer)}`;
       }
 
+      let parsedTargetUrl: URL;
+      try {
+        parsedTargetUrl = new URL(cleanUrlParam.startsWith('//') ? `https:${cleanUrlParam}` : cleanUrlParam);
+      } catch (_) {
+        parsedTargetUrl = new URL('https://aniboom.one');
+      }
+
+      if (!parsedTargetUrl.searchParams.has('parent')) {
+        parsedTargetUrl.searchParams.set('parent', referer);
+      }
+
+      const existingTranslation = parsedTargetUrl.searchParams.get('translation');
+      const translationCandidates = existingTranslation ? [existingTranslation] : ['16', '24', '1', '2', '3', ''];
+
+      const originalParent = parsedTargetUrl.searchParams.get('parent') || referer;
+      const originHost = originalParent.startsWith('http') ? new URL(originalParent).origin : 'https://animego.me';
+
       const candidateReferers = [
+        originalParent,
         referer,
         'https://animego.me/',
         'https://animego.org/',
@@ -117,37 +131,41 @@ export async function onRequest(context: any) {
       ];
 
       let aHtml = '';
-      for (const ref of candidateReferers) {
-        try {
-          const originHost = ref.startsWith('http') ? new URL(ref).origin : 'https://animego.me';
-          let fetchTarget = targetFetchUrl;
-          if (ref !== referer) {
-            try {
-              const u = new URL(fetchTarget);
-              u.searchParams.set('parent', ref);
-              fetchTarget = u.toString();
-            } catch (_) {}
-          }
+      outerLoop:
+      for (const tr of translationCandidates) {
+        for (const ref of candidateReferers) {
+          try {
+            const currentOrigin = ref.startsWith('http') ? new URL(ref).origin : originHost;
+            const fetchUrlObj = new URL(parsedTargetUrl.toString());
+            if (tr) {
+              fetchUrlObj.searchParams.set('translation', tr);
+            } else {
+              fetchUrlObj.searchParams.delete('translation');
+            }
+            if (!fetchUrlObj.searchParams.has('parent')) {
+              fetchUrlObj.searchParams.set('parent', ref);
+            }
 
-          const aRes = await fetch(fetchTarget, {
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-              'Referer': ref,
-              'Origin': originHost,
-              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-              'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
-              'Sec-Fetch-Dest': 'iframe',
-              'Sec-Fetch-Mode': 'navigate',
-              'Sec-Fetch-Site': 'cross-site'
+            const aRes = await fetch(fetchUrlObj.toString(), {
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                'Referer': ref,
+                'Origin': currentOrigin,
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
+                'Sec-Fetch-Dest': 'iframe',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'cross-site'
+              }
+            });
+            if (aRes.ok) {
+              aHtml = await aRes.text();
+              if (aHtml && (aHtml.includes('data-parameters') || aHtml.includes('id="video"'))) {
+                break outerLoop;
+              }
             }
-          });
-          if (aRes.ok) {
-            aHtml = await aRes.text();
-            if (aHtml && aHtml.includes('data-parameters')) {
-              break;
-            }
-          }
-        } catch (_) {}
+          } catch (_) {}
+        }
       }
 
       if (aHtml) {

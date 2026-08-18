@@ -3,6 +3,8 @@ import { Download, Loader2, Film, CheckCircle, AlertTriangle } from "lucide-reac
 
 interface BrowserDownloadWidgetProps {
   episodeUrl: string;
+  fallbackUrl?: string;
+  preferredProvider?: "aniboom" | "kodik" | string;
   animeTitle: string;
   episodeNumber: string | number;
   shikimoriId?: string | number;
@@ -22,6 +24,8 @@ interface DownloadProgress {
 
 export const BrowserDownloadWidget: React.FC<BrowserDownloadWidgetProps> = ({
   episodeUrl,
+  fallbackUrl,
+  preferredProvider,
   animeTitle,
   episodeNumber,
   shikimoriId,
@@ -30,41 +34,80 @@ export const BrowserDownloadWidget: React.FC<BrowserDownloadWidgetProps> = ({
   const [qualities, setQualities] = useState<string[]>([]);
   const [loadingQualities, setLoadingQualities] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activeUrl, setActiveUrl] = useState<string>(episodeUrl);
+  const [resolvedProvider, setResolvedProvider] = useState<"aniboom" | "kodik">("aniboom");
   
   const [selectedQuality, setSelectedQuality] = useState<string | null>(null);
   const [progress, setProgress] = useState<DownloadProgress | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [localDownloadBlobUrl, setLocalDownloadBlobUrl] = useState<string | null>(null);
 
-  // Load available qualities from Kodik playlist endpoint
+  // Load available qualities from AniBoom or Kodik playlist endpoint
   useEffect(() => {
     if (!episodeUrl) return;
+    setActiveUrl(episodeUrl);
+
+    let isMounted = true;
 
     const fetchQualities = async () => {
       setLoadingQualities(true);
       setError(null);
       setQualities([]);
+
+      // Attempt 1: Try primary URL (AniBoom prioritized)
       try {
-        const res = await fetch(`/api/media/playlist?url=${encodeURIComponent(episodeUrl)}&resolve=true`);
-        
+        const primaryUrl = `/api/media/playlist?url=${encodeURIComponent(episodeUrl)}&fallback_url=${encodeURIComponent(fallbackUrl || '')}&resolve=true`;
+        const res = await fetch(primaryUrl);
         const text = await res.text();
         const trimmed = text.trim().toLowerCase();
         const isHtml = trimmed.startsWith("<!doctype") || trimmed.startsWith("<html") || trimmed.startsWith("<head") || trimmed.startsWith("<body");
-        if (isHtml || !res.ok) {
-          throw new Error("Загрузка видео заблокирована Вашим браузером. Пожалуйста, откройте страницу в новой вкладке, временно отключите блокировщики рекламы или скачайте файл через Telegram-бота ниже!");
-        }
 
-        const data = JSON.parse(text);
-        if (data.success && data.qualities) {
-          const sorted = [...data.qualities].sort((a, b) => Number(b) - Number(a));
-          setQualities(sorted.map(String));
-        } else {
-          throw new Error("Качество видео не определено");
+        if (!isHtml && res.ok) {
+          const data = JSON.parse(text);
+          if (data.success && Array.isArray(data.qualities) && data.qualities.length > 0) {
+            if (isMounted) {
+              const sorted = [...data.qualities].sort((a, b) => Number(b) - Number(a));
+              setQualities(sorted.map(String));
+              setActiveUrl(episodeUrl);
+              setResolvedProvider(episodeUrl.includes("aniboom") || sorted.includes(1080) || sorted.includes("1080") ? "aniboom" : "kodik");
+              setLoadingQualities(false);
+              return;
+            }
+          }
         }
-      } catch (err: any) {
-        console.error("Error fetching qualities:", err);
-        setError(err.message || "Ошибка загрузки потока");
-      } finally {
+      } catch (primaryErr) {
+        console.warn("Primary AniBoom resolution attempt failed, trying fallback:", primaryErr);
+      }
+
+      // Attempt 2: If primary failed and fallbackUrl exists, try fallback (Kodik)
+      if (fallbackUrl && fallbackUrl !== episodeUrl) {
+        try {
+          const fallbackReqUrl = `/api/media/playlist?url=${encodeURIComponent(fallbackUrl)}&resolve=true`;
+          const fRes = await fetch(fallbackReqUrl);
+          const fText = await fRes.text();
+          const fTrimmed = fText.trim().toLowerCase();
+          const isFHtml = fTrimmed.startsWith("<!doctype") || fTrimmed.startsWith("<html") || fTrimmed.startsWith("<head") || fTrimmed.startsWith("<body");
+
+          if (!isFHtml && fRes.ok) {
+            const fData = JSON.parse(fText);
+            if (fData.success && Array.isArray(fData.qualities) && fData.qualities.length > 0) {
+              if (isMounted) {
+                const sorted = [...fData.qualities].sort((a, b) => Number(b) - Number(a));
+                setQualities(sorted.map(String));
+                setActiveUrl(fallbackUrl);
+                setResolvedProvider("kodik");
+                setLoadingQualities(false);
+                return;
+              }
+            }
+          }
+        } catch (fErr) {
+          console.error("Fallback Kodik resolution attempt failed:", fErr);
+        }
+      }
+
+      if (isMounted) {
+        setError("Не удалось автоматически определить качества серии для загрузки. Попробуйте обновить страницу или скачайте серию через Telegram.");
         setLoadingQualities(false);
       }
     };
@@ -78,7 +121,11 @@ export const BrowserDownloadWidget: React.FC<BrowserDownloadWidgetProps> = ({
       URL.revokeObjectURL(localDownloadBlobUrl);
       setLocalDownloadBlobUrl(null);
     }
-  }, [episodeUrl]);
+
+    return () => {
+      isMounted = false;
+    };
+  }, [episodeUrl, fallbackUrl]);
 
   // Clean up on unmount
   useEffect(() => {
@@ -146,7 +193,7 @@ export const BrowserDownloadWidget: React.FC<BrowserDownloadWidgetProps> = ({
         status: "running",
         fileName: outputFileName
       });
-      const playlistUrl = `/api/media/playlist?url=${encodeURIComponent(episodeUrl)}&quality=${quality}`;
+      const playlistUrl = `/api/media/playlist?url=${encodeURIComponent(activeUrl)}&fallback_url=${encodeURIComponent(fallbackUrl || '')}&quality=${quality}`;
       const playlistRes = await fetch(playlistUrl);
       
       const playlistText = await playlistRes.text();
@@ -362,9 +409,26 @@ export const BrowserDownloadWidget: React.FC<BrowserDownloadWidgetProps> = ({
   return (
     <div className="bg-white/5 border border-white/10 rounded-2xl p-6 transition-all duration-300 space-y-5">
       <div className="flex flex-col gap-3">
-        <label className="text-xs uppercase tracking-wider font-extrabold text-slate-400">
-          Выберите качество для скачивания .MP4 в браузере:
-        </label>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <label className="text-xs uppercase tracking-wider font-extrabold text-slate-300">
+            Выберите качество для скачивания .MP4 в браузере:
+          </label>
+          {!loadingQualities && qualities.length > 0 && (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-[11px] font-bold">
+              {resolvedProvider === "aniboom" || qualities.includes("1080") ? (
+                <span className="text-emerald-400 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                  AniBoom 1080p Ultra HD
+                </span>
+              ) : (
+                <span className="text-cyan-400 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
+                  Kodik HD
+                </span>
+              )}
+            </div>
+          )}
+        </div>
 
         <div className="flex flex-wrap items-center gap-2">
           {loadingQualities && (

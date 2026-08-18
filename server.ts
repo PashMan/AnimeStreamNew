@@ -3644,54 +3644,75 @@ app.get('/api/media/playlist', async (c) => {
         if (decodedParent.startsWith('http://') || decodedParent.startsWith('https://')) {
           referer = decodedParent;
         }
-      } else {
-        // Automatically inject parent param matching the default referer so AniBoom validation succeeds
-        cleanTargetUrl += (cleanTargetUrl.includes('?') ? '&' : '?') + `parent=${encodeURIComponent(referer)}`;
       }
 
-      console.log(`🌐 [Aniboom Fetch]: ${cleanTargetUrl} | Referer: ${referer}`);
+      let parsedTargetUrl: URL;
+      try {
+        parsedTargetUrl = new URL(cleanTargetUrl.startsWith('//') ? `https:${cleanTargetUrl}` : cleanTargetUrl);
+      } catch (_) {
+        parsedTargetUrl = new URL('https://aniboom.one');
+      }
+
+      if (!parsedTargetUrl.searchParams.has('parent')) {
+        parsedTargetUrl.searchParams.set('parent', referer);
+      }
+
+      const existingTranslation = parsedTargetUrl.searchParams.get('translation');
+      const translationCandidates = existingTranslation ? [existingTranslation] : ['16', '24', '1', '2', '3', ''];
+
+      const originalParent = parsedTargetUrl.searchParams.get('parent') || referer;
+      const originHost = originalParent.startsWith('http') ? new URL(originalParent).origin : 'https://animego.me';
 
       const candidateReferers = [
+        originalParent,
         referer,
         'https://animego.me/',
         'https://animego.org/',
         'https://aniboom.one/'
       ];
 
+      console.log(`🌐 [Aniboom Fetch]: ${parsedTargetUrl.toString()} | Referer: ${originalParent}`);
+
       let response: any = null;
       let lastFetchErr: any = null;
 
-      for (const ref of candidateReferers) {
-        try {
-          const originHost = ref.startsWith('http') ? new URL(ref).origin : 'https://animego.me';
-          // Ensure parent query parameter matches the candidate referer if not the default
-          let fetchTarget = cleanTargetUrl;
-          if (ref !== referer) {
-            try {
-              const u = new URL(fetchTarget);
-              u.searchParams.set('parent', ref);
-              fetchTarget = u.toString();
-            } catch (_) {}
-          }
+      outerLoop:
+      for (const tr of translationCandidates) {
+        for (const ref of candidateReferers) {
+          try {
+            const currentOrigin = ref.startsWith('http') ? new URL(ref).origin : originHost;
+            const fetchUrlObj = new URL(parsedTargetUrl.toString());
+            if (tr) {
+              fetchUrlObj.searchParams.set('translation', tr);
+            } else {
+              fetchUrlObj.searchParams.delete('translation');
+            }
+            if (!fetchUrlObj.searchParams.has('parent')) {
+              fetchUrlObj.searchParams.set('parent', ref);
+            }
 
-          response = await axios.get(fetchTarget, {
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-              'Referer': ref,
-              'Origin': originHost,
-              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-              'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
-              'Sec-Fetch-Dest': 'iframe',
-              'Sec-Fetch-Mode': 'navigate',
-              'Sec-Fetch-Site': 'cross-site'
-            },
-            timeout: 6000
-          });
-          if (response && response.status === 200 && response.data) {
-            break;
+            console.log(`[Aniboom Attempt]: URL=${fetchUrlObj.toString()} | Ref=${ref} | Origin=${currentOrigin}`);
+            response = await axios.get(fetchUrlObj.toString(), {
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                'Referer': ref,
+                'Origin': currentOrigin,
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
+                'Sec-Fetch-Dest': 'iframe',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'cross-site'
+              },
+              timeout: 6000
+            });
+            console.log(`[Aniboom Response]: Status=${response?.status}, DataLength=${response?.data?.length || 0}`);
+            if (response && response.status === 200 && response.data && (response.data.includes('data-parameters') || response.data.includes('id="video"'))) {
+              break outerLoop;
+            }
+          } catch (err: any) {
+            console.log(`[Aniboom Attempt Err]: ${err.message} (${err.response?.status})`);
+            lastFetchErr = err;
           }
-        } catch (err: any) {
-          lastFetchErr = err;
         }
       }
 
