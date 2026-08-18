@@ -322,7 +322,7 @@ const Details: React.FC = () => {
     const abortController = new AbortController();
     const timeoutId = setTimeout(() => {
       abortController.abort();
-    }, 4000);
+    }, 8500);
 
     const resolveAniboomStream = async () => {
       setIsResolvingStream(true);
@@ -383,7 +383,7 @@ const Details: React.FC = () => {
         }
       } catch (err: any) {
         if (err.name === "AbortError") {
-          console.warn("⏱️ [Worker Resolver] Request timed out (4s limit) or aborted. Falling back to Kodik.");
+          console.warn("⏱️ [Worker Resolver] Request timed out (8.5s limit) or aborted. Falling back to Kodik.");
         } else {
           console.info("ℹ️ [Worker Resolver] Worker note:", err.message);
         }

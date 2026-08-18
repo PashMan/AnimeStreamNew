@@ -2314,7 +2314,7 @@ app.get('/api/proxy-4k', async (c) => {
   if (!targetUrl) return c.text('Missing url parameter', 400);
 
   try {
-    const isAniboomHost = targetUrl.includes('ya-ligh') || targetUrl.includes('aniboom') || targetUrl.includes('boom-img');
+    const isAniboomHost = targetUrl.includes('ya-ligh') || targetUrl.includes('aniboom') || targetUrl.includes('boom-img') || targetUrl.includes('.m4s') || targetUrl.includes('.ts');
     const reqHeaders: Record<string, string> = {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
       'Referer': isAniboomHost ? 'https://aniboom.one/' : 'https://shikimori.one/'
@@ -3376,6 +3376,16 @@ app.get('/api/media/aniboom/master.m3u8', async (c) => {
 app.get('/api/media/aniboom/resolve', handleAniboomResolve);
 app.post('/api/media/aniboom/resolve', handleAniboomResolve);
 
+// In-memory 4-hour LRU/Map cache for direct AniBoom Master HLS links
+interface AniboomStreamCache {
+  hlsSrc: string;
+  poster?: string;
+  decoded: any;
+  timestamp: number;
+}
+const aniboomStreamMemoryCache = new Map<string, AniboomStreamCache>();
+const ANIBOOM_CACHE_DURATION_MS = 4 * 60 * 60 * 1000; // 4 hours
+
 app.get('/api/media/playlist', async (c) => {
   let urlParam = c.req.query('url');
   const fallbackUrl = c.req.query('fallback_url');
@@ -3398,19 +3408,42 @@ app.get('/api/media/playlist', async (c) => {
         aniboomUrl += (aniboomUrl.includes('?') ? '&' : '?') + 'translation=16';
       }
 
-      console.log(`🌐 [ANIBOOM PARSER] Normalized embed URL: ${aniboomUrl}`);
+      // Check 4-hour memory cache first
+      const cached = aniboomStreamMemoryCache.get(aniboomUrl);
+      if (cached && (Date.now() - cached.timestamp) < ANIBOOM_CACHE_DURATION_MS) {
+        console.log(`⚡ [ANIBOOM PARSER] Cache HIT (4h TTL): Reusing direct HLS stream: ${cached.hlsSrc}`);
+        const proxyOrigin = getProxyOrigin(c);
+        const targetQuality = c.req.query('quality');
+        if (!targetQuality) {
+          return c.redirect(`${proxyOrigin}/api/proxy-4k?url=${encodeURIComponent(cached.hlsSrc)}`, 302);
+        }
+        const baseUrl = cached.hlsSrc.substring(0, cached.hlsSrc.lastIndexOf('/') + 1);
+        const variantUrl = `${baseUrl}${targetQuality}.m3u8`;
+        return c.redirect(`${proxyOrigin}/api/proxy-4k?url=${encodeURIComponent(variantUrl)}`, 302);
+      }
+
+      // Extract parent parameter to set Referer: https://animego.me/anime/${slug}
+      let aniboomReferer = 'https://animego.me/';
+      try {
+        const parsedUrl = new URL(aniboomUrl);
+        const parentQuery = parsedUrl.searchParams.get('parent');
+        if (parentQuery) {
+          aniboomReferer = parentQuery;
+        }
+      } catch (_) {}
+
+      console.log(`🌐 [ANIBOOM PARSER] Normalized embed URL: ${aniboomUrl} | Referer: ${aniboomReferer}`);
 
       const aRes = await fetch(aniboomUrl, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-          'Referer': 'https://animego.org/',
+          'Referer': aniboomReferer,
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
         }
       });
 
-      console.log('Status:', aRes.status);
+      console.log('[ANIBOOM PARSER] Status:', aRes.status);
       const aHtml = await aRes.text();
-      console.log('HTML preview:', aHtml.slice(0, 500));
 
       if (aRes.ok) {
         const match = aHtml.match(/data-parameters="([^"]+)"/) || aHtml.match(/data-parameters='([^']+)'/);
@@ -3440,6 +3473,14 @@ app.get('/api/media/playlist', async (c) => {
           if (hlsSrc) {
             if (hlsSrc.startsWith('//')) hlsSrc = `https:${hlsSrc}`;
 
+            // Save to 4-hour memory cache
+            aniboomStreamMemoryCache.set(aniboomUrl, {
+              hlsSrc,
+              poster: decoded.poster,
+              decoded,
+              timestamp: Date.now()
+            });
+
             if (c.req.query('resolve') === 'true') {
               return c.json({ success: true, url: hlsSrc, poster: decoded.poster, qualities: [1080, 720, 480, 360] });
             }
@@ -3466,19 +3507,29 @@ app.get('/api/media/playlist', async (c) => {
       } else {
         console.error(`❌ [ANIBOOM PARSER] Embed HTML fetch failed with status: ${aRes.status}`);
       }
+
+      // Safe fallback on Aniboom non-200 or extraction miss
       if (fallbackUrl) {
-        console.log(`[MEDIA PROXY] Aniboom failed, falling back to secondary stream URL: ${fallbackUrl}`);
+        console.log(`[MEDIA PROXY] Aniboom extraction missed/failed, falling back immediately to secondary stream URL: ${fallbackUrl}`);
         urlParam = fallbackUrl;
       } else {
-        return c.json({ error: `Aniboom extraction failed. HTTP Status: ${aRes.status}` }, 500);
+        return c.json({
+          source: 'kodik_fallback',
+          error: `Aniboom extraction failed (Status: ${aRes.status}).`,
+          warning: 'Stream unavailable on Aniboom'
+        }, 200);
       }
     } catch (aErr: any) {
       console.warn(`❌ [ANIBOOM PARSER] Exception occurred: ${aErr.message}`);
       if (fallbackUrl) {
-        console.log(`[MEDIA PROXY] Aniboom exception, falling back to secondary stream URL: ${fallbackUrl}`);
+        console.log(`[MEDIA PROXY] Aniboom exception, falling back immediately to secondary stream URL: ${fallbackUrl}`);
         urlParam = fallbackUrl;
       } else {
-        return c.json({ error: `Aniboom proxy error: ${aErr.message}` }, 500);
+        return c.json({
+          source: 'kodik_fallback',
+          error: `Aniboom proxy exception: ${aErr.message}`,
+          warning: 'Stream unavailable on Aniboom'
+        }, 200);
       }
     }
   }
@@ -3540,7 +3591,7 @@ app.get('/api/media/playlist', async (c) => {
 
     if (!urlParamsMatch || !hashMatch || !idMatch || !typeMatch) {
       console.error('[KODIK PROXY] Failed to parse iframe params');
-      return c.json({ error: 'Failed to parse iframe parameters. Stream might be offline.' }, 500);
+      return c.json({ error: 'Failed to parse iframe parameters. Stream might be offline.' }, 404);
     }
 
     const urlParams = JSON.parse(urlParamsMatch[1]);
