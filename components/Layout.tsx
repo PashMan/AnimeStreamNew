@@ -247,13 +247,13 @@ const Layout: React.FC = () => {
       <header className={`fixed w-full z-50 transition-all duration-400 ${(import.meta as any).env?.VITE_ENV === 'staging' ? 'top-6' : 'top-0'} ${scrolled ? 'bg-[#141519]/95 backdrop-blur-2xl border-b border-white/5 shadow-2.5xl' : 'bg-[#141519]/80 border-b border-white/5 backdrop-blur-md'}`}>
         <div className="max-w-[1600px] 3xl:max-w-[2000px] 4xl:max-w-[2500px] 5xl:max-w-[3200px] mx-auto px-4 sm:px-8 lg:px-12 3xl:px-16">
           <div className="flex items-center justify-between h-20 gap-6">
-            <Link to="/" aria-label="KamiAnime Home" className="hover:opacity-90 transition-opacity">
+            <Link to="/" aria-label="KamiAnime Home" className="hover:opacity-90 transition-opacity shrink-0">
               <Logo />
             </Link>
 
-            <div className="flex-1 hidden md:flex justify-center max-w-lg gap-3">
+            <div className="flex-1 hidden md:flex items-center justify-center max-w-xl gap-3 shrink">
               <form onSubmit={handleSearch} className="relative w-full group">
-                <Search className={`absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 ${isMangaMode ? 'group-focus-within:text-[#8B5CF6]' : 'group-focus-within:text-primary'} transition-colors`} />
+                <Search className={`absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none ${isMangaMode ? 'group-focus-within:text-[#8B5CF6]' : 'group-focus-within:text-primary'} transition-colors`} />
                 <input
                   type="text"
                   aria-label={isMangaMode ? "Поиск манги" : "Поиск аниме"}
@@ -265,7 +265,7 @@ const Layout: React.FC = () => {
                   onFocus={() => setShowSuggestions(true)}
                   onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
                   placeholder={isMangaMode ? "Поиск по манге..." : "Быстрый поиск..."}
-                  className={`w-full h-10 pl-10 pr-4 bg-white/5 border border-white/10 rounded-xl text-white placeholder-slate-500 focus:bg-white/10 ${isMangaMode ? 'focus:border-[#8B5CF6]/50' : 'focus:border-primary/50'} focus:outline-none transition-all duration-300`}
+                  className={`w-full h-11 pl-11 pr-4 bg-white/5 border border-white/10 rounded-xl text-white text-sm placeholder-slate-500 focus:bg-white/10 ${isMangaMode ? 'focus:border-[#8B5CF6]/50' : 'focus:border-primary/50'} focus:outline-none transition-all duration-300`}
                 />
                 
                 {/* Search Suggestions */}
@@ -451,7 +451,7 @@ const Layout: React.FC = () => {
               </nav>
             )}
 
-            <div className="flex items-center gap-3 relative">
+            <div className="flex items-center gap-3 sm:gap-4 shrink-0 relative">
               {/* Watchlist Ribbon Hover Popover */}
               {user && (
                 <div 
@@ -789,9 +789,9 @@ const Layout: React.FC = () => {
               </ul>
             </div>
           </div>
-          <div className="pt-10 border-t border-white/5 flex flex-col md:flex-row justify-between gap-6 text-[10px] font-black uppercase tracking-widest text-slate-600">
+          <div className="pt-10 border-t border-white/5 flex flex-col sm:flex-row justify-between items-center gap-6 text-xs font-black uppercase tracking-widest text-slate-500">
             <p>© {new Date().getFullYear()} {isMangaMode ? "KamiManga" : "KamiAnime"} Project. Все права защищены.</p>
-            <div className="flex gap-8 items-center">
+            <div className="flex flex-wrap gap-6 sm:gap-10 items-center">
               <Link to="/terms" className="hover:text-white transition-colors">Правила</Link>
               <Link to="/privacy" className="hover:text-white transition-colors">Конфиденциальность</Link>
             </div>

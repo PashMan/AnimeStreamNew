@@ -286,23 +286,23 @@ const Home: React.FC = () => {
             <div className="max-w-3xl 3xl:max-w-4xl space-y-3.5 md:space-y-5 animate-in fade-in slide-in-from-bottom-8 duration-700">
               
               {/* Meta tags / Badges row */}
-              <div className="flex flex-wrap items-center gap-1.5">
-                <span className="px-2 py-0.5 bg-primary text-white text-[9px] 3xl:text-[11px] font-black uppercase tracking-widest rounded shadow-lg shadow-primary/25">Онгоинг</span>
-                <span className="px-2 py-0.5 bg-primary/10 border border-primary/25 text-primary text-[10px] 3xl:text-xs font-black uppercase rounded backdrop-blur-md">Субтитры | Озвучка</span>
+              <div className="flex flex-wrap items-center gap-2.5 sm:gap-3.5 my-2">
+                <span className="px-2.5 py-1 bg-primary text-white text-[10px] sm:text-xs font-black uppercase tracking-widest rounded shadow-lg shadow-primary/25 shrink-0">Онгоинг</span>
+                <span className="px-2.5 py-1 bg-primary/10 border border-primary/25 text-primary text-[10px] sm:text-xs font-black uppercase rounded backdrop-blur-md shrink-0">Субтитры | Озвучка</span>
                 {heroRating > 0 && (
-                  <span className="px-2 py-0.5 bg-amber-500/10 border border-amber-500/20 text-amber-500 text-[10px] 3xl:text-xs font-extrabold uppercase rounded backdrop-blur-md">
+                  <span className="px-2.5 py-1 bg-amber-500/10 border border-amber-500/20 text-amber-500 text-[10px] sm:text-xs font-extrabold uppercase rounded backdrop-blur-md shrink-0">
                      Рейтинг ★ {heroRating.toFixed(1)}
                   </span>
                 )}
                 {currentHero.studio && (
-                  <span className="px-2 py-0.5 bg-white/5 border border-white/10 text-slate-300 text-[10px] 3xl:text-xs font-bold uppercase tracking-wider rounded backdrop-blur-md">
+                  <span className="px-2.5 py-1 bg-white/5 border border-white/10 text-slate-300 text-[10px] sm:text-xs font-bold uppercase tracking-wider rounded backdrop-blur-md shrink-0">
                     Студия: {currentHero.studio}
                   </span>
                 )}
-                <span className="px-2 py-0.5 bg-white/5 border border-white/10 text-slate-300 text-[10px] 3xl:text-xs font-semibold rounded backdrop-blur-md">
+                <span className="px-2.5 py-1 bg-white/5 border border-white/10 text-slate-300 text-[10px] sm:text-xs font-semibold rounded backdrop-blur-md shrink-0">
                   {currentHero.year || '2024'}
                 </span>
-                <span className="px-2 py-0.5 bg-white/5 border border-white/10 text-slate-300 text-[10px] 3xl:text-xs font-semibold rounded backdrop-blur-md">
+                <span className="px-2.5 py-1 bg-white/5 border border-white/10 text-slate-300 text-[10px] sm:text-xs font-semibold rounded backdrop-blur-md shrink-0">
                   {currentHero.episodes || '?'} серий
                 </span>
               </div>
@@ -334,17 +334,17 @@ const Home: React.FC = () => {
               </p>
 
               {/* Buttons Row with premium interactive states */}
-              <div className="flex flex-wrap gap-3 items-center pt-1">
+              <div className="flex flex-wrap gap-4 sm:gap-6 items-center pt-3">
                 <Link 
                   to={dmcaBlocks.includes(currentHero.id.toString()) ? `/anime/${currentHero.id}-watch` : `/anime/${currentHero.id}${currentHero.slug && !slugBlocks.includes(currentHero.id.toString()) ? `-${currentHero.slug}` : ''}`} 
-                  className="px-6 py-3 3xl:px-8 3xl:py-4 bg-primary hover:bg-primary/95 text-white font-black rounded-lg flex items-center gap-2 w-fit uppercase text-[10px] 3xl:text-xs tracking-widest shadow-2xl shadow-primary/20 transition-all hover:scale-[1.03] active:scale-[0.97] cursor-pointer"
+                  className="px-6 py-3.5 sm:px-8 sm:py-4 bg-primary hover:bg-primary/95 text-white font-black rounded-xl flex items-center gap-2.5 shrink-0 uppercase text-xs sm:text-sm tracking-widest shadow-2xl shadow-primary/25 transition-all hover:scale-[1.03] active:scale-[0.97] cursor-pointer"
                 >
-                  <PlayCircle className="w-4 h-4 3xl:w-5 3xl:h-5 fill-current shrink-0" /> Смотреть
+                  <PlayCircle className="w-5 h-5 fill-current shrink-0" /> Смотреть
                 </Link>
 
                 <Link 
                   to={dmcaBlocks.includes(currentHero.id.toString()) ? `/anime/${currentHero.id}-watch` : `/anime/${currentHero.id}${currentHero.slug && !slugBlocks.includes(currentHero.id.toString()) ? `-${currentHero.slug}` : ''}`} 
-                  className="px-6 py-3 3xl:px-8 3xl:py-4 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 text-white font-black rounded-lg flex items-center gap-2 w-fit uppercase text-[10px] 3xl:text-xs tracking-widest transition-all backdrop-blur-md hover:scale-[1.03] active:scale-[0.97] cursor-pointer"
+                  className="px-6 py-3.5 sm:px-8 sm:py-4 bg-white/10 hover:bg-white/15 border border-white/15 hover:border-white/30 text-white font-black rounded-xl flex items-center gap-2.5 shrink-0 uppercase text-xs sm:text-sm tracking-widest transition-all backdrop-blur-md hover:scale-[1.03] active:scale-[0.97] cursor-pointer"
                 >
                   Информация
                 </Link>
@@ -651,7 +651,7 @@ const Home: React.FC = () => {
                 </div>
 
                 {/* Day Tabs */}
-                <div className="flex gap-2 overflow-x-auto pb-4 hide-scrollbar select-none border-b border-white/5 mb-6">
+                <div className="flex gap-3 overflow-x-auto pb-4 hide-scrollbar select-none border-b border-white/5 mb-6">
                   {schedule.map((day) => {
                     const isActive = day.day === activeDayName;
                     const isToday = day.day === currentDayName;
@@ -659,7 +659,7 @@ const Home: React.FC = () => {
                       <button
                         key={day.day}
                         onClick={() => setExpandedDay(day.day)}
-                        className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all border shrink-0 flex items-center gap-2 cursor-pointer ${
+                        className={`px-5 py-3 rounded-xl text-xs sm:text-sm font-black uppercase tracking-wider transition-all border shrink-0 flex items-center gap-2 cursor-pointer ${
                           isActive 
                             ? 'bg-[#8B5CF6] text-white border-[#8B5CF6] shadow-lg shadow-[#8B5CF6]/25 scale-[1.02]' 
                             : 'bg-[#1c1d21]/60 border-white/5 hover:border-white/12 text-slate-400 hover:text-white'
@@ -667,7 +667,7 @@ const Home: React.FC = () => {
                       >
                         {day.day}
                         {isToday && (
-                          <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-white animate-pulse' : 'bg-[#8B5CF6]'}`} />
+                          <span className={`w-2 h-2 rounded-full ${isActive ? 'bg-white animate-pulse' : 'bg-[#8B5CF6]'}`} />
                         )}
                       </button>
                     );
@@ -685,18 +685,18 @@ const Home: React.FC = () => {
                       <Link 
                         key={idx} 
                         to={targetUrl} 
-                        className="group flex items-center gap-4 bg-[#1c1d21]/40 hover:bg-[#1c1d21]/80 border border-white/5 hover:border-[#8B5CF6]/30 rounded-xl p-4 transition-all duration-300"
+                        className="group flex items-center justify-between gap-4 sm:gap-6 bg-[#1c1d21]/40 hover:bg-[#1c1d21]/80 border border-white/5 hover:border-[#8B5CF6]/30 rounded-xl p-4 transition-all duration-300"
                       >
-                        <div className="flex items-center gap-1.5 text-xs font-extrabold text-[#8B5CF6] bg-[#8B5CF6]/15 border border-[#8B5CF6]/20 px-3 py-1.5 rounded-lg shrink-0 group-hover:bg-[#8B5CF6] group-hover:text-black transition-all">
-                          <Clock className="w-3.5 h-3.5 shrink-0" />
+                        <div className="flex items-center gap-2 text-xs font-extrabold text-[#8B5CF6] bg-[#8B5CF6]/15 border border-[#8B5CF6]/20 px-3 py-2 rounded-lg shrink-0 group-hover:bg-[#8B5CF6] group-hover:text-black transition-all mr-2">
+                          <Clock className="w-4 h-4 shrink-0" />
                           <span>{item.time}</span>
                         </div>
-                        <div className="flex-1 min-w-0">
+                        <div className="flex-1 min-w-0 pr-2">
                           <h4 className="text-sm font-bold text-slate-100 group-hover:text-[#8B5CF6] transition-colors line-clamp-1">
                             {item.title}
                           </h4>
                         </div>
-                        <div className="text-slate-500 group-hover:text-white transition-all transform group-hover:translate-x-1 duration-300">
+                        <div className="text-slate-500 group-hover:text-white transition-all transform group-hover:translate-x-1 duration-300 shrink-0">
                           <ChevronRight className="w-4 h-4" />
                         </div>
                       </Link>
@@ -823,24 +823,24 @@ const Home: React.FC = () => {
         {/* Collections Section */}
         <LazyRender threshold={0.1}>
           <section className="mt-12">
-            <div className="flex flex-col md:flex-row md:items-end justify-between mb-8 gap-4">
-              <div className="flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-6">
+            <div className="flex flex-col md:flex-row md:items-end justify-between mb-8 gap-6 sm:gap-8">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-8">
                 <div>
                   <h2 className="text-xl md:text-2xl font-display font-extrabold text-white tracking-tight flex items-center gap-3 border-l-4 border-primary pl-3">
                     <span>Подборки</span>
                   </h2>
                 </div>
                 
-                <div className="flex bg-surface/50 p-1 rounded-xl border border-white/5 self-start sm:self-auto select-none">
+                <div className="flex bg-surface/80 p-1.5 rounded-xl border border-white/10 self-start sm:self-auto select-none gap-1">
                   <button 
                     onClick={() => setCollectionType('official')}
-                    className={`px-4 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${collectionType === 'official' ? 'bg-[#8B5CF6] text-white shadow-lg shadow-[#8B5CF6]/20' : 'text-slate-500 hover:text-white'}`}
+                    className={`px-4 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all cursor-pointer ${collectionType === 'official' ? 'bg-[#8B5CF6] text-white shadow-lg shadow-[#8B5CF6]/20' : 'text-slate-400 hover:text-white'}`}
                   >
                     Официальные
                   </button>
                   <button 
                     onClick={() => setCollectionType('community')}
-                    className={`px-4 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${collectionType === 'community' ? 'bg-[#8B5CF6] text-white shadow-lg shadow-[#8B5CF6]/20' : 'text-slate-500 hover:text-white'}`}
+                    className={`px-4 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all cursor-pointer ${collectionType === 'community' ? 'bg-[#8B5CF6] text-white shadow-lg shadow-[#8B5CF6]/20' : 'text-slate-400 hover:text-white'}`}
                   >
                     Сообщество
                   </button>
@@ -851,12 +851,12 @@ const Home: React.FC = () => {
                 {collectionType === 'community' && (
                   <button 
                     onClick={() => user ? setIsCreateModalOpen(true) : openAuthModal()}
-                    className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-[10px] font-black text-white uppercase tracking-widest hover:bg-white/10 transition-all flex items-center gap-2"
+                    className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-xs font-black text-white uppercase tracking-widest hover:bg-white/10 transition-all flex items-center gap-2 cursor-pointer"
                   >
                     <Plus className="w-4 h-4" /> Создать подборку
                   </button>
                 )}
-                <Link to="/collections" className="text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-[#8B5CF6] transition-colors flex items-center gap-1">
+                <Link to="/collections" className="text-xs font-black uppercase tracking-widest text-slate-400 hover:text-[#8B5CF6] transition-colors flex items-center gap-1">
                   Смотреть все <ChevronRight className="w-4 h-4" />
                 </Link>
               </div>
@@ -894,7 +894,7 @@ const Home: React.FC = () => {
                         ) : (
                           <div className="absolute inset-0 bg-gradient-to-br from-violet-900/40 to-black/80"></div>
                         )}
-                        <div className="absolute inset-0 bg-black/60 group-hover:bg-black/55 transition-colors duration-500"></div>
+                        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/75 to-black/35 opacity-90 group-hover:opacity-100 transition-opacity duration-300"></div>
                         
                         <Link to={`/collections/community/${collection.id}`} className="absolute inset-0 z-10"></Link>
  

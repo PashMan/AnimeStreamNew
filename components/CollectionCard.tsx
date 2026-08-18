@@ -55,8 +55,8 @@ const CollectionCard: React.FC<CollectionCardProps> = ({ collection }) => {
       <img src={coverImage} alt={collection.title} className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-105" referrerPolicy="no-referrer" />
       
       {/* Cinematic gradient overlay directly on the cover, matching Netflix collection style */}
-      <div className="absolute inset-0 bg-gradient-to-t from-black via-black/45 to-transparent opacity-85 group-hover:opacity-95 transition-opacity duration-300" />
-      <div className="absolute inset-0 bg-black/10 mix-blend-overlay" />
+      <div className="absolute inset-0 bg-gradient-to-t from-black via-black/75 to-black/35 opacity-90 group-hover:opacity-100 transition-opacity duration-300" />
+      <div className="absolute inset-0 bg-black/25 mix-blend-multiply" />
 
       <div className="absolute inset-0 p-5 flex flex-col justify-end z-10">
         <div className="bg-primary/20 backdrop-blur-md px-2.5 py-1 rounded text-primary text-[9px] font-black w-fit mb-2 border border-primary/25 tracking-wider uppercase">

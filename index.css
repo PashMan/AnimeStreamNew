@@ -326,9 +326,10 @@ a, button, .group {
 /* ==========================================================================
    Smart TV 10-foot UI & Overscan Safe-Area
    ========================================================================== */
-.tv-mode body,
-.tv-mode #root {
-  padding: 3.5vh 4vw !important;
+.tv-mode main {
+  padding-left: 3.5vw !important;
+  padding-right: 3.5vw !important;
+  padding-bottom: 3.5vh !important;
   box-sizing: border-box;
 }
 

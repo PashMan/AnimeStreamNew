@@ -1,71 +1,68 @@
 /**
  * Utility function to generate clean, non-nested /api/media/playlist URLs
  */
-export function getCleanPlaylistUrl(rawUrl: string, fallbackUrl?: string | null, quality?: string | null): string {
-  if (!rawUrl) return '';
+export function getCleanPlaylistUrl(
+  rawUrl: string, 
+  fallbackUrl?: string | null, 
+  quality?: string | number | null,
+  resolve: boolean = false
+): string {
+  if (!rawUrl && !fallbackUrl) return '';
 
-  let cleanTarget = rawUrl;
+  let cleanTarget = rawUrl || fallbackUrl || '';
 
-  // Unwrap if rawUrl is already a /api/media/playlist URL
-  while (cleanTarget.includes('/api/media/playlist') && cleanTarget.includes('url=')) {
-    try {
-      const urlObj = new URL(cleanTarget, typeof window !== 'undefined' ? window.location.origin : 'http://localhost');
-      const nested = urlObj.searchParams.get('url');
-      if (nested) {
-        cleanTarget = nested;
-      } else {
+  // 1. Безопасное извлечение оригинального URL (с сохранением &parent и &episode)
+  if (cleanTarget.includes('/api/media/playlist')) {
+    // Извлекаем все содержимое после url= до конца строки или до следующего верхнеуровневого параметра (&fallback_url=)
+    const urlMatch = cleanTarget.match(/[?&]url=([^&]+(?:[?&%].*)?)/i);
+    if (urlMatch) {
+      let extracted = urlMatch[1];
+      if (extracted.includes('&fallback_url=')) {
+        extracted = extracted.split('&fallback_url=')[0];
+      }
+      if (extracted.includes('&resolve=')) {
+        extracted = extracted.split('&resolve=')[0];
+      }
+      if (extracted.includes('&quality=')) {
+        extracted = extracted.split('&quality=')[0];
+      }
+      cleanTarget = extracted;
+    }
+  }
+
+  // 2. Снимаем только внешние слои кодирования (двойной %25), не ломая внутренние слеши
+  for (let i = 0; i < 3; i++) {
+    if (cleanTarget.includes('%25') || cleanTarget.startsWith('%2F') || cleanTarget.startsWith('%3F')) {
+      try {
+        const next = decodeURIComponent(cleanTarget);
+        if (next === cleanTarget) break;
+        cleanTarget = next;
+      } catch (_) {
         break;
       }
-    } catch (_) {
+    } else {
       break;
     }
   }
 
-  // Decode nested percent encodings
-  while (cleanTarget.includes('%25') || cleanTarget.includes('%3A') || cleanTarget.includes('%2F')) {
-    try {
-      const next = decodeURIComponent(cleanTarget);
-      if (next === cleanTarget) break;
-      cleanTarget = next;
-    } catch (_) {
-      break;
-    }
-  }
-
+  // 3. Обработка fallbackUrl
   let cleanFallback = fallbackUrl || '';
-  if (cleanFallback) {
-    while (cleanFallback.includes('/api/media/playlist') && cleanFallback.includes('url=')) {
-      try {
-        const urlObj = new URL(cleanFallback, typeof window !== 'undefined' ? window.location.origin : 'http://localhost');
-        const nested = urlObj.searchParams.get('url');
-        if (nested) {
-          cleanFallback = nested;
-        } else {
-          break;
-        }
-      } catch (_) {
-        break;
-      }
-    }
-    while (cleanFallback.includes('%25') || cleanFallback.includes('%3A') || cleanFallback.includes('%2F')) {
-      try {
-        const next = decodeURIComponent(cleanFallback);
-        if (next === cleanFallback) break;
-        cleanFallback = next;
-      } catch (_) {
-        break;
-      }
-    }
+  if (cleanFallback && cleanFallback.includes('/api/media/playlist')) {
+    const fMatch = cleanFallback.match(/[?&]url=([^&]+)/i);
+    if (fMatch) cleanFallback = fMatch[1];
   }
 
   const params = new URLSearchParams();
   params.set('url', cleanTarget);
-  if (cleanFallback) {
+
+  if (cleanFallback && cleanFallback !== cleanTarget) {
     params.set('fallback_url', cleanFallback);
   }
-  params.set('resolve', 'true');
+  if (resolve) {
+    params.set('resolve', 'true');
+  }
   if (quality) {
-    params.set('quality', quality);
+    params.set('quality', String(quality).replace('p', ''));
   }
 
   return `/api/media/playlist?${params.toString()}`;

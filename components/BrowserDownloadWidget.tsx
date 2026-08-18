@@ -57,7 +57,7 @@ export const BrowserDownloadWidget: React.FC<BrowserDownloadWidgetProps> = ({
 
       // Attempt 1: Try primary URL (AniBoom prioritized)
       try {
-        const primaryUrl = getCleanPlaylistUrl(episodeUrl, fallbackUrl);
+        const primaryUrl = getCleanPlaylistUrl(episodeUrl, fallbackUrl, null, true);
         const res = await fetch(primaryUrl);
         const text = await res.text();
         const trimmed = text.trim().toLowerCase();
@@ -88,7 +88,7 @@ export const BrowserDownloadWidget: React.FC<BrowserDownloadWidgetProps> = ({
       // Attempt 2: If primary failed and fallbackUrl exists, try fallback (Kodik)
       if (fallbackUrl && fallbackUrl !== episodeUrl) {
         try {
-          const fallbackReqUrl = getCleanPlaylistUrl(fallbackUrl);
+          const fallbackReqUrl = getCleanPlaylistUrl(fallbackUrl, null, null, true);
           const fRes = await fetch(fallbackReqUrl);
           const fText = await fRes.text();
           const fTrimmed = fText.trim().toLowerCase();
@@ -199,7 +199,7 @@ export const BrowserDownloadWidget: React.FC<BrowserDownloadWidgetProps> = ({
         status: "running",
         fileName: outputFileName
       });
-      const playlistUrl = getCleanPlaylistUrl(activeUrl, fallbackUrl, quality);
+      const playlistUrl = getCleanPlaylistUrl(activeUrl, fallbackUrl, quality, false);
       const playlistRes = await fetch(playlistUrl);
       
       const playlistText = await playlistRes.text();
