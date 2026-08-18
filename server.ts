@@ -700,8 +700,6 @@ app.get('/api/balancer', async (c) => {
     }
 
     // Prepare placeholders for prospective providers
-    let collaps_iframe: string | null = null;
-    let collaps_info: { iframe: string; has1080: boolean; epCount: number } | null = null;
     let bhcesh_iframe: string | null = null;
     let videocdn_iframe: string | null = null;
     let bazon_iframe: string | null = null;
@@ -712,52 +710,6 @@ app.get('/api/balancer', async (c) => {
 
     // Concurrently fetch alternate providers to minimize response latency
     const jobs: Promise<void>[] = [];
-
-    // 3. Collaps
-    jobs.push((async () => {
-      try {
-        let collapsUrl = '';
-        if (kinopoisk_id) {
-          collapsUrl = `https://apicollaps.cc/list?token=eedefb541aeba871dcfc756e6b31c02e&kinopoisk_id=${kinopoisk_id}`;
-        } else if (imdb_id) {
-          collapsUrl = `https://apicollaps.cc/list?token=eedefb541aeba871dcfc756e6b31c02e&imdb_id=${imdb_id}`;
-        } else if (title) {
-          collapsUrl = `https://apicollaps.cc/list?token=eedefb541aeba871dcfc756e6b31c02e&name=${encodeURIComponent(title)}`;
-        }
-
-        if (collapsUrl) {
-          const res = await fetchWithTimeout(collapsUrl, {}, 3000);
-          if (res.ok) {
-            const d = await res.json() as any;
-            if (d.results && d.results.length > 0 && d.results[0].iframe_url) {
-              const item = d.results[0];
-              collaps_iframe = item.iframe_url;
-
-              const qualStr = String(item.quality || '').toLowerCase();
-              const has1080 = qualStr.includes('1080') || qualStr.includes('fhd') || qualStr.includes('4k') || qualStr.includes('2160');
-
-              let epCount = 1;
-              if (item.seasons && Array.isArray(item.seasons) && item.seasons.length > 0) {
-                const lastSeason = item.seasons[item.seasons.length - 1];
-                if (lastSeason.episodes && Array.isArray(lastSeason.episodes)) {
-                  epCount = lastSeason.episodes.length;
-                }
-              }
-
-              collaps_info = {
-                iframe: item.iframe_url,
-                has1080,
-                epCount
-              };
-
-              addLog(`Collaps found: ${collaps_iframe} with 1080p=${has1080}`);
-            }
-          }
-        }
-      } catch (e: any) {
-        addLog('[COLLAPS] failed', { error: e.message });
-      }
-    })());
 
     // 4. Bhcesh
     if (kinopoisk_id) {
@@ -936,7 +888,6 @@ app.get('/api/balancer', async (c) => {
     if (kodik_iframe) {
       players.push({ name: 'Kodik', iframe: kodik_iframe });
     }
-    if (collaps_iframe) players.push({ name: 'Collaps', iframe: collaps_iframe });
     if (bhcesh_iframe) players.push({ name: 'Bhcesh', iframe: bhcesh_iframe });
     if (videocdn_iframe) players.push({ name: 'VideoCDN', iframe: videocdn_iframe });
     if (bazon_iframe) players.push({ name: 'Bazon', iframe: bazon_iframe });
@@ -3379,11 +3330,13 @@ app.get('/api/media/aniboom/resolve', handleAniboomResolve);
 app.post('/api/media/aniboom/resolve', handleAniboomResolve);
 
 // In-memory 4-hour cache for direct AniBoom Master HLS links
-const playlistCache = new Map<string, { streamUrl: string; exp: number }>();
+const playlistCache = new Map<string, { streamUrl: string; rawUrl: string; exp: number }>();
 
 app.get('/api/media/playlist', async (c) => {
   const targetUrl = c.req.query('url');
   const fallbackUrl = c.req.query('fallback_url');
+  const resolveOnly = c.req.query('resolve') === 'true';
+  const requestedQuality = c.req.query('quality');
 
   if (!targetUrl) {
     if (fallbackUrl) {
@@ -3392,97 +3345,229 @@ app.get('/api/media/playlist', async (c) => {
     return c.json({ error: 'Missing url parameter' }, 400);
   }
 
-  // 1. Проверяем кэш в памяти (TTL 4 часа)
+  // 1. Check in-memory cache
   const now = Date.now();
   const cached = playlistCache.get(targetUrl);
-  if (cached && cached.exp > now) {
-    console.log(`⚡ [Playlist Cache HIT]: Reusing ${cached.streamUrl}`);
-    return c.redirect(cached.streamUrl, 302);
-  }
+  let rawStreamUrl = (cached && cached.exp > now) ? cached.rawUrl : '';
+  let finalStreamUrl = (cached && cached.exp > now) ? cached.streamUrl : '';
 
-  // 2. Если передан не Aniboom — обрабатываем как Kodik/Collaps
+  // 2. If not Aniboom embed URL: handle as direct link or Kodik
   if (!targetUrl.includes('aniboom')) {
+    if (resolveOnly) {
+      return c.json({
+        success: true,
+        streamType: 'hls',
+        qualities: [720, 480, 360],
+        quality: 720,
+        direct_url: targetUrl,
+        url: `/api/proxy-4k?url=${encodeURIComponent(targetUrl)}`
+      });
+    }
+
+    if (requestedQuality) {
+      // If it's a direct m3u8 link or proxy request
+      try {
+        const directRes = await fetch(targetUrl, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+        });
+        if (directRes.ok) {
+          const m3u8Text = await directRes.text();
+          const baseUrl = new URL(targetUrl);
+          const rewritten = m3u8Text.split('\n').map(line => {
+            const trimmed = line.trim();
+            if (trimmed && !trimmed.startsWith('#')) {
+              const absUrl = trimmed.startsWith('http') ? trimmed : new URL(trimmed, baseUrl).toString();
+              return `/api/proxy-4k?url=${encodeURIComponent(absUrl)}`;
+            }
+            return line;
+          }).join('\n');
+
+          c.header('Content-Type', 'application/vnd.apple.mpegurl; charset=utf-8');
+          c.header('Access-Control-Allow-Origin', '*');
+          return c.text(rewritten);
+        }
+      } catch (_) {}
+    }
+
     const finalUrl = `/api/proxy-4k?url=${encodeURIComponent(targetUrl)}`;
     return c.redirect(finalUrl, 302);
   }
 
+  // 3. Resolve Aniboom stream if not in cache
   try {
-    // Извлекаем parent для заголовка Referer
-    const parentMatch = targetUrl.match(/[?&]parent=([^&]+)/);
-    const referer = parentMatch ? decodeURIComponent(parentMatch[1]) : 'https://animego.me/';
-
-    console.log(`🌐 [Aniboom Fetch]: ${targetUrl} | Referer: ${referer}`);
-
-    const response = await axios.get(targetUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Referer': referer,
-        'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8'
-      },
-      timeout: 6000
-    });
-
-    const $ = cheerio.load(response.data);
-    let rawParams = $('#video, [data-parameters]').attr('data-parameters');
-
-    if (!rawParams) {
-      const match = typeof response.data === 'string'
-        ? (response.data.match(/data-parameters="([^"]+)"/) || response.data.match(/data-parameters='([^']+)'/))
-        : null;
-      if (match) rawParams = match[1];
-    }
-
-    if (!rawParams) {
-      throw new Error('data-parameters container not found in Aniboom embed');
-    }
-
-    // Декодируем сущности и парсим первый уровень
-    const decodedHtml = rawParams
-      .replace(/&quot;/g, '"')
-      .replace(/&amp;/g, '&')
-      .replace(/&#039;/g, "'")
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>');
-    const params = JSON.parse(decodedHtml);
-
-    // ВАЖНО: HLS и DASH в Aniboom хранятся как сериализованные строки внутри JSON
-    let hlsData = params.hls;
-    if (typeof hlsData === 'string') {
-      try {
-        hlsData = JSON.parse(hlsData);
-      } catch (_) {}
-    }
-
-    let dashData = params.dash;
-    if (typeof dashData === 'string') {
-      try {
-        dashData = JSON.parse(dashData);
-      } catch (_) {}
-    }
-
-    let rawStreamUrl = (typeof hlsData === 'string' ? hlsData : (hlsData?.src || hlsData?.url || hlsData?.file)) ||
-                       (typeof dashData === 'string' ? dashData : (dashData?.src || dashData?.url || dashData?.file));
-
     if (!rawStreamUrl) {
-      throw new Error('Direct video source URL not found in data-parameters');
+      const parentMatch = targetUrl.match(/[?&]parent=([^&]+)/);
+      const referer = parentMatch ? decodeURIComponent(parentMatch[1]) : 'https://animego.me/';
+
+      console.log(`🌐 [Aniboom Fetch]: ${targetUrl} | Referer: ${referer}`);
+
+      const response = await axios.get(targetUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          'Referer': referer,
+          'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8'
+        },
+        timeout: 6000
+      });
+
+      const $ = cheerio.load(response.data);
+      let rawParams = $('#video, [data-parameters]').attr('data-parameters');
+
+      if (!rawParams) {
+        const match = typeof response.data === 'string'
+          ? (response.data.match(/data-parameters="([^"]+)"/) || response.data.match(/data-parameters='([^']+)'/))
+          : null;
+        if (match) rawParams = match[1];
+      }
+
+      if (!rawParams) {
+        throw new Error('data-parameters container not found in Aniboom embed');
+      }
+
+      // Decode entities and parse
+      const decodedHtml = rawParams
+        .replace(/&quot;/g, '"')
+        .replace(/&amp;/g, '&')
+        .replace(/&#039;/g, "'")
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>');
+      const params = JSON.parse(decodedHtml);
+
+      // Handle double serialized strings for hls & dash
+      let hlsData = params.hls;
+      if (typeof hlsData === 'string') {
+        try {
+          hlsData = JSON.parse(hlsData);
+        } catch (_) {}
+      }
+
+      let dashData = params.dash;
+      if (typeof dashData === 'string') {
+        try {
+          dashData = JSON.parse(dashData);
+        } catch (_) {}
+      }
+
+      rawStreamUrl = (typeof hlsData === 'string' ? hlsData : (hlsData?.src || hlsData?.url || hlsData?.file)) ||
+                     (typeof dashData === 'string' ? dashData : (dashData?.src || dashData?.url || dashData?.file));
+
+      if (!rawStreamUrl) {
+        throw new Error('Direct video source URL not found in data-parameters');
+      }
+
+      if (rawStreamUrl.startsWith('//')) {
+        rawStreamUrl = 'https:' + rawStreamUrl;
+      }
+
+      finalStreamUrl = `/api/proxy-4k?url=${encodeURIComponent(rawStreamUrl)}&referer=${encodeURIComponent('https://aniboom.one/')}`;
+      playlistCache.set(targetUrl, { streamUrl: finalStreamUrl, rawUrl: rawStreamUrl, exp: now + 4 * 3600 * 1000 });
+      console.log(`✅ [Aniboom Stream Resolved]: ${rawStreamUrl}`);
     }
 
-    if (rawStreamUrl.startsWith('//')) {
-      rawStreamUrl = 'https:' + rawStreamUrl;
+    // 4. Handle resolve=true for Download Widgets
+    if (resolveOnly) {
+      return c.json({
+        success: true,
+        streamType: 'hls',
+        qualities: [1080, 720, 480, 360],
+        quality: 1080,
+        direct_url: rawStreamUrl,
+        url: finalStreamUrl
+      });
     }
 
-    console.log(`✅ [Aniboom Stream Resolved]: ${rawStreamUrl}`);
+    // 5. Handle specific quality download playlist rewrite (1080p, 720p, etc.)
+    if (requestedQuality) {
+      try {
+        console.log(`📥 [Aniboom Quality Playlist]: Fetching ${requestedQuality}p variant for ${rawStreamUrl}`);
+        const masterRes = await axios.get(rawStreamUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Referer': 'https://aniboom.one/',
+            'Origin': 'https://aniboom.one'
+          },
+          timeout: 6000
+        });
 
-    const finalStreamUrl = `/api/proxy-4k?url=${encodeURIComponent(rawStreamUrl)}&referer=${encodeURIComponent('https://aniboom.one/')}`;
-    
-    // Сохраняем в кэш
-    playlistCache.set(targetUrl, { streamUrl: finalStreamUrl, exp: now + 4 * 3600 * 1000 });
+        const masterText = typeof masterRes.data === 'string' ? masterRes.data : String(masterRes.data);
+        const masterBaseUrl = new URL(rawStreamUrl);
+
+        let variantUrl = rawStreamUrl;
+
+        // If master playlist with multiple variant streams, find the requested resolution
+        if (masterText.includes('#EXT-X-STREAM-INF')) {
+          const lines = masterText.split('\n');
+          let bestVariantLine = '';
+          let matchedVariantLine = '';
+
+          for (let i = 0; i < lines.length; i++) {
+            const line = lines[i].trim();
+            if (line.startsWith('#EXT-X-STREAM-INF')) {
+              const nextLine = (lines[i + 1] || '').trim();
+              if (nextLine && !nextLine.startsWith('#')) {
+                if (!bestVariantLine) bestVariantLine = nextLine; // First is usually 1080p
+                if (line.includes(`RESOLUTION=`) && (line.includes(`x${requestedQuality}`) || line.includes(`${requestedQuality}`))) {
+                  matchedVariantLine = nextLine;
+                  break;
+                }
+              }
+            }
+          }
+
+          const chosenLine = matchedVariantLine || bestVariantLine;
+          if (chosenLine) {
+            variantUrl = chosenLine.startsWith('http') ? chosenLine : new URL(chosenLine, masterBaseUrl).toString();
+          }
+        }
+
+        // Fetch the variant playlist with segments
+        const variantRes = await axios.get(variantUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Referer': 'https://aniboom.one/',
+            'Origin': 'https://aniboom.one'
+          },
+          timeout: 6000
+        });
+
+        const variantText = typeof variantRes.data === 'string' ? variantRes.data : String(variantRes.data);
+        const variantBaseUrl = new URL(variantUrl);
+
+        // Rewrite each segment to go through the proxy with Aniboom referer
+        const rewrittenVariant = variantText.split('\n').map(line => {
+          const trimmed = line.trim();
+          if (trimmed && !trimmed.startsWith('#')) {
+            const absSegUrl = trimmed.startsWith('http') ? trimmed : new URL(trimmed, variantBaseUrl).toString();
+            return `/api/proxy-4k?url=${encodeURIComponent(absSegUrl)}&referer=${encodeURIComponent('https://aniboom.one/')}`;
+          }
+          return line;
+        }).join('\n');
+
+        c.header('Content-Type', 'application/vnd.apple.mpegurl; charset=utf-8');
+        c.header('Access-Control-Allow-Origin', '*');
+        return c.text(rewrittenVariant);
+      } catch (err: any) {
+        console.warn(`[Aniboom Quality Playlist Error]: ${err.message}. Serving master stream redirect.`);
+        return c.redirect(finalStreamUrl, 302);
+      }
+    }
+
+    // 6. Direct streaming redirect
     return c.redirect(finalStreamUrl, 302);
 
   } catch (err: any) {
-    console.warn(`[Playlist Resolver Warning]: ${err.message}. Safe-fallback to Kodik.`);
+    console.warn(`[Playlist Resolver Warning]: ${err.message}. Safe-fallback.`);
     
-    // Гарантированное исключение 500 ошибки: отдаем рабочий Kodik
+    if (resolveOnly) {
+      return c.json({
+        success: true,
+        streamType: 'hls',
+        qualities: [1080, 720, 480, 360],
+        quality: 1080,
+        fallback: true
+      });
+    }
+
     if (fallbackUrl) {
       return c.redirect(`/api/proxy-4k?url=${encodeURIComponent(fallbackUrl)}`, 302);
     }

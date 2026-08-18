@@ -57,6 +57,8 @@ export async function onRequest(context: any) {
   const urlObj = new URL(request.url);
   const urlParam = urlObj.searchParams.get('url');
   const fallbackUrl = urlObj.searchParams.get('fallback_url');
+  const resolveOnly = urlObj.searchParams.get('resolve') === 'true';
+  const requestedQuality = urlObj.searchParams.get('quality');
 
   if (!urlParam) {
     if (fallbackUrl) {
@@ -119,6 +121,93 @@ export async function onRequest(context: any) {
               rawStreamUrl = 'https:' + rawStreamUrl;
             }
             const finalStreamUrl = `${getProxyOrigin(request)}/api/proxy-4k?url=${encodeURIComponent(rawStreamUrl)}&referer=${encodeURIComponent('https://aniboom.one/')}`;
+            
+            if (resolveOnly) {
+              return new Response(JSON.stringify({
+                success: true,
+                streamType: 'hls',
+                qualities: [1080, 720, 480, 360],
+                quality: 1080,
+                direct_url: rawStreamUrl,
+                url: finalStreamUrl
+              }), {
+                status: 200,
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Access-Control-Allow-Origin': '*'
+                }
+              });
+            }
+
+            if (requestedQuality) {
+              try {
+                const masterRes = await fetch(rawStreamUrl, {
+                  headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                    'Referer': 'https://aniboom.one/',
+                    'Origin': 'https://aniboom.one'
+                  }
+                });
+                if (masterRes.ok) {
+                  const masterText = await masterRes.text();
+                  const masterBaseUrl = new URL(rawStreamUrl);
+                  let variantUrl = rawStreamUrl;
+
+                  if (masterText.includes('#EXT-X-STREAM-INF')) {
+                    const lines = masterText.split('\n');
+                    let bestVariantLine = '';
+                    let matchedVariantLine = '';
+                    for (let i = 0; i < lines.length; i++) {
+                      const line = lines[i].trim();
+                      if (line.startsWith('#EXT-X-STREAM-INF')) {
+                        const nextLine = (lines[i + 1] || '').trim();
+                        if (nextLine && !nextLine.startsWith('#')) {
+                          if (!bestVariantLine) bestVariantLine = nextLine;
+                          if (line.includes(`RESOLUTION=`) && (line.includes(`x${requestedQuality}`) || line.includes(`${requestedQuality}`))) {
+                            matchedVariantLine = nextLine;
+                            break;
+                          }
+                        }
+                      }
+                    }
+                    const chosenLine = matchedVariantLine || bestVariantLine;
+                    if (chosenLine) {
+                      variantUrl = chosenLine.startsWith('http') ? chosenLine : new URL(chosenLine, masterBaseUrl).toString();
+                    }
+                  }
+
+                  const variantRes = await fetch(variantUrl, {
+                    headers: {
+                      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                      'Referer': 'https://aniboom.one/',
+                      'Origin': 'https://aniboom.one'
+                    }
+                  });
+
+                  if (variantRes.ok) {
+                    const variantText = await variantRes.text();
+                    const variantBaseUrl = new URL(variantUrl);
+                    const rewrittenVariant = variantText.split('\n').map(line => {
+                      const trimmed = line.trim();
+                      if (trimmed && !trimmed.startsWith('#')) {
+                        const absSegUrl = trimmed.startsWith('http') ? trimmed : new URL(trimmed, variantBaseUrl).toString();
+                        return `/api/proxy-4k?url=${encodeURIComponent(absSegUrl)}&referer=${encodeURIComponent('https://aniboom.one/')}`;
+                      }
+                      return line;
+                    }).join('\n');
+
+                    return new Response(rewrittenVariant, {
+                      status: 200,
+                      headers: {
+                        'Content-Type': 'application/vnd.apple.mpegurl; charset=utf-8',
+                        'Access-Control-Allow-Origin': '*'
+                      }
+                    });
+                  }
+                }
+              } catch (_) {}
+            }
+
             return Response.redirect(finalStreamUrl, 302);
           }
         }
@@ -126,6 +215,21 @@ export async function onRequest(context: any) {
       throw new Error('Aniboom stream extraction failed');
     } catch (aErr: any) {
       console.warn(`[CF Playlist Resolver Warning]: ${aErr.message}. Safe-fallback to Kodik.`);
+      if (resolveOnly) {
+        return new Response(JSON.stringify({
+          success: true,
+          streamType: 'hls',
+          qualities: [1080, 720, 480, 360],
+          quality: 1080,
+          fallback: true
+        }), {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*'
+          }
+        });
+      }
       if (fallbackUrl) {
         return Response.redirect(`${getProxyOrigin(request)}/api/proxy-4k?url=${encodeURIComponent(fallbackUrl)}`, 302);
       }

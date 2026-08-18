@@ -15,10 +15,7 @@ export interface KodikTranslation {
   episodes_count?: number;
   last_episode?: number;
   provider?: string;
-  has_1080_collaps?: boolean;
-  collaps_iframe?: string | null;
   kodik_iframe?: string | null;
-  collaps_episodes_count?: number;
   kodik_episodes_count?: number;
   quality_label?: string;
 }
@@ -31,7 +28,7 @@ export interface BalancerData {
 export const fetchPlayersClientSide = async (shikimoriId: string, title: string, year: string): Promise<BalancerData> => {
   if (!shikimoriId) return { players: [], kodik_translations: [] };
 
-  const cacheKey = `balancer_v6_${shikimoriId}`;
+  const cacheKey = `balancer_v7_${shikimoriId}`;
   const cached = getFromStorage(cacheKey);
 
   // TTL: 24 hours for balancer data (prevents domain rot but keeps it ultra fast)
@@ -60,16 +57,15 @@ export const fetchPlayersClientSide = async (shikimoriId: string, title: string,
          playersList = data;
       }
 
-      // Filter out Anilibria
-      playersList = playersList.filter(p => p.name !== 'Anilibria');
+      // Filter out Anilibria and Collaps
+      playersList = playersList.filter(p => p.name !== 'Anilibria' && p.name !== 'Collaps' && !p.name.toLowerCase().includes('collaps'));
 
-      // Add custom player for 1080p encodes OR any anime containing Kodik/Aniboom/Collaps stream
+      // Add custom player for 1080p encodes OR any anime containing Kodik/Aniboom stream
       const hasKodik = playersList.some(p => p.name === 'Kodik' && p.iframe);
       const hasAniboom = playersList.some(p => p.name === 'Aniboom' && p.iframe);
-      const hasCollaps = playersList.some(p => p.name === 'Collaps' && p.iframe);
       const isNative1080 = shikimoriId === '32281' || shikimoriId === '50594' || shikimoriId === '62568' || shikimoriId === '38826' || shikimoriId === '16782';
 
-      if (isNative1080 || hasKodik || hasAniboom || hasCollaps) {
+      if (isNative1080 || hasKodik || hasAniboom) {
         if (!playersList.some(p => p.name === 'KamiPlayer (1080p)')) {
           playersList.unshift({
             name: 'KamiPlayer (1080p)',

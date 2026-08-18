@@ -2012,13 +2012,7 @@ const Details: React.FC = () => {
                                 if (kodikIframeUrl) {
                                   customSrc = `/api/media/playlist?url=${encodeURIComponent(kodikIframeUrl)}`;
                                 } else {
-                                  const defaultCollaps = players.find((p) => p.name === "Collaps")?.iframe;
-                                  const collapsIframeUrl = getResolvedCollapsUrl(selectedTranslation, epNum, defaultCollaps);
-                                  if (collapsIframeUrl) {
-                                    customSrc = `/api/media/playlist?url=${encodeURIComponent(collapsIframeUrl)}`;
-                                  } else {
-                                    customSrc = `/api/proxy-4k?url=${encodeURIComponent("https://cdn.kamianime.club/kimi-no-na-wa/master.m3u8")}`;
-                                  }
+                                  customSrc = `/api/proxy-4k?url=${encodeURIComponent("https://cdn.kamianime.club/kimi-no-na-wa/master.m3u8")}`;
                                 }
                               }
                             }
