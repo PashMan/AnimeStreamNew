@@ -250,8 +250,8 @@ export async function onRequest(context: any) {
     if (hlsSrc && hlsSrc.startsWith('//')) hlsSrc = `https:${hlsSrc}`;
     if (dashSrc && dashSrc.startsWith('//')) dashSrc = `https:${dashSrc}`;
 
-    const primarySrc = hlsSrc || dashSrc;
-    const streamType = hlsSrc ? 'hls' : 'dash';
+    const primarySrc = dashSrc || hlsSrc;
+    const streamType = dashSrc ? 'dash' : 'hls';
 
     if (!primarySrc) {
       return new Response(JSON.stringify({

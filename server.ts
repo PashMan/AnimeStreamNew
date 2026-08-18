@@ -3340,9 +3340,9 @@ const handleAniboomResolve = async (c: any) => {
     if (dashSrc.startsWith('//')) dashSrc = `https:${dashSrc}`;
     if (hlsSrc.startsWith('//')) hlsSrc = `https:${hlsSrc}`;
 
-    // Prefer HLS over DASH for much better proxying stability and built-in quality switching!
-    const streamType = hlsSrc ? 'hls' : (dashSrc ? 'dash' : 'hls');
-    const primarySrc = hlsSrc || dashSrc;
+    // Prefer DASH (.mpd) directly from Aniboom parameters
+    const primarySrc = dashSrc || hlsSrc;
+    const streamType = dashSrc ? 'dash' : (hlsSrc ? 'hls' : 'dash');
 
     steps.push({
       title: "Анализ медиа-потоков",
@@ -3365,7 +3365,7 @@ const handleAniboomResolve = async (c: any) => {
     const proxyOrigin = getProxyOrigin(c);
     const proxiedDashUrl = dashSrc ? `${proxyOrigin}/api/proxy-4k?url=${encodeURIComponent(dashSrc)}` : undefined;
     const proxiedHlsUrl = hlsSrc ? `${proxyOrigin}/api/proxy-4k?url=${encodeURIComponent(hlsSrc)}` : undefined;
-    const mainProxiedUrl = proxiedHlsUrl || proxiedDashUrl || '';
+    const mainProxiedUrl = proxiedDashUrl || proxiedHlsUrl || '';
 
     steps.push({
       title: "Настройка 4K прокси",
