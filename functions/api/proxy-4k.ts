@@ -95,7 +95,17 @@ export async function onRequest(context: any) {
 
     // Handle DASH manifest (.mpd)
     if (contentType.includes('dash+xml') || contentType.includes('application/xml') || targetUrl.includes('.mpd')) {
-      const xmlText = await res.text();
+      let xmlText = await res.text();
+      const lastSlash = targetUrl.lastIndexOf('/');
+      const baseCdn = targetUrl.substring(0, lastSlash + 1);
+
+      // Важно: в XML амперсанд ДОЛЖЕН быть &amp;, чтобы dash.js не падал
+      const proxyBase = `/api/proxy-4k?url=${encodeURIComponent(baseCdn)}&amp;referer=${encodeURIComponent('https://aniboom.one/')}`;
+
+      // Сносим старые BaseURL (если были) и ставим наш
+      xmlText = xmlText.replace(/<BaseURL>[\s\S]*?<\/BaseURL>/gi, '');
+      xmlText = xmlText.replace(/<MPD(\s|>)/i, `<MPD $1<BaseURL>${proxyBase}</BaseURL>`);
+
       return new Response(xmlText, {
         status: 200,
         headers: {
