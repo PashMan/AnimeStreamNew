@@ -4356,20 +4356,33 @@ app.get('/ws/room', handleRoomWebSocket);
 // Serve all static files from ./dist directory
 app.use('/*', serveStatic({ root: './dist' }));
 
-// Never serve HTML for missing static files (scripts, styles, images, assets) - return 404 to avoid MIME type errors
+// Never serve HTML for missing static files (scripts, styles, images, assets) - return 404 with correct MIME type
 app.get('/*', async (c) => {
   const reqPath = c.req.path;
   
-  // If request is for an asset, script, or contains a file extension, return 404
+  // If request is for an asset, script, or contains a file extension, return 404 with exact MIME
   if (
     reqPath.startsWith('/assets/') ||
     /\.(js|mjs|cjs|ts|tsx|jsx|css|map|wasm|png|jpg|jpeg|gif|svg|ico|webp|json|woff|woff2|ttf|eot|xml|txt)$/i.test(reqPath)
   ) {
-    c.header('Content-Type', 'text/plain; charset=utf-8');
+    let contentType = 'text/plain; charset=utf-8';
+    if (reqPath.endsWith('.css')) {
+      contentType = 'text/css; charset=utf-8';
+    } else if (/\.(js|mjs|cjs)$/i.test(reqPath)) {
+      contentType = 'application/javascript; charset=utf-8';
+    } else if (/\.(png|jpg|jpeg|gif|svg|ico|webp)$/i.test(reqPath)) {
+      contentType = 'image/png';
+    } else if (/\.(woff|woff2|ttf|eot)$/i.test(reqPath)) {
+      contentType = 'font/woff2';
+    } else if (reqPath.endsWith('.json')) {
+      contentType = 'application/json; charset=utf-8';
+    }
+
+    c.header('Content-Type', contentType);
     c.header('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
     c.header('Pragma', 'no-cache');
     c.header('Expires', '0');
-    return c.text('Asset Not Found', 404);
+    return c.text('/* Asset Not Found */', 404);
   }
 
   // SPA Fallback for HTML navigation routes
