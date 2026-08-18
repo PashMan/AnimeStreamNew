@@ -1236,7 +1236,24 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
 
                 hls.on(Hls.Events.ERROR, function (event, data) {
                   if (data.fatal) {
-                    console.error("HLS fatal error:", data.type, data.details);
+                    console.error("HLS fatal error:", data.type, data.details, data.response);
+
+                    // Manifest failure or 502/404 stream error: immediately switch to backup player
+                    if (
+                      data.details === "manifestParsingError" ||
+                      data.details === "manifestLoadError" ||
+                      data.details === "manifestLoadTimeOut" ||
+                      (data.response && (data.response.code === 502 || data.response.code === 404 || data.response.code === 403))
+                    ) {
+                      if (artInstance && artInstance.notice) {
+                        artInstance.notice.show = "Ошибка загрузки потока. Переключаем на запасной плеер...";
+                      }
+                      if (onPlayerErrorRef.current) {
+                        onPlayerErrorRef.current();
+                      }
+                      return;
+                    }
+
                     switch (data.type) {
                       case Hls.ErrorTypes.NETWORK_ERROR:
                         hls.startLoad();

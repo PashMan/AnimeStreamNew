@@ -276,32 +276,17 @@ export async function onRequest(context: any) {
       }
       throw new Error('Aniboom stream extraction failed');
     } catch (aErr: any) {
-      console.warn(`[CF Playlist Resolver Warning]: ${aErr.message}. Safe-fallback to Kodik.`);
-      if (resolveOnly) {
-        return new Response(JSON.stringify({
-          success: true,
-          streamType: 'hls',
-          qualities: [1080, 720, 480, 360],
-          quality: 1080,
-          fallback: true
-        }), {
-          status: 200,
+      console.warn(`[CF Playlist Resolver Error]: ${aErr.message}. Returning 502 to trigger player fallback.`);
+      return new Response(
+        JSON.stringify({ error: 'aniboom_stream_failed', message: aErr.message }),
+        {
+          status: 502,
           headers: {
             'Content-Type': 'application/json',
             'Access-Control-Allow-Origin': '*'
           }
-        });
-      }
-      if (fallbackUrl) {
-        return Response.redirect(`${getProxyOrigin(request)}/api/proxy-4k?url=${encodeURIComponent(fallbackUrl)}`, 302);
-      }
-      return new Response(JSON.stringify({ error: 'Stream extraction failed', fallback: true }), {
-        status: 200,
-        headers: {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*'
         }
-      });
+      );
     }
   }
 
@@ -621,14 +606,17 @@ export async function onRequest(context: any) {
         }
       });
     }
-    return new Response('Error: Failed to compile streaming proxy playlist. ' + error.message, {
-      status: 200,
-      headers: {
-        'Content-Type': 'text/plain',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, OPTIONS',
-        'Access-Control-Allow-Headers': '*'
+    return new Response(
+      JSON.stringify({ error: 'playlist_compile_failed', message: error.message }),
+      {
+        status: 502,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, OPTIONS',
+          'Access-Control-Allow-Headers': '*'
+        }
       }
-    });
+    );
   }
 }

@@ -3654,23 +3654,20 @@ app.get('/api/media/playlist', async (c) => {
     return c.redirect(finalStreamUrl, 302);
 
   } catch (err: any) {
-    console.warn(`[Playlist Resolver Warning]: ${err.message}. Safe-fallback.`);
+    console.warn(`[Playlist Resolver Error]: ${err.message}. Returning 502 to trigger player fallback.`);
     
     if (resolveOnly) {
       return c.json({
-        success: true,
-        streamType: 'hls',
-        qualities: [1080, 720, 480, 360],
-        quality: 1080,
-        fallback: true
-      });
-    }
-
-    if (fallbackUrl) {
-      return c.redirect(`/api/proxy-4k?url=${encodeURIComponent(fallbackUrl)}`, 302);
+        success: false,
+        error: 'aniboom_stream_failed',
+        message: err.message
+      }, 502);
     }
     
-    return c.json({ error: 'Stream extraction failed', fallback: true }, 200);
+    return c.json({
+      error: 'aniboom_stream_failed',
+      message: err.message
+    }, 502);
   }
 });
 
