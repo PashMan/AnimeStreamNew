@@ -2359,10 +2359,11 @@ app.get('/api/proxy-4k', async (c) => {
   if (!targetUrl) return c.text('Missing url parameter', 400);
 
   try {
-    const isAniboomHost = targetUrl.includes('ya-ligh') || targetUrl.includes('aniboom') || targetUrl.includes('boom-img') || targetUrl.includes('.m4s') || targetUrl.includes('.ts');
+    const refererParam = c.req.query('referer');
+    const isAniboomHost = targetUrl.includes('ya-ligh') || targetUrl.includes('aniboom') || targetUrl.includes('boom-img') || targetUrl.includes('.m4s') || targetUrl.includes('.ts') || targetUrl.includes('.mpd');
     const reqHeaders: Record<string, string> = {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-      'Referer': isAniboomHost ? 'https://aniboom.one/' : 'https://shikimori.one/'
+      'Referer': refererParam || (isAniboomHost ? 'https://aniboom.one/' : 'https://shikimori.one/')
     };
     if (isAniboomHost) {
       reqHeaders['Origin'] = 'https://aniboom.one';
@@ -2379,6 +2380,40 @@ app.get('/api/proxy-4k', async (c) => {
     }
 
     const contentType = res.headers.get('content-type') || '';
+
+    // Handle DASH manifest (.mpd)
+    if (contentType.includes('dash+xml') || contentType.includes('application/xml') || targetUrl.includes('.mpd')) {
+      let text = await res.text();
+      const parentUrl = targetUrl.substring(0, targetUrl.lastIndexOf('/') + 1);
+      const safeReferer = encodeURIComponent(refererParam || 'https://aniboom.one/');
+
+      const hasBaseUrl = /<BaseURL>/i.test(text);
+      if (hasBaseUrl) {
+        text = text.replace(/<BaseURL>([^<]+)<\/BaseURL>/gi, (match, p1) => {
+          let absUrl = p1.trim();
+          if (!absUrl.startsWith('http')) {
+            absUrl = absUrl.startsWith('/') ? new URL(absUrl, targetUrl).toString() : parentUrl + absUrl;
+          }
+          if (!absUrl.endsWith('/')) absUrl += '/';
+          return `<BaseURL>/api/proxy-4k?url=${encodeURIComponent(absUrl)}&amp;referer=${safeReferer}</BaseURL>`;
+        });
+      } else {
+        const proxyBaseUrl = `/api/proxy-4k?url=${encodeURIComponent(parentUrl)}&referer=${refererParam || 'https://aniboom.one/'}`;
+        const escapedProxyBaseUrl = proxyBaseUrl.replace(/&/g, '&amp;');
+        text = text.replace(/(<MPD[^>]*>)/i, `$1\n  <BaseURL>${escapedProxyBaseUrl}</BaseURL>`);
+      }
+
+      return new Response(text, {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/dash+xml',
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+          'Access-Control-Allow-Headers': '*',
+          'Cache-Control': 'no-cache, no-store, must-revalidate'
+        }
+      });
+    }
     
     if (contentType.includes('mpegurl') || contentType.includes('m3u8') || targetUrl.includes('.m3u8')) {
       const text = await res.text();

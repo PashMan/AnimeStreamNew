@@ -1058,6 +1058,28 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
 
               const player = dashjs.MediaPlayer().create();
 
+              // Оптимальные настройки буферизации для быстрой загрузки и защиты от зависаний
+              (player as any).updateSettings({
+                streaming: {
+                  buffer: {
+                    fastSwitchEnabled: true,
+                    initialBufferTime: 1.5,
+                    stableBufferTime: 8,
+                    bufferTimeAtTopQuality: 15,
+                    bufferToKeep: 20,
+                    bufferPruningInterval: 10,
+                  },
+                  gaps: {
+                    jumpGaps: true,
+                    jumpLargeGaps: true,
+                    smallGapLimit: 1.5,
+                  },
+                  abr: {
+                    autoSwitchBitrate: { video: true, audio: true },
+                  },
+                },
+              });
+
               // Формируем безопасный прокси-URL для Dash.js
               let proxyUrl = url;
               if (!proxyUrl.startsWith("/api/proxy-4k") && !proxyUrl.startsWith("http://localhost") && proxyUrl.startsWith("http")) {
