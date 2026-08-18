@@ -24,8 +24,9 @@ import {
   Sparkles,
 } from "lucide-react";
 import { isTvDevice } from "../utils/tvDetection";
+import { MobileAnime4KRenderer } from "../utils/anime4kCanvas";
 
-export { isTvDevice };
+export { isTvDevice, MobileAnime4KRenderer };
 
 interface CustomPlayerProps {
   src: string;
