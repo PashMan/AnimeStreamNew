@@ -66,8 +66,6 @@ const formatWorkerEmbedUrl = (rawEmbedUrl: string, epNum: number) => {
     if (!url.searchParams.has("episode")) {
       url.searchParams.set("episode", String(epNum));
     }
-    // Set standard parent referer to prevent mismatched parent blocks
-    url.searchParams.set("parent", "https://animego.me/");
     return url.toString();
   } catch (_) {
     let result = rawEmbedUrl;
