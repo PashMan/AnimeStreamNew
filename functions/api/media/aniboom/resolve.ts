@@ -155,11 +155,47 @@ export async function onRequest(context: any) {
     }
 
     if (!match) {
+      // Automatic Kodik Fallback on Worker
+      const shikimoriId = urlObj.searchParams.get('shikimori_id');
+      if (shikimoriId) {
+        try {
+          const kodikRes = await fetch(`https://kodik-api.com/search?token=a0457eb45312af80bbb9f3fb33de3e93&shikimori_id=${shikimoriId}&with_episodes=true`);
+          if (kodikRes.ok) {
+            const kData = await kodikRes.json() as any;
+            if (kData.results && kData.results.length > 0) {
+              let iframeLink = kData.results[0].link;
+              if (kData.results[0].seasons) {
+                const sKeys = Object.keys(kData.results[0].seasons);
+                const sObj = kData.results[0].seasons[sKeys[sKeys.length - 1]];
+                if (sObj && sObj.episodes && sObj.episodes[String(episode)]) {
+                  iframeLink = sObj.episodes[String(episode)];
+                }
+              }
+              if (iframeLink) {
+                const fullIframe = iframeLink.startsWith('//') ? `https:${iframeLink}` : iframeLink;
+                const proxiedKodikUrl = `/api/media/playlist?url=${encodeURIComponent(fullIframe)}`;
+                return new Response(JSON.stringify({
+                  success: true,
+                  url: proxiedKodikUrl,
+                  streamType: 'hls',
+                  provider: 'kodik',
+                  quality: '1080p',
+                  is_fallback: true
+                }), {
+                  status: 200,
+                  headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+                });
+              }
+            }
+          }
+        } catch (_) {}
+      }
+
       return new Response(JSON.stringify({
         success: false,
         error: 'data-parameters attribute not found in Aniboom embed HTML'
       }), {
-        status: 404,
+        status: 200,
         headers: {
           'Content-Type': 'application/json',
           'Access-Control-Allow-Origin': '*'
@@ -222,7 +258,7 @@ export async function onRequest(context: any) {
         success: false,
         error: 'No valid video stream URL found in Aniboom parameters'
       }), {
-        status: 404,
+        status: 200,
         headers: {
           'Content-Type': 'application/json',
           'Access-Control-Allow-Origin': '*'

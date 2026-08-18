@@ -321,10 +321,11 @@ export async function onRequest(context: any) {
   // 3. ОТВЕТ ДЛЯ ПЕРЕКЛЮЧЕНИЯ НА IFRAME ПРИ ПОЛНОЙ НЕДОСТУПНОСТИ
   // -------------------------------------------------------------
   return new Response(JSON.stringify({
+    success: false,
     error: 'stream_unavailable',
     fallback_url: fallbackUrl
   }), {
-    status: 404,
+    status: 200,
     headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
   });
 }
