@@ -1086,8 +1086,13 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                 proxyUrl = `/api/proxy-4k?url=${encodeURIComponent(url)}&referer=${encodeURIComponent("https://aniboom.one/")}`;
               }
 
+              // Преобразуем в полный абсолютный URL (с протоколом и доменом), чтобы new URL() в dash.js не падал
+              const absoluteManifestUrl = proxyUrl.startsWith("http")
+                ? proxyUrl
+                : `${window.location.origin}${proxyUrl.startsWith("/") ? "" : "/"}${proxyUrl}`;
+
               const shouldAutoPlay = Boolean(autoPlay);
-              player.initialize(video, proxyUrl, shouldAutoPlay);
+              player.initialize(video, absoluteManifestUrl, shouldAutoPlay);
               (artInstance as any).dash = player;
 
               player.on(dashjs.MediaPlayer.events.ERROR, (e: any) => {

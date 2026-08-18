@@ -346,12 +346,23 @@ const Details: React.FC = () => {
           throw new Error(`Resolver returned ${res.status}`);
         }
 
-        const data = await res.json();
+        const contentType = res.headers.get("content-type") || "";
+        let data: any = null;
+        if (contentType.includes("json") || contentType.includes("application/json")) {
+          data = await res.json();
+        } else {
+          const resText = await res.text();
+          data = {
+            success: true,
+            url: res.url || `/api/media/aniboom/resolve?embed_url=${encodeURIComponent(embedToResolve)}`,
+            streamType: resText.includes("<MPD") || embedToResolve.includes(".mpd") ? "dash" : "hls"
+          };
+        }
 
         if (data.success && data.url && isCurrent) {
           setResolvedStream({
             url: data.url,
-            streamType: data.streamType || data.stream_type || "hls",
+            streamType: data.streamType || data.stream_type || (data.url.includes(".mpd") ? "dash" : "hls"),
             provider: "aniboom"
           });
           setIsResolvingStream(false);

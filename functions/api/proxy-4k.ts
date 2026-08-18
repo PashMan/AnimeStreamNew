@@ -94,6 +94,7 @@ export async function onRequest(context: any) {
       let text = await res.text();
       const parentUrl = targetUrl.substring(0, targetUrl.lastIndexOf('/') + 1);
       const safeReferer = encodeURIComponent(refererParam || 'https://aniboom.one/');
+      const originBase = getProxyOrigin(request);
 
       const hasBaseUrl = /<BaseURL>/i.test(text);
       if (hasBaseUrl) {
@@ -103,11 +104,12 @@ export async function onRequest(context: any) {
             absUrl = absUrl.startsWith('/') ? new URL(absUrl, targetUrl).toString() : parentUrl + absUrl;
           }
           if (!absUrl.endsWith('/')) absUrl += '/';
-          return `<BaseURL>/api/proxy-4k?url=${encodeURIComponent(absUrl)}&amp;referer=${safeReferer}</BaseURL>`;
+          const fullProxyUrl = `${originBase}/api/proxy-4k?url=${encodeURIComponent(absUrl)}&referer=${refererParam || 'https://aniboom.one/'}`;
+          return `<BaseURL>${fullProxyUrl.replace(/&/g, '&amp;')}</BaseURL>`;
         });
       } else {
-        const proxyBaseUrl = `/api/proxy-4k?url=${encodeURIComponent(parentUrl)}&referer=${refererParam || 'https://aniboom.one/'}`;
-        const escapedProxyBaseUrl = proxyBaseUrl.replace(/&/g, '&amp;');
+        const fullProxyBaseUrl = `${originBase}/api/proxy-4k?url=${encodeURIComponent(parentUrl)}&referer=${refererParam || 'https://aniboom.one/'}`;
+        const escapedProxyBaseUrl = fullProxyBaseUrl.replace(/&/g, '&amp;');
         text = text.replace(/(<MPD[^>]*>)/i, `$1\n  <BaseURL>${escapedProxyBaseUrl}</BaseURL>`);
       }
 
