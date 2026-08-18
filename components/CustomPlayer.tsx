@@ -1058,15 +1058,12 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
 
               const player = dashjs.MediaPlayer().create();
 
-              // Оптимальные настройки буферизации для быстрой загрузки и защиты от зависаний
+              // Оптимальные стандартные настройки dash.js без устаревших параметров
               (player as any).updateSettings({
                 streaming: {
                   buffer: {
                     fastSwitchEnabled: true,
-                    initialBufferTime: 1.5,
-                    stableBufferTime: 8,
-                    bufferTimeAtTopQuality: 15,
-                    bufferToKeep: 20,
+                    bufferToKeep: 30,
                     bufferPruningInterval: 10,
                   },
                   gaps: {

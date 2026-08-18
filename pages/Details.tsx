@@ -337,6 +337,24 @@ const Details: React.FC = () => {
           throw new Error("AniBoom embed URL not found");
         }
 
+        // Если embedToResolve УЖЕ является готовым потоком или прокси (.mpd / .m3u8 / /api/proxy-4k)
+        if (
+          embedToResolve.includes("/api/proxy-4k") ||
+          embedToResolve.includes(".mpd") ||
+          embedToResolve.includes(".m3u8")
+        ) {
+          if (isCurrent) {
+            setResolvedStream({
+              url: embedToResolve,
+              streamType: embedToResolve.includes(".mpd") ? "dash" : "hls",
+              provider: "aniboom"
+            });
+            setIsResolvingStream(false);
+            console.log(`🔥 [KamiPlayer 1080p] Прямой поток AniBoom активирован:`, embedToResolve);
+            return;
+          }
+        }
+
         // 2. Резолвим HTML AniBoom в чистый видеопоток .m3u8 / .mpd
         const res = await fetch(`/api/media/aniboom/resolve?embed_url=${encodeURIComponent(embedToResolve)}`, {
           signal: abortController.signal
@@ -349,8 +367,14 @@ const Details: React.FC = () => {
         const contentType = res.headers.get("content-type") || "";
         let data: any = null;
         if (contentType.includes("json") || contentType.includes("application/json")) {
-          data = await res.json();
-        } else {
+          try {
+            data = await res.json();
+          } catch (_) {
+            data = null;
+          }
+        }
+
+        if (!data) {
           const resText = await res.text();
           data = {
             success: true,
