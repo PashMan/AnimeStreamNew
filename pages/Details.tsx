@@ -292,7 +292,7 @@ const Details: React.FC = () => {
     }
   }, [selectedPlayer]);
 
-  // Smoothly resolve AniBoom streams via Cloudflare Worker microservice (D1 database) with instant Kodik fallback
+  // Плавное получение потока AniBoom 1080p через resolve-воркер
   useEffect(() => {
     const isSuzume = id === "50594" || id === "62568";
     const isWeathering = id === "38826";
@@ -309,134 +309,71 @@ const Details: React.FC = () => {
     let isCurrent = true;
     const epNum = parseInt(paramEpisode || "1") || 1;
     const defaultAniboom = players.find((p) => p.name === "Aniboom")?.iframe;
-    const defaultKodik = players.find((p) => p.name === "Kodik")?.iframe;
     const aniboomStream = getResolvedAniboomUrl(selectedTranslation, epNum, defaultAniboom);
-    const kodikIframeUrl = getResolvedKodikUrl(selectedTranslation, epNum, defaultKodik);
-
-    // Instant local activation if translation already has stream available
-    if (aniboomStream) {
-      setResolvedStream({
-        url: getCleanPlaylistUrl(aniboomStream, kodikIframeUrl, null, false),
-        streamType: "hls",
-        provider: "aniboom"
-      });
-      setIsResolvingStream(false);
-      return;
-    } else if (kodikIframeUrl) {
-      setResolvedStream({
-        url: getCleanPlaylistUrl(kodikIframeUrl, null, null, false),
-        streamType: "hls",
-        provider: "kodik"
-      });
-      setIsResolvingStream(false);
-    }
 
     const abortController = new AbortController();
-    const timeoutId = setTimeout(() => {
-      abortController.abort();
-    }, 6000);
 
-    const resolveAniboomStream = async () => {
+    const resolveStream = async () => {
       setIsResolvingStream(true);
       setStreamResolutionError(null);
 
       try {
-        const workerUrl = `https://parser.oshxycfdjab.workers.dev/?shikimori_id=${id}&episode=${epNum}`;
-        console.log(`📡 [Worker Resolver] Fetching stream from Cloudflare Worker for Shikimori ID: ${id}, Ep: ${epNum}`);
+        let embedToResolve = aniboomStream;
 
-        const res = await fetch(workerUrl, {
+        // 1. Если прямой ссылки нет, запрашиваем D1 воркер
+        if (!embedToResolve) {
+          const workerUrl = `https://parser.oshxycfdjab.workers.dev/?shikimori_id=${id}&episode=${epNum}`;
+          const wRes = await fetch(workerUrl, { signal: abortController.signal });
+          if (wRes.ok) {
+            const wData = await wRes.json();
+            if (wData?.source === "aniboom" && wData.embed_url) {
+              embedToResolve = formatWorkerEmbedUrl(wData.embed_url, epNum);
+            }
+          }
+        }
+
+        if (!embedToResolve) {
+          throw new Error("AniBoom embed URL not found");
+        }
+
+        // 2. Резолвим HTML AniBoom в чистый видеопоток .m3u8 / .mpd
+        const res = await fetch(`/api/media/aniboom/resolve?embed_url=${encodeURIComponent(embedToResolve)}`, {
           signal: abortController.signal
         });
 
         if (!res.ok) {
-          throw new Error(`Worker returned HTTP status ${res.status}`);
+          throw new Error(`Resolver returned ${res.status}`);
         }
 
         const data = await res.json();
-        console.log(`📦 [Worker Resolver] Response:`, data);
 
-        if (data && data.source === "aniboom" && data.embed_url) {
-          if (isCurrent) {
-            const formattedEmbedUrl = formatWorkerEmbedUrl(data.embed_url, epNum);
-            const playlistUrl = getCleanPlaylistUrl(formattedEmbedUrl, kodikIframeUrl, null, false);
-
-            setResolvedStream({
-              url: playlistUrl,
-              streamType: "hls",
-              provider: "aniboom"
-            });
-            setIsResolvingStream(false);
-            console.log(`✅ [Worker Resolver] Aniboom stream activated (KamiPlayer 1080p): ${formattedEmbedUrl}`);
-          }
+        if (data.success && data.url && isCurrent) {
+          setResolvedStream({
+            url: data.url,
+            streamType: data.streamType || data.stream_type || "hls",
+            provider: "aniboom"
+          });
+          setIsResolvingStream(false);
+          console.log(`🔥 [KamiPlayer 1080p] AniBoom успешно активирован:`, data.url);
           return;
         }
 
-        // If worker returns kodik_fallback or unknown format
-        console.info(`🔄 [Worker Resolver] Worker returned ${data?.source || "fallback"} (${data?.reason || "catalog"}). Switching to Kodik.`);
-        if (isCurrent) {
-          if (kodikIframeUrl) {
-            setResolvedStream({
-              url: getCleanPlaylistUrl(kodikIframeUrl),
-              streamType: "hls",
-              provider: "kodik"
-            });
-            setIsResolvingStream(false);
-          } else {
-            setIsResolvingStream(false);
-            handleAniboomFallback();
-          }
-        }
+        throw new Error(data.error || "Failed to resolve stream");
       } catch (err: any) {
-        if (err.name === "AbortError") {
-          console.warn("⏱️ [Worker Resolver] Request timed out (6s limit) or aborted. Falling back to Kodik.");
-        } else {
-          console.info("ℹ️ [Worker Resolver] Worker note:", err.message);
-        }
-
-        if (isCurrent) {
-          if (kodikIframeUrl) {
-            setResolvedStream({
-              url: getCleanPlaylistUrl(kodikIframeUrl),
-              streamType: "hls",
-              provider: "kodik"
-            });
+        if (err.name !== "AbortError") {
+          console.warn("⚠️ [AniBoom Resolver]:", err.message);
+          if (isCurrent) {
             setIsResolvingStream(false);
-          } else {
-            setIsResolvingStream(false);
-            setStreamResolutionError(err.message || "Failed to resolve stream");
-            handleAniboomFallback();
+            setStreamResolutionError(err.message);
           }
         }
-      } finally {
-        clearTimeout(timeoutId);
       }
     };
 
-    const handleAniboomFallback = () => {
-      // Smooth fallback sequence: try to find Kodik, then Collaps, or any other source
-      const kodik = players.find((p) => p.name === "Kodik");
-      const collaps = players.find((p) => p.name === "Collaps" || (p.iframe && p.iframe.includes("collaps")));
-      const anyOther = players.find((p) => p.name !== "KamiPlayer (1080p)" && p.name !== "Aniboom");
-
-      if (kodik) {
-        console.log("🔄 [Aniboom Resolver] Falling back smoothly to Kodik");
-        setSelectedPlayer("Kodik");
-      } else if (collaps) {
-        console.log("🔄 [Aniboom Resolver] Falling back smoothly to Collaps");
-        setSelectedPlayer(collaps.name);
-      } else if (anyOther) {
-        console.log(`🔄 [Aniboom Resolver] Falling back smoothly to ${anyOther.name}`);
-        setSelectedPlayer(anyOther.name);
-      } else {
-        console.warn("⚠️ [Aniboom Resolver] No fallback player available.");
-      }
-    };
-
-    resolveAniboomStream();
+    resolveStream();
 
     return () => {
       isCurrent = false;
-      clearTimeout(timeoutId);
       abortController.abort();
     };
   }, [selectedPlayer, paramEpisode, selectedTranslation, id, players]);
