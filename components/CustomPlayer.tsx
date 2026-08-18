@@ -1056,21 +1056,35 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                 } catch (e) {}
               }
 
+              // 1. Формируем гарантированный прокси-URL для начального MPD
+              let proxiedManifestUrl = url;
+              if (!proxiedManifestUrl.includes('/api/proxy-4k')) {
+                proxiedManifestUrl = `/api/proxy-4k?url=${encodeURIComponent(url)}&referer=${encodeURIComponent('https://aniboom.one/')}`;
+              }
+
               const player = dashjs.MediaPlayer().create();
 
-              // Перехватываем каждый запрос (включая манифест и чанки .m4s) и заворачиваем через proxy-4k
-              (player as any).extend("RequestModifier", () => {
-                return {
-                  modifyRequest: (request: any) => {
-                    if (request.url && !request.url.includes('/api/proxy-4k')) {
-                      request.url = `/api/proxy-4k?url=${encodeURIComponent(request.url)}&referer=${encodeURIComponent('https://aniboom.one/')}`;
-                    }
-                    return request;
+              // 2. Универсальный перехватчик XHR (работает для абсолютно всех чанков и сегментов)
+              if (typeof (player as any).setXHRRequestModifier === "function") {
+                (player as any).setXHRRequestModifier((xhr: any, request: any) => {
+                  if (request && request.url && !request.url.includes('/api/proxy-4k')) {
+                    request.url = `/api/proxy-4k?url=${encodeURIComponent(request.url)}&referer=${encodeURIComponent('https://aniboom.one/')}`;
                   }
-                };
-              }, true);
+                });
+              } else {
+                (player as any).extend("RequestModifier", () => {
+                  return {
+                    modifyRequest: (request: any) => {
+                      if (request && request.url && !request.url.includes('/api/proxy-4k')) {
+                        request.url = `/api/proxy-4k?url=${encodeURIComponent(request.url)}&referer=${encodeURIComponent('https://aniboom.one/')}`;
+                      }
+                      return request;
+                    }
+                  };
+                }, true);
+              }
 
-              // Оптимальные стандартные настройки dash.js без устаревших параметров
+              // 3. Отключаем прыжки по таймлайну
               (player as any).updateSettings({
                 streaming: {
                   buffer: {
@@ -1079,20 +1093,19 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                     bufferPruningInterval: 10,
                   },
                   gaps: {
-                    jumpGaps: true,
-                    jumpLargeGaps: true,
-                    smallGapLimit: 1.5,
+                    jumpGaps: false,
+                    jumpLargeGaps: false
                   },
                   abr: {
                     autoSwitchBitrate: { video: true, audio: true },
                   },
-                },
+                }
               });
 
-              // Инициализируем плеер прямым URL манифеста
-              const absoluteManifestUrl = url.startsWith("http")
-                ? url
-                : `${window.location.origin}${url.startsWith("/") ? "" : "/"}${url}`;
+              // Инициализируем плеер проксированным URL
+              const absoluteManifestUrl = proxiedManifestUrl.startsWith('http')
+                ? proxiedManifestUrl
+                : `${window.location.origin}${proxiedManifestUrl.startsWith('/') ? '' : '/'}${proxiedManifestUrl}`;
 
               const shouldAutoPlay = Boolean(autoPlay);
               player.initialize(video, absoluteManifestUrl, shouldAutoPlay);
