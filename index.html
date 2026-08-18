@@ -72,8 +72,8 @@
           var lastReload = sessionStorage.getItem(reloadKey);
           var now = Date.now();
           
-          // Prevent infinite reload loops (cooldown 4 seconds)
-          if (!lastReload || (now - parseInt(lastReload, 10)) > 4000) {
+          // Prevent infinite reload loops (cooldown 5 seconds)
+          if (!lastReload || (now - parseInt(lastReload, 10)) > 5000) {
             sessionStorage.setItem(reloadKey, String(now));
             
             // 1. Unregister all ServiceWorkers
@@ -99,9 +99,20 @@
             }
 
             // 3. Force hard navigation bypassing HTTP/CDN cache
-            var url = new URL(window.location.href);
-            url.searchParams.set('_v', String(now));
-            window.location.replace(url.toString());
+            var targetUrl = window.location.pathname + (window.location.search ? window.location.search.replace(/[?&]_v=\d+/, '') : '');
+            var sep = targetUrl.indexOf('?') !== -1 ? '&' : '?';
+            targetUrl += sep + '_v=' + now;
+            
+            // Fetch fresh HTML bypassing disk cache then navigate
+            if (window.fetch) {
+              fetch(targetUrl, { cache: 'reload' }).then(function() {
+                window.location.replace(targetUrl);
+              }).catch(function() {
+                window.location.replace(targetUrl);
+              });
+            } else {
+              window.location.replace(targetUrl);
+            }
           }
         }
 
@@ -137,6 +148,7 @@
               msg.indexOf('dynamically imported module') !== -1 ||
               msg.indexOf('Failed to fetch dynamically imported module') !== -1 ||
               msg.indexOf('error loading dynamically imported module') !== -1 ||
+              msg.indexOf('Expected a JavaScript-or-Wasm module script') !== -1 ||
               msg.indexOf('Importing a module script failed') !== -1
             ) {
               bustStaleCacheAndReload(msg);
