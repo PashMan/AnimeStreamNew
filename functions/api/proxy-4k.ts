@@ -95,20 +95,7 @@ export async function onRequest(context: any) {
 
     // Handle DASH manifest (.mpd)
     if (contentType.includes('dash+xml') || contentType.includes('application/xml') || targetUrl.includes('.mpd')) {
-      let xmlText = await res.text();
-      
-      // Получаем базовый путь к папке с чанками на CDN AniBoom (со слэшем на конце)
-      const lastSlashIndex = targetUrl.lastIndexOf('/');
-      const baseCdnUrl = targetUrl.substring(0, lastSlashIndex + 1);
-
-      // Формируем префикс прокси с кодированной папкой CDN
-      const safeReferer = refererParam ? `&referer=${encodeURIComponent(refererParam)}` : '';
-      const proxyPrefix = `/api/proxy-4k?url=${encodeURIComponent(baseCdnUrl)}${safeReferer}`;
-
-      // Удаляем любые существующие BaseURL и добавляем наш слитный префикс
-      xmlText = xmlText.replace(/<BaseURL>[\s\S]*?<\/BaseURL>/gi, '');
-      xmlText = xmlText.replace(/<MPD(\s|>)/i, `<MPD $1<BaseURL>${proxyPrefix.replace(/&/g, '&amp;')}</BaseURL>`);
-
+      const xmlText = await res.text();
       return new Response(xmlText, {
         status: 200,
         headers: {
