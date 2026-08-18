@@ -158,8 +158,12 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     assetsDir: 'assets',
+    target: 'esnext',
     sourcemap: false,
     emptyOutDir: false,
+    chunkSizeWarningLimit: 1000,
+    cssCodeSplit: true,
+    minify: 'esbuild',
     rollupOptions: {
       output: {
         manualChunks: {

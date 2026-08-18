@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "tsx server.ts",
     "start": "node server.ts",
-    "build": "npm run sitemap && npm run sitemap:remove && vite build",
+    "build": "vite build",
+    "build:full": "npm run sitemap && npm run sitemap:remove && vite build",
     "build:sitemap": "npm run sitemap && npm run sitemap:remove && vite build",
     "build:staging": "npm run sitemap && npm run sitemap:remove && vite build --mode staging",
     "preview": "vite preview",

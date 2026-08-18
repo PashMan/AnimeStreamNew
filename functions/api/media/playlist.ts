@@ -34,6 +34,16 @@ function safeUnescape(str: string): string {
   return res;
 }
 
+function getProxyOrigin(request: Request): string {
+  const url = new URL(request.url);
+  const proto = request.headers.get('x-forwarded-proto') || url.protocol.replace(':', '') || 'http';
+  let host = request.headers.get('x-forwarded-host') || request.headers.get('host') || url.host || 'localhost:3000';
+  if (host.startsWith('http://') || host.startsWith('https://')) {
+    return host;
+  }
+  return `${proto}://${host}`;
+}
+
 export async function onRequest(context: any) {
   const { request } = context;
 
@@ -61,13 +71,30 @@ export async function onRequest(context: any) {
   }
 
   let cleanTarget = safeUnescape(urlParam || fallbackUrl);
+  const originBase = getProxyOrigin(request);
+
+  // Если ссылка уже была обернута в proxy-4k — сразу отдаем редирект
+  if (cleanTarget.startsWith('/api/proxy-4k')) {
+    return new Response(null, {
+      status: 302,
+      headers: {
+        'Location': `${originBase}${cleanTarget}`,
+        'Access-Control-Allow-Origin': '*',
+      }
+    });
+  }
 
   // -------------------------------------------------------------
   // 1. ПОПЫТКА ИЗВЛЕЧЕНИЯ ПОТОКА ANIBOOM (1080p)
   // -------------------------------------------------------------
   if (cleanTarget.includes('aniboom')) {
     try {
-      const parsedUrl = new URL(cleanTarget.startsWith('//') ? `https:${cleanTarget}` : cleanTarget);
+      let parsedUrl: URL;
+      try {
+        parsedUrl = new URL(cleanTarget.startsWith('//') ? `https:${cleanTarget}` : cleanTarget, originBase);
+      } catch (_) {
+        parsedUrl = new URL('https://aniboom.one');
+      }
       let parentReferer = parsedUrl.searchParams.get('parent') || 'https://animego.me/';
       parentReferer = safeUnescape(parentReferer);
       if (!parentReferer.startsWith('http')) parentReferer = 'https://animego.me/';

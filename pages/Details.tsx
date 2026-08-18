@@ -1939,18 +1939,13 @@ const Details: React.FC = () => {
                                   ]
                                 : undefined;
                             } else {
-                              // Extract Aniboom stream URL for KamiPlayer (and use secure backend resolution)
+                              // ИСПРАВЛЕНИЕ: если поток AniBoom уже получен, отдаем его НАПРЯМУЮ в плеер!
                               const epNum = parseInt(paramEpisode || "1") || 1;
-                              const defaultAniboom = players.find((p) => p.name === "Aniboom")?.iframe;
-                              const aniboomStream = getResolvedAniboomUrl(selectedTranslation, epNum, defaultAniboom);
-
                               const defaultKodik = players.find((p) => p.name === "Kodik")?.iframe;
                               const kodikIframeUrl = getResolvedKodikUrl(selectedTranslation, epNum, defaultKodik);
 
                               if (resolvedStream && resolvedStream.url) {
-                                customSrc = getCleanPlaylistUrl(resolvedStream.url, kodikIframeUrl, null, false);
-                              } else if (aniboomStream) {
-                                customSrc = getCleanPlaylistUrl(aniboomStream, kodikIframeUrl, null, false);
+                                customSrc = resolvedStream.url; // <-- ПРЯМАЯ ССЫЛКА НА ПРОКСИ М3U8!
                               } else if (kodikIframeUrl) {
                                 customSrc = getCleanPlaylistUrl(kodikIframeUrl, null, null, false);
                               } else {
