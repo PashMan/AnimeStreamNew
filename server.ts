@@ -3706,9 +3706,8 @@ app.get('/api/media/playlist', async (c) => {
         parsedTargetUrl = new URL('https://aniboom.one');
       }
 
-      if (!parsedTargetUrl.searchParams.has('parent')) {
-        parsedTargetUrl.searchParams.set('parent', referer);
-      }
+      // Always set canonical parent referer to prevent mismatched slug rejections
+      parsedTargetUrl.searchParams.set('parent', 'https://animego.me/');
 
       const existingTranslation = parsedTargetUrl.searchParams.get('translation');
       // Try existing translation first, then fallback to default '' and common IDs
@@ -3716,12 +3715,10 @@ app.get('/api/media/playlist', async (c) => {
         ? Array.from(new Set([existingTranslation, '', '16', '24', '1', '2', '3']))
         : ['', '16', '24', '1', '2', '3'];
 
-      const originalParent = parsedTargetUrl.searchParams.get('parent') || referer;
-      const originHost = originalParent.startsWith('http') ? new URL(originalParent).origin : 'https://animego.me';
+      const originalParent = 'https://animego.me/';
+      const originHost = 'https://animego.me';
 
       const candidateReferers = [
-        originalParent,
-        referer,
         'https://animego.me/',
         'https://animego.org/',
         'https://aniboom.one/'

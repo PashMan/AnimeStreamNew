@@ -66,6 +66,8 @@ const formatWorkerEmbedUrl = (rawEmbedUrl: string, epNum: number) => {
     if (!url.searchParams.has("episode")) {
       url.searchParams.set("episode", String(epNum));
     }
+    // Set standard parent referer to prevent mismatched parent blocks
+    url.searchParams.set("parent", "https://animego.me/");
     return url.toString();
   } catch (_) {
     let result = rawEmbedUrl;
@@ -316,7 +318,7 @@ const Details: React.FC = () => {
     // Instant local activation if translation already has stream available
     if (aniboomStream) {
       setResolvedStream({
-        url: getCleanPlaylistUrl(aniboomStream, kodikIframeUrl),
+        url: getCleanPlaylistUrl(aniboomStream, kodikIframeUrl, null, false),
         streamType: "hls",
         provider: "aniboom"
       });
@@ -324,7 +326,7 @@ const Details: React.FC = () => {
       return;
     } else if (kodikIframeUrl) {
       setResolvedStream({
-        url: getCleanPlaylistUrl(kodikIframeUrl),
+        url: getCleanPlaylistUrl(kodikIframeUrl, null, null, false),
         streamType: "hls",
         provider: "kodik"
       });
@@ -358,39 +360,7 @@ const Details: React.FC = () => {
         if (data && data.source === "aniboom" && data.embed_url) {
           if (isCurrent) {
             const formattedEmbedUrl = formatWorkerEmbedUrl(data.embed_url, epNum);
-
-            // Client-Side Resolution fallback for AniBoom
-            let clientHlsUrl: string | null = null;
-            try {
-              const clientFetchRes = await fetch(formattedEmbedUrl, {
-                headers: { 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' }
-              }).catch(() => null);
-
-              if (clientFetchRes && clientFetchRes.ok) {
-                const htmlText = await clientFetchRes.text();
-                const match = htmlText.match(/data-parameters="([^"]+)"/) || htmlText.match(/data-parameters='([^']+)'/);
-                if (match) {
-                  const decoded = JSON.parse(
-                    match[1]
-                      .replace(/&quot;/g, '"')
-                      .replace(/&amp;/g, '&')
-                      .replace(/&#039;/g, "'")
-                  );
-                  let hlsObj = decoded.hls || decoded.dash;
-                  if (typeof hlsObj === 'string') {
-                    try { hlsObj = JSON.parse(hlsObj); } catch (_) {}
-                  }
-                  if (hlsObj) {
-                    clientHlsUrl = typeof hlsObj === 'string' ? hlsObj : (hlsObj['1080'] || hlsObj['720'] || hlsObj['480'] || hlsObj.src || hlsObj.url || '');
-                    if (clientHlsUrl && clientHlsUrl.startsWith('//')) clientHlsUrl = `https:${clientHlsUrl}`;
-                  }
-                }
-              }
-            } catch (_) {}
-
-            const playlistUrl = clientHlsUrl 
-              ? `/api/proxy-4k?url=${encodeURIComponent(clientHlsUrl)}&referer=${encodeURIComponent('https://aniboom.one/')}`
-              : getCleanPlaylistUrl(formattedEmbedUrl, kodikIframeUrl);
+            const playlistUrl = getCleanPlaylistUrl(formattedEmbedUrl, kodikIframeUrl, null, false);
 
             setResolvedStream({
               url: playlistUrl,
@@ -398,7 +368,7 @@ const Details: React.FC = () => {
               provider: "aniboom"
             });
             setIsResolvingStream(false);
-            console.log(`✅ [Worker Resolver] Aniboom stream activated (KamiPlayer 1080p): ${clientHlsUrl || formattedEmbedUrl}`);
+            console.log(`✅ [Worker Resolver] Aniboom stream activated (KamiPlayer 1080p): ${formattedEmbedUrl}`);
           }
           return;
         }
@@ -2043,13 +2013,13 @@ const Details: React.FC = () => {
                               const kodikIframeUrl = getResolvedKodikUrl(selectedTranslation, epNum, defaultKodik);
 
                               if (resolvedStream && resolvedStream.url) {
-                                customSrc = getCleanPlaylistUrl(resolvedStream.url, kodikIframeUrl);
+                                customSrc = getCleanPlaylistUrl(resolvedStream.url, kodikIframeUrl, null, false);
                               } else if (aniboomStream) {
-                                customSrc = getCleanPlaylistUrl(aniboomStream, kodikIframeUrl);
+                                customSrc = getCleanPlaylistUrl(aniboomStream, kodikIframeUrl, null, false);
                               } else if (kodikIframeUrl) {
-                                customSrc = getCleanPlaylistUrl(kodikIframeUrl);
+                                customSrc = getCleanPlaylistUrl(kodikIframeUrl, null, null, false);
                               } else {
-                                customSrc = getCleanPlaylistUrl("https://cdn.kamianime.club/kimi-no-na-wa/master.m3u8");
+                                customSrc = getCleanPlaylistUrl("https://cdn.kamianime.club/kimi-no-na-wa/master.m3u8", null, null, false);
                               }
                             }
 
