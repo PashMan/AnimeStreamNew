@@ -73,22 +73,71 @@ export async function onRequest(context: any) {
     });
   }
 
-  // If Aniboom URL
-  if (urlParam.includes('aniboom')) {
-    try {
-      const parentMatch = urlParam.match(/[?&]parent=([^&]+)/);
-      const referer = parentMatch ? decodeURIComponent(parentMatch[1]) : 'https://animego.me/';
-
-      const aRes = await fetch(urlParam, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-          'Referer': referer,
-          'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8'
+  const safeUnescapeUrl = (u: string): string => {
+    let res = u || '';
+    for (let i = 0; i < 3; i++) {
+      if (res.includes('%')) {
+        try {
+          const next = decodeURIComponent(res);
+          if (next === res) break;
+          res = next;
+        } catch (_) {
+          break;
         }
-      });
+      } else {
+        break;
+      }
+    }
+    return res;
+  };
 
-      if (aRes.ok) {
-        const aHtml = await aRes.text();
+  const cleanUrlParam = safeUnescapeUrl(urlParam);
+
+  // If Aniboom URL
+  if (cleanUrlParam.includes('aniboom')) {
+    try {
+      let referer = 'https://animego.me/';
+      const parentMatch = cleanUrlParam.match(/[?&]parent=([^&]+)/i);
+      if (parentMatch) {
+        const decodedParent = safeUnescapeUrl(parentMatch[1]);
+        if (decodedParent.startsWith('http://') || decodedParent.startsWith('https://')) {
+          referer = decodedParent;
+        }
+      }
+
+      const candidateReferers = [
+        referer,
+        'https://animego.me/',
+        'https://animego.org/',
+        'https://aniboom.one/'
+      ];
+
+      let aHtml = '';
+      for (const ref of candidateReferers) {
+        try {
+          const originHost = ref.startsWith('http') ? new URL(ref).origin : 'https://animego.me';
+          const aRes = await fetch(cleanUrlParam, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+              'Referer': ref,
+              'Origin': originHost,
+              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+              'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
+              'Sec-Fetch-Dest': 'iframe',
+              'Sec-Fetch-Mode': 'navigate',
+              'Sec-Fetch-Site': 'cross-site'
+            }
+          });
+          if (aRes.ok) {
+            aHtml = await aRes.text();
+            if (aHtml && aHtml.includes('data-parameters')) {
+              break;
+            }
+          }
+        } catch (_) {}
+      }
+
+      if (aHtml) {
         const match = aHtml.match(/data-parameters="([^"]+)"/) || aHtml.match(/data-parameters='([^']+)'/);
         if (match) {
           const decodedHtml = match[1]
@@ -96,7 +145,8 @@ export async function onRequest(context: any) {
             .replace(/&amp;/g, '&')
             .replace(/&#039;/g, "'")
             .replace(/&lt;/g, '<')
-            .replace(/&gt;/g, '>');
+            .replace(/&gt;/g, '>')
+            .replace(/\\"/g, '"');
           const params = JSON.parse(decodedHtml);
 
           let hlsData = params.hls;
@@ -113,8 +163,20 @@ export async function onRequest(context: any) {
             } catch (_) {}
           }
 
-          let rawStreamUrl = (typeof hlsData === 'string' ? hlsData : (hlsData?.src || hlsData?.url || hlsData?.file)) ||
-                             (typeof dashData === 'string' ? dashData : (dashData?.src || dashData?.url || dashData?.file));
+          let rawStreamUrl = '';
+          if (typeof hlsData === 'object' && hlsData !== null) {
+            rawStreamUrl = hlsData['1080'] || hlsData['720'] || hlsData['480'] || hlsData['360'] || hlsData.src || hlsData.url || hlsData.file || '';
+          } else if (typeof hlsData === 'string') {
+            rawStreamUrl = hlsData;
+          }
+
+          if (!rawStreamUrl) {
+            if (typeof dashData === 'object' && dashData !== null) {
+              rawStreamUrl = dashData['1080'] || dashData['720'] || dashData['480'] || dashData['360'] || dashData.src || dashData.url || dashData.file || '';
+            } else if (typeof dashData === 'string') {
+              rawStreamUrl = dashData;
+            }
+          }
 
           if (rawStreamUrl) {
             if (rawStreamUrl.startsWith('//')) {

@@ -3374,34 +3374,55 @@ app.get('/api/media/playlist', async (c) => {
     return c.json({ error: 'Missing url parameter' }, 400);
   }
 
+  // Helper for recursive decoding of double/triple-encoded URLs
+  const safeUnescapeUrl = (u: string): string => {
+    let res = u || '';
+    for (let i = 0; i < 3; i++) {
+      if (res.includes('%')) {
+        try {
+          const next = decodeURIComponent(res);
+          if (next === res) break;
+          res = next;
+        } catch (_) {
+          break;
+        }
+      } else {
+        break;
+      }
+    }
+    return res;
+  };
+
+  const cleanTargetUrl = safeUnescapeUrl(targetUrl);
+
   // 1. Check in-memory cache
   const now = Date.now();
-  const cached = playlistCache.get(targetUrl);
+  const cached = playlistCache.get(cleanTargetUrl);
   let rawStreamUrl = (cached && cached.exp > now) ? cached.rawUrl : '';
   let finalStreamUrl = (cached && cached.exp > now) ? cached.streamUrl : '';
 
   // 2. If not Aniboom embed URL: handle as direct link or Kodik
-  if (!targetUrl.includes('aniboom')) {
+  if (!cleanTargetUrl.includes('aniboom')) {
     if (resolveOnly) {
       return c.json({
         success: true,
         streamType: 'hls',
         qualities: [720, 480, 360],
         quality: 720,
-        direct_url: targetUrl,
-        url: `/api/proxy-4k?url=${encodeURIComponent(targetUrl)}`
+        direct_url: cleanTargetUrl,
+        url: `/api/proxy-4k?url=${encodeURIComponent(cleanTargetUrl)}`
       });
     }
 
     if (requestedQuality) {
       // If it's a direct m3u8 link or proxy request
       try {
-        const directRes = await fetch(targetUrl, {
+        const directRes = await fetch(cleanTargetUrl, {
           headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
         });
         if (directRes.ok) {
           const m3u8Text = await directRes.text();
-          const baseUrl = new URL(targetUrl);
+          const baseUrl = new URL(cleanTargetUrl);
           const rewritten = m3u8Text.split('\n').map(line => {
             const trimmed = line.trim();
             if (trimmed && !trimmed.startsWith('#')) {
@@ -3418,29 +3439,64 @@ app.get('/api/media/playlist', async (c) => {
       } catch (_) {}
     }
 
-    const finalUrl = `/api/proxy-4k?url=${encodeURIComponent(targetUrl)}`;
+    const finalUrl = `/api/proxy-4k?url=${encodeURIComponent(cleanTargetUrl)}`;
     return c.redirect(finalUrl, 302);
   }
 
   // 3. Resolve Aniboom stream if not in cache
   try {
     if (!rawStreamUrl) {
-      const parentMatch = targetUrl.match(/[?&]parent=([^&]+)/);
-      const referer = parentMatch ? decodeURIComponent(parentMatch[1]) : 'https://animego.me/';
+      let referer = 'https://animego.me/';
+      const parentMatch = cleanTargetUrl.match(/[?&]parent=([^&]+)/i);
+      if (parentMatch) {
+        const decodedParent = safeUnescapeUrl(parentMatch[1]);
+        if (decodedParent.startsWith('http://') || decodedParent.startsWith('https://')) {
+          referer = decodedParent;
+        }
+      }
 
-      console.log(`🌐 [Aniboom Fetch]: ${targetUrl} | Referer: ${referer}`);
+      console.log(`🌐 [Aniboom Fetch]: ${cleanTargetUrl} | Referer: ${referer}`);
 
-      const response = await axios.get(targetUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-          'Referer': referer,
-          'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8'
-        },
-        timeout: 6000
-      });
+      const candidateReferers = [
+        referer,
+        'https://animego.me/',
+        'https://animego.org/',
+        'https://aniboom.one/'
+      ];
+
+      let response: any = null;
+      let lastFetchErr: any = null;
+
+      for (const ref of candidateReferers) {
+        try {
+          const originHost = ref.startsWith('http') ? new URL(ref).origin : 'https://animego.me';
+          response = await axios.get(cleanTargetUrl, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+              'Referer': ref,
+              'Origin': originHost,
+              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+              'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
+              'Sec-Fetch-Dest': 'iframe',
+              'Sec-Fetch-Mode': 'navigate',
+              'Sec-Fetch-Site': 'cross-site'
+            },
+            timeout: 6000
+          });
+          if (response && response.status === 200 && response.data) {
+            break;
+          }
+        } catch (err: any) {
+          lastFetchErr = err;
+        }
+      }
+
+      if (!response || !response.data) {
+        throw new Error(`Aniboom embed request failed: ${lastFetchErr?.message || 'Empty response'}`);
+      }
 
       const $ = cheerio.load(response.data);
-      let rawParams = $('#video, [data-parameters]').attr('data-parameters');
+      let rawParams = $('#video, [data-parameters], div[data-parameters]').attr('data-parameters');
 
       if (!rawParams) {
         const match = typeof response.data === 'string'
@@ -3459,7 +3515,8 @@ app.get('/api/media/playlist', async (c) => {
         .replace(/&amp;/g, '&')
         .replace(/&#039;/g, "'")
         .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>');
+        .replace(/&gt;/g, '>')
+        .replace(/\\"/g, '"');
       const params = JSON.parse(decodedHtml);
 
       // Handle double serialized strings for hls & dash
@@ -3477,8 +3534,20 @@ app.get('/api/media/playlist', async (c) => {
         } catch (_) {}
       }
 
-      rawStreamUrl = (typeof hlsData === 'string' ? hlsData : (hlsData?.src || hlsData?.url || hlsData?.file)) ||
-                     (typeof dashData === 'string' ? dashData : (dashData?.src || dashData?.url || dashData?.file));
+      // Extract raw direct link
+      if (typeof hlsData === 'object' && hlsData !== null) {
+        rawStreamUrl = hlsData['1080'] || hlsData['720'] || hlsData['480'] || hlsData['360'] || hlsData.src || hlsData.url || hlsData.file || '';
+      } else if (typeof hlsData === 'string') {
+        rawStreamUrl = hlsData;
+      }
+
+      if (!rawStreamUrl) {
+        if (typeof dashData === 'object' && dashData !== null) {
+          rawStreamUrl = dashData['1080'] || dashData['720'] || dashData['480'] || dashData['360'] || dashData.src || dashData.url || dashData.file || '';
+        } else if (typeof dashData === 'string') {
+          rawStreamUrl = dashData;
+        }
+      }
 
       if (!rawStreamUrl) {
         throw new Error('Direct video source URL not found in data-parameters');
@@ -3489,7 +3558,7 @@ app.get('/api/media/playlist', async (c) => {
       }
 
       finalStreamUrl = `/api/proxy-4k?url=${encodeURIComponent(rawStreamUrl)}&referer=${encodeURIComponent('https://aniboom.one/')}`;
-      playlistCache.set(targetUrl, { streamUrl: finalStreamUrl, rawUrl: rawStreamUrl, exp: now + 4 * 3600 * 1000 });
+      playlistCache.set(cleanTargetUrl, { streamUrl: finalStreamUrl, rawUrl: rawStreamUrl, exp: now + 4 * 3600 * 1000 });
       console.log(`✅ [Aniboom Stream Resolved]: ${rawStreamUrl}`);
     }
 
