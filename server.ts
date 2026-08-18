@@ -3690,8 +3690,10 @@ app.get('/api/media/playlist', async (c) => {
       }
 
       const existingTranslation = parsedTargetUrl.searchParams.get('translation');
-      // Always try the exact specified URL first before trying arbitrary numeric translations
-      const translationCandidates = existingTranslation ? [existingTranslation] : ['', '16', '24', '1', '2', '3'];
+      // Try existing translation first, then fallback to default '' and common IDs
+      const translationCandidates = existingTranslation 
+        ? Array.from(new Set([existingTranslation, '', '16', '24', '1', '2', '3']))
+        : ['', '16', '24', '1', '2', '3'];
 
       const originalParent = parsedTargetUrl.searchParams.get('parent') || referer;
       const originHost = originalParent.startsWith('http') ? new URL(originalParent).origin : 'https://animego.me';

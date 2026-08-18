@@ -149,7 +149,9 @@ export async function onRequest(context: any) {
       }
 
       const existingTranslation = parsedTargetUrl.searchParams.get('translation');
-      const translationCandidates = existingTranslation ? [existingTranslation] : ['', '16', '24', '1', '2', '3'];
+      const translationCandidates = existingTranslation 
+        ? Array.from(new Set([existingTranslation, '', '16', '24', '1', '2', '3']))
+        : ['', '16', '24', '1', '2', '3'];
 
       const originalParent = parsedTargetUrl.searchParams.get('parent') || referer;
       const originHost = originalParent.startsWith('http') ? new URL(originalParent).origin : 'https://animego.me';

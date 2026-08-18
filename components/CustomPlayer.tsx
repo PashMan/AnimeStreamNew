@@ -290,11 +290,13 @@ class AnimeWebGL1080p {
         vec3 maxRGB = max(max(max(a, b), max(dCol, e)), c);
         
         // Compute adaptive contrast weight for CAS (AMD FidelityFX CAS algorithm)
-        vec3 ampRGB = clamp(min(minRGB, 2.0 - maxRGB) / max(maxRGB, vec3(0.0001)), 0.0, 1.0);
-        vec3 wRGB = -sqrt(ampRGB) * (u_sharpness * 0.25);
+        vec3 ampRGB = clamp(min(minRGB, vec3(2.0) - maxRGB) / max(maxRGB, vec3(0.0001)), 0.0, 1.0);
+        float peakSharpness = clamp(u_sharpness, 0.0, 1.0) * 0.125;
+        vec3 wRGB = -sqrt(ampRGB) * peakSharpness;
         
-        // Filter reconstruction
-        vec3 finalColor = (a * wRGB + b * wRGB + c + dCol * wRGB + e * wRGB) / (1.0 + 4.0 * wRGB);
+        // Filter reconstruction with safe clamped denominator (never drops below 0.5)
+        vec3 weightDenom = max(vec3(0.5), vec3(1.0) + 4.0 * wRGB);
+        vec3 finalColor = (a * wRGB + b * wRGB + c + dCol * wRGB + e * wRGB) / weightDenom;
         
         // Dynamic edge preservation range
         vec3 range = maxRGB - minRGB;
