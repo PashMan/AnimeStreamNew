@@ -59,6 +59,28 @@ import { useSlugBlocks } from "../store/slugBlocks";
 import { useDmcaBlocks } from "../store/dmcaBlocks";
 import { filterProfanity } from "../utils/profanity";
 
+const formatWorkerEmbedUrl = (rawEmbedUrl: string, epNum: number) => {
+  try {
+    const url = new URL(rawEmbedUrl.startsWith("//") ? `https:${rawEmbedUrl}` : rawEmbedUrl);
+    if (!url.searchParams.has("episode")) {
+      url.searchParams.set("episode", String(epNum));
+    }
+    if (!url.searchParams.has("translation")) {
+      url.searchParams.set("translation", "16");
+    }
+    return url.toString();
+  } catch (_) {
+    let result = rawEmbedUrl;
+    if (!result.includes("episode=")) {
+      result += (result.includes("?") ? "&" : "?") + `episode=${epNum}`;
+    }
+    if (!result.includes("translation=")) {
+      result += (result.includes("?") ? "&" : "?") + `translation=16`;
+    }
+    return result;
+  }
+};
+
 const getResolvedAniboomUrl = (t: any, epNum: number, defaultUrl?: string | null) => {
   const num = epNum || 1;
   let target: string | null = null;
@@ -282,7 +304,7 @@ const Details: React.FC = () => {
     }
   }, [selectedPlayer]);
 
-  // Smoothly resolve AniBoom streams via the secure backend proxy/resolver
+  // Smoothly resolve AniBoom streams via Cloudflare Worker microservice (D1 database) with instant Kodik fallback
   useEffect(() => {
     const isSuzume = id === "50594" || id === "62568";
     const isWeathering = id === "38826";
@@ -298,6 +320,9 @@ const Details: React.FC = () => {
 
     let isCurrent = true;
     const abortController = new AbortController();
+    const timeoutId = setTimeout(() => {
+      abortController.abort();
+    }, 4000);
 
     const resolveAniboomStream = async () => {
       setIsResolvingStream(true);
@@ -305,92 +330,64 @@ const Details: React.FC = () => {
       setResolvedStream(null);
 
       const epNum = parseInt(paramEpisode || "1") || 1;
-      const defaultAniboom = players.find((p) => p.name === "Aniboom")?.iframe;
       const defaultKodik = players.find((p) => p.name === "Kodik")?.iframe;
       const kodikIframeUrl = getResolvedKodikUrl(selectedTranslation, epNum, defaultKodik);
 
-      let aniboomStreamUrl = getResolvedAniboomUrl(selectedTranslation, epNum, defaultAniboom);
-      if (aniboomStreamUrl && aniboomStreamUrl.includes("7P9qko4qQ8v")) {
-        aniboomStreamUrl = null;
-      }
-
-      const rawVoiceTitle = selectedTranslation?.title || "";
-      const cleanVoiceTitle = rawVoiceTitle
-        .replace(/\s*\((?:4K|1080p|720p|360p|HD|FHD|QHD)\)/gi, "")
-        .replace(/\s*\[(?:4K|1080p|720p|360p|HD|FHD|QHD)\]/gi, "")
-        .replace(/\s*(?:4K|1080p|720p|360p)/gi, "")
-        .trim();
-
       try {
-        const fetchUrl = aniboomStreamUrl
-          ? `/api/media/aniboom/resolve?url=${encodeURIComponent(aniboomStreamUrl)}&shikimori_id=${id}&episode=${epNum}&translation_id=${encodeURIComponent(cleanVoiceTitle)}`
-          : `/api/media/aniboom/resolve?shikimori_id=${id}&episode=${epNum}&translation_id=${encodeURIComponent(cleanVoiceTitle)}`;
+        const workerUrl = `https://parser.oshxycfdjab.workers.dev/?shikimori_id=${id}&episode=${epNum}`;
+        console.log(`📡 [Worker Resolver] Fetching stream from Cloudflare Worker for Shikimori ID: ${id}, Ep: ${epNum}`);
 
-        const res = await fetch(fetchUrl, {
+        const res = await fetch(workerUrl, {
           signal: abortController.signal
         });
 
-        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(`Worker returned HTTP status ${res.status}`);
+        }
 
-        if (!res.ok || !data.success || !data.url) {
-          const reason = data.error || `Server returned status ${res.status}`;
+        const data = await res.json();
+        console.log(`📦 [Worker Resolver] Response:`, data);
+
+        if (data && data.source === "aniboom" && data.embed_url) {
           if (isCurrent) {
-            if (kodikIframeUrl) {
-              setResolvedStream({
-                url: `/api/media/playlist?url=${encodeURIComponent(kodikIframeUrl)}`,
-                streamType: "hls",
-                provider: "kodik"
-              });
-              setIsResolvingStream(false);
-              return;
-            } else {
-              setStreamResolutionError(reason);
-              setIsResolvingStream(false);
-              handleAniboomFallback();
-              return;
-            }
+            const formattedEmbedUrl = formatWorkerEmbedUrl(data.embed_url, epNum);
+            const playlistUrl = `/api/media/playlist?url=${encodeURIComponent(formattedEmbedUrl)}${
+              kodikIframeUrl ? `&fallback_url=${encodeURIComponent(kodikIframeUrl)}` : ""
+            }`;
+
+            setResolvedStream({
+              url: playlistUrl,
+              streamType: "hls",
+              provider: "aniboom"
+            });
+            setIsResolvingStream(false);
+            console.log(`✅ [Worker Resolver] Aniboom stream activated (KamiPlayer 1080p): ${formattedEmbedUrl}`);
           }
           return;
         }
 
+        // If worker returns kodik_fallback or unknown format
+        console.info(`🔄 [Worker Resolver] Worker returned ${data?.source || "fallback"} (${data?.reason || "catalog"}). Switching to Kodik.`);
         if (isCurrent) {
-          const rawQual = data.quality;
-          const parsedQuality = parseInt(rawQual) || 1080;
-          
-          // Check if Kodik is available and has better quality (Kodik is always 720p, so if AniBoom is 480p or 360p, Kodik is better)
-          if (parsedQuality < 720 && kodikIframeUrl) {
+          if (kodikIframeUrl) {
             setResolvedStream({
               url: `/api/media/playlist?url=${encodeURIComponent(kodikIframeUrl)}`,
               streamType: "hls",
               provider: "kodik"
             });
             setIsResolvingStream(false);
-            return;
+          } else {
+            setIsResolvingStream(false);
+            handleAniboomFallback();
           }
-          
-          if (rawQual && selectedTranslation) {
-            const mapped = rawQual === "1080p" ? "4K" : rawQual === "720p" ? "1080" : null;
-            if (mapped) {
-              const baseT = selectedTranslation.title.replace(/\s*\((4K|1080|720)\)\s*/gi, "").trim();
-              setTranslationQualityOverrides(prev => ({
-                ...prev,
-                [baseT]: mapped
-              }));
-            }
-          }
-
-          setResolvedStream({
-            url: data.url,
-            streamType: data.stream_type || "hls",
-            provider: "aniboom"
-          });
-          setIsResolvingStream(false);
         }
       } catch (err: any) {
         if (err.name === "AbortError") {
-          return;
+          console.warn("⏱️ [Worker Resolver] Request timed out (4s limit) or aborted. Falling back to Kodik.");
+        } else {
+          console.info("ℹ️ [Worker Resolver] Worker note:", err.message);
         }
-        console.info("ℹ️ [Aniboom Resolver] Stream note:", err.message);
+
         if (isCurrent) {
           if (kodikIframeUrl) {
             setResolvedStream({
@@ -405,6 +402,8 @@ const Details: React.FC = () => {
             handleAniboomFallback();
           }
         }
+      } finally {
+        clearTimeout(timeoutId);
       }
     };
 
@@ -432,6 +431,7 @@ const Details: React.FC = () => {
 
     return () => {
       isCurrent = false;
+      clearTimeout(timeoutId);
       abortController.abort();
     };
   }, [selectedPlayer, paramEpisode, selectedTranslation, id, players]);

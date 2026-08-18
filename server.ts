@@ -2963,68 +2963,92 @@ const handleAniboomResolve = async (c: any) => {
 
   if (!targetEmbedUrl && shikimori_id) {
     steps.push({
-      title: "Запрос к AnimeGO",
+      title: "Запрос к D1 Резолверу",
       status: "info",
-      message: `Поиск плеера по Shikimori ID на AnimeGO...`
+      message: `Поиск плеера по Shikimori ID в базе Cloudflare D1...`
     });
     try {
-      const animegoData = await fetchAnimegoData(shikimori_id);
-      if (animegoData) {
-        let matchedUrl: string | null = null;
-        if (translation_id && animegoData.aniboomMap.length > 0) {
-          const cleanTitle = normalizeVoiceTitle(translation_id);
-          const subVoices = cleanTitle
-            .split(/[\&\/\+,]|\s+and\s+/i)
-            .map(s => s.trim().toLowerCase())
-            .filter(Boolean);
-
-          const found = animegoData.aniboomMap.find(m => {
-            const voiceClean = normalizeVoiceTitle(m.voice).toLowerCase();
-            const cleanLower = cleanTitle.toLowerCase();
-
-            // 1. Exact match (cleaned)
-            if (voiceClean === cleanLower) return true;
-
-            // 2. Any subvoice match (e.g. "AniStar & DEEP" matches "AniStar" or "DEEP")
-            if (subVoices.length > 0 && subVoices.some(sv => voiceClean === sv || voiceClean.includes(sv) || sv.includes(voiceClean))) {
-              return true;
-            }
-
-            // 3. Partial match
-            if (voiceClean.includes(cleanLower) || cleanLower.includes(voiceClean)) return true;
-
-            return false;
+      const workerRes = await fetch(`https://parser.oshxycfdjab.workers.dev/?shikimori_id=${shikimori_id}&episode=${episode || 1}`, {
+        headers: { 'User-Agent': 'Mozilla/5.0' }
+      });
+      if (workerRes.ok) {
+        const workerData = await workerRes.json();
+        if (workerData && workerData.source === 'aniboom' && workerData.embed_url) {
+          targetEmbedUrl = workerData.embed_url;
+          steps.push({
+            title: "Запрос к D1 Резолверу",
+            status: "success",
+            message: `Успешно получен AniBoom Embed URL из Cloudflare D1: ${targetEmbedUrl}`
           });
+        }
+      }
+    } catch (_) {}
 
-          if (found) {
-            matchedUrl = found.url;
+    if (!targetEmbedUrl) {
+      steps.push({
+        title: "Запрос к AnimeGO",
+        status: "info",
+        message: `Поиск плеера по Shikimori ID на AnimeGO...`
+      });
+      try {
+        const animegoData = await fetchAnimegoData(shikimori_id);
+        if (animegoData) {
+          let matchedUrl: string | null = null;
+          if (translation_id && animegoData.aniboomMap.length > 0) {
+            const cleanTitle = normalizeVoiceTitle(translation_id);
+            const subVoices = cleanTitle
+              .split(/[\&\/\+,]|\s+and\s+/i)
+              .map(s => s.trim().toLowerCase())
+              .filter(Boolean);
+
+            const found = animegoData.aniboomMap.find(m => {
+              const voiceClean = normalizeVoiceTitle(m.voice).toLowerCase();
+              const cleanLower = cleanTitle.toLowerCase();
+
+              // 1. Exact match (cleaned)
+              if (voiceClean === cleanLower) return true;
+
+              // 2. Any subvoice match (e.g. "AniStar & DEEP" matches "AniStar" or "DEEP")
+              if (subVoices.length > 0 && subVoices.some(sv => voiceClean === sv || voiceClean.includes(sv) || sv.includes(voiceClean))) {
+                return true;
+              }
+
+              // 3. Partial match
+              if (voiceClean.includes(cleanLower) || cleanLower.includes(voiceClean)) return true;
+
+              return false;
+            });
+
+            if (found) {
+              matchedUrl = found.url;
+            }
           }
-        }
 
-        if (!matchedUrl) {
-          matchedUrl = animegoData.defaultAniboomUrl;
-        }
+          if (!matchedUrl) {
+            matchedUrl = animegoData.defaultAniboomUrl;
+          }
 
-        targetEmbedUrl = matchedUrl;
-        steps.push({
-          title: "Запрос к AnimeGO",
-          status: "success",
-          message: `Успешно извлечен AniBoom Embed URL: ${targetEmbedUrl}`
-        });
-      } else {
+          targetEmbedUrl = matchedUrl;
+          steps.push({
+            title: "Запрос к AnimeGO",
+            status: "success",
+            message: `Успешно извлечен AniBoom Embed URL: ${targetEmbedUrl}`
+          });
+        } else {
+          steps.push({
+            title: "Запрос к AnimeGO",
+            status: "error",
+            message: "Не удалось найти плеер AniBoom на AnimeGO для данного Shikimori ID."
+          });
+        }
+      } catch (e: any) {
+        console.debug(`[Aniboom Resolver] AnimeGO lookup note: ${e.message}`);
         steps.push({
           title: "Запрос к AnimeGO",
           status: "error",
-          message: "Не удалось найти плеер AniBoom на AnimeGO для данного Shikimori ID."
+          message: `Произошла сетевая ошибка при запросе к AnimeGO: ${e.message}`
         });
       }
-    } catch (e: any) {
-      console.debug(`[Aniboom Resolver] AnimeGO lookup note: ${e.message}`);
-      steps.push({
-        title: "Запрос к AnimeGO",
-        status: "error",
-        message: `Произошла сетевая ошибка при запросе к AnimeGO: ${e.message}`
-      });
     }
   }
 
@@ -3442,10 +3466,20 @@ app.get('/api/media/playlist', async (c) => {
       } else {
         console.error(`❌ [ANIBOOM PARSER] Embed HTML fetch failed with status: ${aRes.status}`);
       }
-      return c.json({ error: `Aniboom extraction failed. HTTP Status: ${aRes.status}` }, 500);
+      if (fallbackUrl) {
+        console.log(`[MEDIA PROXY] Aniboom failed, falling back to secondary stream URL: ${fallbackUrl}`);
+        urlParam = fallbackUrl;
+      } else {
+        return c.json({ error: `Aniboom extraction failed. HTTP Status: ${aRes.status}` }, 500);
+      }
     } catch (aErr: any) {
       console.warn(`❌ [ANIBOOM PARSER] Exception occurred: ${aErr.message}`);
-      return c.json({ error: `Aniboom proxy error: ${aErr.message}` }, 500);
+      if (fallbackUrl) {
+        console.log(`[MEDIA PROXY] Aniboom exception, falling back to secondary stream URL: ${fallbackUrl}`);
+        urlParam = fallbackUrl;
+      } else {
+        return c.json({ error: `Aniboom proxy error: ${aErr.message}` }, 500);
+      }
     }
   }
 
