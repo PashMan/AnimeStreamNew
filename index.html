@@ -72,8 +72,8 @@
           var lastReload = sessionStorage.getItem(reloadKey);
           var now = Date.now();
           
-          // Prevent infinite reload loops (cooldown 5 seconds)
-          if (!lastReload || (now - parseInt(lastReload, 10)) > 5000) {
+          // Prevent infinite reload loops (cooldown 3 seconds)
+          if (!lastReload || (now - parseInt(lastReload, 10)) > 3000) {
             sessionStorage.setItem(reloadKey, String(now));
             
             // 1. Unregister all ServiceWorkers
@@ -99,13 +99,17 @@
             }
 
             // 3. Force hard navigation bypassing HTTP/CDN cache
-            var targetUrl = window.location.pathname + (window.location.search ? window.location.search.replace(/[?&]_v=\d+/, '') : '');
-            var sep = targetUrl.indexOf('?') !== -1 ? '&' : '?';
-            targetUrl += sep + '_v=' + now;
+            var cleanSearch = (window.location.search || '').replace(/[?&]_v=\d+/g, '').replace(/^&/, '?');
+            if (cleanSearch && cleanSearch.charAt(0) !== '?') cleanSearch = '?' + cleanSearch;
+            var sep = cleanSearch.indexOf('?') !== -1 ? '&' : '?';
+            var targetUrl = window.location.pathname + cleanSearch + sep + '_v=' + now;
             
             // Fetch fresh HTML bypassing disk cache then navigate
             if (window.fetch) {
-              fetch(targetUrl, { cache: 'reload' }).then(function() {
+              fetch(targetUrl, { 
+                cache: 'reload',
+                headers: { 'Pragma': 'no-cache', 'Cache-Control': 'no-cache' }
+              }).then(function() {
                 window.location.replace(targetUrl);
               }).catch(function() {
                 window.location.replace(targetUrl);
@@ -115,6 +119,14 @@
             }
           }
         }
+
+        // Native Vite dynamic import preload failure hook
+        window.addEventListener('vite:preloadError', function(event) {
+          try {
+            event.preventDefault();
+            bustStaleCacheAndReload('Vite preload error: ' + ((event.payload && event.payload.message) || 'chunk not found'));
+          } catch (_) {}
+        });
 
         // Intercept asset (script/link) load errors
         window.addEventListener('error', function(e) {

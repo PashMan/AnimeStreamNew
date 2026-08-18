@@ -1,19 +1,17 @@
 # Cloudflare Pages Headers Configuration
 
-# HTML routes - never cache HTML to prevent stale chunk errors
-/*.html
+# Default for all HTML and API routes - never cache HTML to prevent stale chunk errors
+/*
   Cache-Control: no-cache, no-store, must-revalidate, max-age=0
   Pragma: no-cache
   Expires: 0
   X-Content-Type-Options: nosniff
 
-/
-  Cache-Control: no-cache, no-store, must-revalidate, max-age=0
-  Pragma: no-cache
-  Expires: 0
-  X-Content-Type-Options: nosniff
+# Hashed static assets (JS, CSS, images) - cache for 1 year
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
 
-# Service Workers - never cache
+# Service Workers and Web Manifest - never cache
 /sw.js
   Cache-Control: no-cache, no-store, must-revalidate, max-age=0
   Pragma: no-cache
@@ -29,6 +27,3 @@
   Pragma: no-cache
   Expires: 0
 
-# Hashed static assets (JS, CSS, images) - cache for 1 year
-/assets/*
-  Cache-Control: public, max-age=31536000, immutable
