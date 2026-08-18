@@ -72,67 +72,78 @@ export async function onRequest(context: any) {
       parentReferer = safeUnescape(parentReferer);
       if (!parentReferer.startsWith('http')) parentReferer = 'https://animego.me/';
 
-      const embedRes = await fetch(parsedUrl.toString(), {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-          'Referer': parentReferer,
-          'Origin': new URL(parentReferer).origin,
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      const fetchHeaders = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Referer': parentReferer,
+        'Origin': new URL(parentReferer).origin,
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      };
+
+      let embedRes = await fetch(parsedUrl.toString(), { headers: fetchHeaders });
+      let html = embedRes.ok ? await embedRes.text() : '';
+      let match = html ? (html.match(/data-parameters="([^"]+)"/) || html.match(/data-parameters='([^']+)'/)) : null;
+
+      // Если с текущим translation не нашлось data-parameters, пробуем без него
+      if (!match && parsedUrl.searchParams.has('translation')) {
+        const retryUrl = new URL(parsedUrl.toString());
+        retryUrl.searchParams.delete('translation');
+        const retryRes = await fetch(retryUrl.toString(), { headers: fetchHeaders });
+        if (retryRes.ok) {
+          const retryHtml = await retryRes.text();
+          match = retryHtml.match(/data-parameters="([^"]+)"/) || retryHtml.match(/data-parameters='([^']+)'/);
         }
-      });
+      }
 
-      if (embedRes.ok) {
-        const html = await embedRes.text();
-        const match = html.match(/data-parameters="([^"]+)"/) || html.match(/data-parameters='([^']+)'/);
+      if (match) {
+        const rawParams = match[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&#039;/g, "'");
+        const params = JSON.parse(rawParams);
 
-        if (match) {
-          const rawParams = match[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&#039;/g, "'");
-          const params = JSON.parse(rawParams);
+        // CDN2 Handshake (POST)
+        const videoHash = params.id;
+        if (videoHash) {
+          try {
+            await fetch(`https://aniboom.one/cdn2/${videoHash}`, {
+              method: 'POST',
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+                'Origin': 'https://aniboom.one',
+                'Referer': parsedUrl.toString(),
+                'Content-Type': 'application/json'
+              },
+              body: '{}'
+            });
+          } catch (_) {}
+        }
 
-          // CDN2 Handshake
-          const videoHash = params.id;
-          if (videoHash) {
-            try {
-              await fetch(`https://aniboom.one/cdn2/${videoHash}`, {
-                method: 'POST',
-                headers: {
-                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-                  'Origin': 'https://aniboom.one',
-                  'Referer': parsedUrl.toString(),
-                  'Content-Type': 'application/json'
-                }
-              });
-            } catch (_) {}
+        let hlsData = params.hls || params.dash;
+        if (typeof hlsData === 'string') {
+          try { hlsData = JSON.parse(hlsData); } catch (_) {}
+        }
+        let rawStreamUrl = typeof hlsData === 'object' && hlsData !== null
+          ? (hlsData['1080'] || hlsData['720'] || hlsData.src || hlsData.url || '')
+          : (hlsData || '');
+
+        if (rawStreamUrl) {
+          if (rawStreamUrl.startsWith('//')) rawStreamUrl = `https:${rawStreamUrl}`;
+          const proxiedRelative = `/api/proxy-4k?url=${encodeURIComponent(rawStreamUrl)}&referer=${encodeURIComponent('https://aniboom.one/')}`;
+
+          if (resolveOnly) {
+            return new Response(JSON.stringify({
+              success: true,
+              streamType: 'hls',
+              qualities: [1080, 720, 480, 360],
+              quality: 1080,
+              direct_url: rawStreamUrl,
+              url: proxiedRelative
+            }), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+            });
           }
 
-          let hlsData = params.hls || params.dash;
-          if (typeof hlsData === 'string') {
-            try { hlsData = JSON.parse(hlsData); } catch (_) {}
-          }
-          let rawStreamUrl = typeof hlsData === 'object' && hlsData !== null
-            ? (hlsData['1080'] || hlsData['720'] || hlsData.src || hlsData.url || '')
-            : (hlsData || '');
-
-          if (rawStreamUrl) {
-            if (rawStreamUrl.startsWith('//')) rawStreamUrl = `https:${rawStreamUrl}`;
-            const proxiedUrl = `/api/proxy-4k?url=${encodeURIComponent(rawStreamUrl)}&referer=${encodeURIComponent('https://aniboom.one/')}`;
-
-            if (resolveOnly) {
-              return new Response(JSON.stringify({
-                success: true,
-                streamType: 'hls',
-                qualities: [1080, 720, 480, 360],
-                quality: 1080,
-                direct_url: rawStreamUrl,
-                url: proxiedUrl
-              }), {
-                status: 200,
-                headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-              });
-            }
-
-            return Response.redirect(proxiedUrl, 302);
-          }
+          // Абсолютный URL для Response.redirect в Cloudflare Workers
+          const absoluteRedirectUrl = new URL(proxiedRelative, request.url).toString();
+          return Response.redirect(absoluteRedirectUrl, 302);
         }
       }
     } catch (e: any) {
@@ -227,7 +238,9 @@ export async function onRequest(context: any) {
                 });
               }
 
-              return Response.redirect(proxiedKodikUrl, 302);
+              // Абсолютный URL для Response.redirect в Cloudflare Workers
+              const absoluteKodikRedirect = new URL(proxiedKodikUrl, request.url).toString();
+              return Response.redirect(absoluteKodikRedirect, 302);
             }
           }
         }
