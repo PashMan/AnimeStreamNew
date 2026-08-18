@@ -54,13 +54,34 @@ export async function onRequest(context: any) {
     });
   }
 
-  const urlObj = new URL(request.url);
-  let urlParam = urlObj.searchParams.get('url');
-  const fallbackUrl = urlObj.searchParams.get('fallback_url');
+  const reqUrl = request.url;
+  let cleanUrlParam = '';
+  const urlObj = new URL(reqUrl);
+  const fallbackUrl = urlObj.searchParams.get('fallback_url') || '';
   const resolveOnly = urlObj.searchParams.get('resolve') === 'true';
   const requestedQuality = urlObj.searchParams.get('quality');
 
-  if (!urlParam) {
+  // Direct and safe extraction of target URL without breaking &parent parameters
+  if (reqUrl.includes('aniboom.one')) {
+    const rawAniboom = reqUrl.substring(reqUrl.indexOf('http'));
+    let decoded = rawAniboom;
+    for (let i = 0; i < 4; i++) {
+      if (decoded.includes('%')) {
+        try { decoded = decodeURIComponent(decoded); } catch (_) { break; }
+      } else { break; }
+    }
+    if (decoded.includes('&fallback_url=')) {
+      decoded = decoded.split('&fallback_url=')[0];
+    }
+    cleanUrlParam = decoded;
+  } else {
+    cleanUrlParam = urlObj.searchParams.get('url') || '';
+    try {
+      cleanUrlParam = decodeURIComponent(cleanUrlParam);
+    } catch (_) {}
+  }
+
+  if (!cleanUrlParam) {
     if (fallbackUrl) {
       return Response.redirect(`${getProxyOrigin(request)}/api/proxy-4k?url=${encodeURIComponent(fallbackUrl)}`, 302);
     }
@@ -91,7 +112,6 @@ export async function onRequest(context: any) {
     return res;
   };
 
-  let cleanUrlParam = safeUnescapeUrl(urlParam);
   let cleanFallbackUrl = fallbackUrl ? safeUnescapeUrl(fallbackUrl) : '';
 
   // Recursively extract nested /api/media/playlist?url=...

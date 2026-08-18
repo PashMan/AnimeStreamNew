@@ -335,7 +335,7 @@ const Details: React.FC = () => {
     const abortController = new AbortController();
     const timeoutId = setTimeout(() => {
       abortController.abort();
-    }, 2500);
+    }, 6000);
 
     const resolveAniboomStream = async () => {
       setIsResolvingStream(true);

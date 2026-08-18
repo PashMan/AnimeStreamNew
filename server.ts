@@ -307,7 +307,7 @@ async function fetchAnimegoData(shikimoriId: string, searchTitle?: string): Prom
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         'Referer': 'https://shikimori.one/'
       },
-      signal: AbortSignal.timeout(2500)
+      signal: AbortSignal.timeout(5000)
     });
     if (shikiRes.ok) {
       const shikiData = await shikiRes.json() as any;
@@ -343,7 +343,7 @@ async function fetchAnimegoData(shikimoriId: string, searchTitle?: string): Prom
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             'Accept-Language': 'ru,en-US;q=0.7,en;q=0.3'
           },
-          signal: AbortSignal.timeout(2500)
+          signal: AbortSignal.timeout(5000)
         });
         if (res.ok) {
           const html = await res.text();
@@ -449,7 +449,7 @@ async function fetchAnimegoData(shikimoriId: string, searchTitle?: string): Prom
         'Referer': `https://${activeDomain}/anime/slug-${matchedAnimegoId}`,
         'Accept': 'application/json, text/javascript, */*; q=0.01'
       },
-      signal: AbortSignal.timeout(2500)
+      signal: AbortSignal.timeout(5000)
     });
 
     if (playerRes.ok) {
@@ -3534,14 +3534,36 @@ async function extractKodikStream(iframeUrl: string, requestedQuality?: string, 
 }
 
 app.get('/api/media/playlist', async (c) => {
+  const reqUrl = c.req.url;
   let targetUrl = c.req.query('url');
   const fallbackUrl = c.req.query('fallback_url');
   const resolveOnly = c.req.query('resolve') === 'true';
   const requestedQuality = c.req.query('quality');
 
-  if (!targetUrl) {
+  let cleanTargetUrl = '';
+  if (reqUrl.includes('aniboom.one')) {
+    const rawAniboom = reqUrl.substring(reqUrl.indexOf('http'));
+    let decoded = rawAniboom;
+    for (let i = 0; i < 4; i++) {
+      if (decoded.includes('%')) {
+        try { decoded = decodeURIComponent(decoded); } catch (_) { break; }
+      } else { break; }
+    }
+    if (decoded.includes('&fallback_url=')) {
+      decoded = decoded.split('&fallback_url=')[0];
+    }
+    cleanTargetUrl = decoded;
+  } else if (targetUrl) {
+    try {
+      cleanTargetUrl = decodeURIComponent(targetUrl);
+    } catch (_) {
+      cleanTargetUrl = targetUrl;
+    }
+  }
+
+  if (!cleanTargetUrl) {
     if (fallbackUrl) {
-      targetUrl = fallbackUrl;
+      cleanTargetUrl = fallbackUrl;
     } else {
       return c.json({ error: 'Missing url parameter' }, 400);
     }
@@ -3566,7 +3588,6 @@ app.get('/api/media/playlist', async (c) => {
     return res;
   };
 
-  let cleanTargetUrl = safeUnescapeUrl(targetUrl);
   let cleanFallbackUrl = fallbackUrl ? safeUnescapeUrl(fallbackUrl) : '';
 
   // Recursively extract nested /api/media/playlist?url=...
