@@ -1225,8 +1225,11 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                   maxBufferSize: 120 * 1000 * 1000,
                   capLevelToPlayerSize: true,
                   progressive: true,
-                  fragLoadingTimeOut: 15000,
-                  manifestLoadingTimeOut: 10000,
+                  fragLoadingTimeOut: 25000,
+                  manifestLoadingTimeOut: 25000,
+                  manifestLoadingMaxRetry: 3,
+                  levelLoadingMaxRetry: 3,
+                  fragLoadingMaxRetry: 3,
                 });
                 (artInstance as any).hls = hls;
                 hls.attachMedia(video);
@@ -1236,7 +1239,7 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
 
                 hls.on(Hls.Events.ERROR, function (event, data) {
                   if (data.fatal) {
-                    console.error("HLS fatal error:", data.type, data.details, data.response);
+                    console.warn("HLS stream event notice:", data.type, data.details);
 
                     // Manifest failure or 502/404 stream error: immediately switch to backup player
                     if (

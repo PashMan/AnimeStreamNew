@@ -23,51 +23,6 @@ export default defineConfig({
           'Referer': 'https://shikimori.one/'
         }
       },
-      '/api/media': {
-        target: 'http://localhost:3001',
-        changeOrigin: true,
-        secure: false,
-      },
-      '/api/balancer': {
-        target: 'http://localhost:3001',
-        changeOrigin: true,
-        secure: false,
-      },
-      '/api/proxy-4k': {
-        target: 'http://localhost:3001',
-        changeOrigin: true,
-        secure: false,
-      },
-      '/api/manga': {
-        target: 'http://localhost:3001',
-        changeOrigin: true,
-        secure: false,
-      },
-      '/api/anilibria': {
-        target: 'http://localhost:3001',
-        changeOrigin: true,
-        secure: false,
-      },
-      '/api/image': {
-        target: 'http://localhost:3001',
-        changeOrigin: true,
-        secure: false,
-      },
-      '/api/ai': {
-        target: 'http://localhost:3001',
-        changeOrigin: true,
-        secure: false,
-      },
-      '/api/debug-logs': {
-        target: 'http://localhost:3001',
-        changeOrigin: true,
-        secure: false,
-      },
-      '/api/test-log': {
-        target: 'http://localhost:3001',
-        changeOrigin: true,
-        secure: false,
-      },
       '/api/kodik': {
         target: 'https://kodikapi.com',
         changeOrigin: true,
@@ -94,51 +49,6 @@ export default defineConfig({
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
           'Referer': 'https://shikimori.one/'
         }
-      },
-      '/api/media': {
-        target: 'http://localhost:3001',
-        changeOrigin: true,
-        secure: false,
-      },
-      '/api/balancer': {
-        target: 'http://localhost:3001',
-        changeOrigin: true,
-        secure: false,
-      },
-      '/api/proxy-4k': {
-        target: 'http://localhost:3001',
-        changeOrigin: true,
-        secure: false,
-      },
-      '/api/manga': {
-        target: 'http://localhost:3001',
-        changeOrigin: true,
-        secure: false,
-      },
-      '/api/anilibria': {
-        target: 'http://localhost:3001',
-        changeOrigin: true,
-        secure: false,
-      },
-      '/api/image': {
-        target: 'http://localhost:3001',
-        changeOrigin: true,
-        secure: false,
-      },
-      '/api/ai': {
-        target: 'http://localhost:3001',
-        changeOrigin: true,
-        secure: false,
-      },
-      '/api/debug-logs': {
-        target: 'http://localhost:3001',
-        changeOrigin: true,
-        secure: false,
-      },
-      '/api/test-log': {
-        target: 'http://localhost:3001',
-        changeOrigin: true,
-        secure: false,
       },
       '/api/kodik': {
         target: 'https://kodikapi.com',

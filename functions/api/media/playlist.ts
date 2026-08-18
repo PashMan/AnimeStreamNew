@@ -44,6 +44,46 @@ function getProxyOrigin(request: Request): string {
   return `${proto}://${host}`;
 }
 
+function safeParseParams(rawStr: string): any {
+  if (!rawStr) return {};
+  const clean = rawStr
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&')
+    .replace(/&#039;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>');
+
+  try {
+    return JSON.parse(clean);
+  } catch (_) {}
+
+  const result: any = {};
+  const hlsMatch = clean.match(/"hls"\s*:\s*(\{[\s\S]*?\}|"[^"]+")/i) || clean.match(/'hls'\s*:\s*(\{[\s\S]*?\}|'[^']+')/i);
+  if (hlsMatch) {
+    try {
+      result.hls = JSON.parse(hlsMatch[1].replace(/\\"/g, '"'));
+    } catch (_) {
+      result.hls = hlsMatch[1];
+    }
+  }
+
+  const dashMatch = clean.match(/"dash"\s*:\s*(\{[\s\S]*?\}|"[^"]+")/i) || clean.match(/'dash'\s*:\s*(\{[\s\S]*?\}|'[^']+')/i);
+  if (dashMatch) {
+    try {
+      result.dash = JSON.parse(dashMatch[1].replace(/\\"/g, '"'));
+    } catch (_) {
+      result.dash = dashMatch[1];
+    }
+  }
+
+  const idMatch = clean.match(/"id"\s*:\s*"([^"]+)"/i) || clean.match(/"id"\s*:\s*([0-9a-zA-Z_\-]+)/i);
+  if (idMatch) {
+    result.id = idMatch[1];
+  }
+
+  return result;
+}
+
 export async function onRequest(context: any) {
   const { request } = context;
 
@@ -122,8 +162,8 @@ export async function onRequest(context: any) {
       }
 
       if (match) {
-        const rawParams = match[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&#039;/g, "'");
-        const params = JSON.parse(rawParams);
+        const rawParams = match[1];
+        const params = safeParseParams(rawParams);
 
         // CDN2 Handshake (POST)
         const videoHash = params.id;
@@ -284,7 +324,7 @@ export async function onRequest(context: any) {
     error: 'stream_unavailable',
     fallback_url: fallbackUrl
   }), {
-    status: 502,
+    status: 404,
     headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
   });
 }

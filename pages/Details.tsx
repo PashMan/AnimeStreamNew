@@ -365,6 +365,17 @@ const Details: React.FC = () => {
           if (isCurrent) {
             setIsResolvingStream(false);
             setStreamResolutionError(err.message);
+
+            // Бесшовное переключение на Kodik или любой другой доступный плеер
+            const kodik = players.find((p) => p.name === "Kodik");
+            const anyOther = players.find((p) => p.name !== "KamiPlayer (1080p)" && p.name !== "Aniboom");
+            if (kodik) {
+              console.log("🔄 [AniBoom Resolver] AniBoom недоступен для серии. Автопереключение на Kodik");
+              setSelectedPlayer("Kodik");
+            } else if (anyOther) {
+              console.log(`🔄 [AniBoom Resolver] Переключение на плеер ${anyOther.name}`);
+              setSelectedPlayer(anyOther.name);
+            }
           }
         }
       }
@@ -1945,11 +1956,11 @@ const Details: React.FC = () => {
                               const kodikIframeUrl = getResolvedKodikUrl(selectedTranslation, epNum, defaultKodik);
 
                               if (resolvedStream && resolvedStream.url) {
-                                customSrc = resolvedStream.url; // <-- ПРЯМАЯ ССЫЛКА НА ПРОКСИ М3U8!
+                                customSrc = resolvedStream.url;
                               } else if (kodikIframeUrl) {
                                 customSrc = getCleanPlaylistUrl(kodikIframeUrl, null, null, false);
                               } else {
-                                customSrc = getCleanPlaylistUrl("https://cdn.kamianime.club/kimi-no-na-wa/master.m3u8", null, null, false);
+                                customSrc = "";
                               }
                             }
 

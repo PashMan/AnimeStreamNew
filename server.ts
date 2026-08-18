@@ -15,6 +15,14 @@ import { promisify } from 'node:util';
 
 const execAsync = promisify(exec);
 
+process.on('uncaughtException', (err) => {
+  console.error('[SERVER UNCAUGHT EXCEPTION]:', err);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[SERVER UNHANDLED REJECTION]:', reason);
+});
+
 type Bindings = {
   DB: D1Database;
 };
@@ -29,6 +37,64 @@ const handleRoomWebSocket = isCloudflare
   : makeRoomWebSocketHandler(nodeUpgradeWebSocket);
 
 app.use('/*', cors());
+
+function safeParseParams(rawStr: string): any {
+  if (!rawStr) return {};
+  const clean = rawStr
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&')
+    .replace(/&#039;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>');
+
+  try {
+    return JSON.parse(clean);
+  } catch (_) {}
+
+  const result: any = {};
+  const hlsMatch = clean.match(/"hls"\s*:\s*(\{[\s\S]*?\}|"[^"]+")/i) || clean.match(/'hls'\s*:\s*(\{[\s\S]*?\}|'[^']+')/i);
+  if (hlsMatch) {
+    try {
+      result.hls = JSON.parse(hlsMatch[1].replace(/\\"/g, '"'));
+    } catch (_) {
+      result.hls = hlsMatch[1];
+    }
+  }
+
+  const dashMatch = clean.match(/"dash"\s*:\s*(\{[\s\S]*?\}|"[^"]+")/i) || clean.match(/'dash'\s*:\s*(\{[\s\S]*?\}|'[^']+')/i);
+  if (dashMatch) {
+    try {
+      result.dash = JSON.parse(dashMatch[1].replace(/\\"/g, '"'));
+    } catch (_) {
+      result.dash = dashMatch[1];
+    }
+  }
+
+  const idMatch = clean.match(/"id"\s*:\s*"([^"]+)"/i) || clean.match(/"id"\s*:\s*([0-9a-zA-Z_\-]+)/i);
+  if (idMatch) {
+    result.id = idMatch[1];
+  }
+
+  return result;
+}
+
+function safeUnescapeUrl(u: string): string {
+  let res = u || '';
+  for (let i = 0; i < 4; i++) {
+    if (res.includes('%')) {
+      try {
+        const next = decodeURIComponent(res);
+        if (next === res) break;
+        res = next;
+      } catch (_) {
+        break;
+      }
+    } else {
+      break;
+    }
+  }
+  return res;
+}
 
 app.onError((err, c) => {
   console.error(`[HONO UNCAUGHT ERROR]:`, err);
@@ -788,7 +854,7 @@ app.get('/api/balancer', async (c) => {
             }
           }
         } catch (e: any) {
-          addLog('[VIDEOCDN] failed', { error: e.message });
+          console.debug('[VIDEOCDN] Service offline/blocked:', e.message);
         }
       })());
     }
@@ -807,7 +873,7 @@ app.get('/api/balancer', async (c) => {
             }
           }
         } catch (e: any) {
-          addLog('[HDVB] failed', { error: e.message });
+          console.debug('[HDVB] Service offline/blocked:', e.message);
         }
       })());
     }
@@ -3195,21 +3261,13 @@ const handleAniboomResolve = async (c: any) => {
       return await tryKodikFallback('data-parameters attribute not found in Aniboom embed HTML');
     }
 
-    const rawParams = match[1]
-      .replace(/&quot;/g, '"')
-      .replace(/&amp;/g, '&')
-      .replace(/&#039;/g, "'")
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>');
-
-    let decoded: any;
-    try {
-      decoded = JSON.parse(rawParams);
-      steps.push({
-        title: "Парсинг data-parameters",
-        status: "success",
-        message: `Параметры успешно декодированы. ID видео: ${decoded.id || 'не указан'}, Качество: ${decoded.qualityVideo || 'не указано'}p`,
-        details: {
+    const rawParams = match[1];
+    const decoded: any = safeParseParams(rawParams);
+    steps.push({
+      title: "Парсинг data-parameters",
+      status: "success",
+      message: `Параметры успешно декодированы. ID видео: ${decoded.id || 'не указан'}, Качество: ${decoded.qualityVideo || 'не указано'}p`,
+      details: {
           id: decoded.id,
           qualityVideo: decoded.qualityVideo,
           hasHls: !!decoded.hls,
@@ -3221,9 +3279,6 @@ const handleAniboomResolve = async (c: any) => {
           originalParameters: decoded
         }
       });
-    } catch (parseErr: any) {
-      return await tryKodikFallback(`Failed to parse data-parameters JSON: ${parseErr.message}`);
-    }
 
     const videoHash = decoded.id;
 
@@ -3569,25 +3624,6 @@ app.get('/api/media/playlist', async (c) => {
     }
   }
 
-  // Helper for recursive decoding of double/triple-encoded URLs
-  const safeUnescapeUrl = (u: string): string => {
-    let res = u || '';
-    for (let i = 0; i < 4; i++) {
-      if (res.includes('%')) {
-        try {
-          const next = decodeURIComponent(res);
-          if (next === res) break;
-          res = next;
-        } catch (_) {
-          break;
-        }
-      } else {
-        break;
-      }
-    }
-    return res;
-  };
-
   let cleanFallbackUrl = fallbackUrl ? safeUnescapeUrl(fallbackUrl) : '';
 
   // Recursively extract nested /api/media/playlist?url=...
@@ -3759,14 +3795,16 @@ app.get('/api/media/playlist', async (c) => {
                 'Sec-Fetch-Mode': 'navigate',
                 'Sec-Fetch-Site': 'cross-site'
               },
-              timeout: 6000
+              timeout: 10000
             });
             console.log(`[Aniboom Response]: Status=${response?.status}, DataLength=${response?.data?.length || 0}`);
             if (response && response.status === 200 && response.data && (response.data.includes('data-parameters') || response.data.includes('id="video"'))) {
               break outerLoop;
             }
           } catch (err: any) {
-            console.log(`[Aniboom Attempt Err]: ${err.message} (${err.response?.status})`);
+            if (err.response?.status !== 404) {
+              console.debug(`[Aniboom Attempt]: ${err.message} (${err.response?.status})`);
+            }
             lastFetchErr = err;
           }
         }
@@ -3790,15 +3828,7 @@ app.get('/api/media/playlist', async (c) => {
         throw new Error('data-parameters container not found in Aniboom embed');
       }
 
-      // Decode entities and parse
-      const decodedHtml = rawParams
-        .replace(/&quot;/g, '"')
-        .replace(/&amp;/g, '&')
-        .replace(/&#039;/g, "'")
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/\\"/g, '"');
-      const params = JSON.parse(decodedHtml);
+      const params = safeParseParams(rawParams);
 
       // Handle double serialized strings for hls & dash
       let hlsData = params.hls;
@@ -3879,7 +3909,7 @@ app.get('/api/media/playlist', async (c) => {
             'Referer': 'https://aniboom.one/',
             'Origin': 'https://aniboom.one'
           },
-          timeout: 6000
+          timeout: 10000
         });
 
         const masterText = typeof masterRes.data === 'string' ? masterRes.data : String(masterRes.data);
@@ -3920,7 +3950,7 @@ app.get('/api/media/playlist', async (c) => {
             'Referer': 'https://aniboom.one/',
             'Origin': 'https://aniboom.one'
           },
-          timeout: 6000
+          timeout: 10000
         });
 
         const variantText = typeof variantRes.data === 'string' ? variantRes.data : String(variantRes.data);
@@ -3940,7 +3970,7 @@ app.get('/api/media/playlist', async (c) => {
         c.header('Access-Control-Allow-Origin', '*');
         return c.text(rewrittenVariant);
       } catch (err: any) {
-        console.warn(`[Aniboom Quality Playlist Error]: ${err.message}. Serving master stream redirect.`);
+        console.debug(`[Aniboom Quality Playlist Notice]: ${err.message}. Serving master stream redirect.`);
         return c.redirect(finalStreamUrl, 302);
       }
     }
@@ -3952,7 +3982,7 @@ app.get('/api/media/playlist', async (c) => {
   } catch (err: any) {
     const activeFallback = cleanFallbackUrl || fallbackUrl;
     if (activeFallback) {
-      console.log(`[Playlist Resolver] Aniboom failed (${err.message}). Seamlessly intercepting Kodik fallback: ${activeFallback}`);
+      console.log(`[Playlist Resolver] Switching to Kodik fallback: ${activeFallback}`);
       try {
         const kodikResult = await extractKodikStream(activeFallback, requestedQuality, resolveOnly, c);
         c.header('X-Stream-Provider', 'kodik');

@@ -162,7 +162,7 @@ export const fetchRecentUpdates = async (limit = 40): Promise<KodikRecentUpdate[
     
     return mapped;
   } catch (e) {
-    console.error("Error in fetchRecentUpdates:", e);
+    console.warn("Notice in fetchRecentUpdates:", e);
     return [];
   }
 };

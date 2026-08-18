@@ -14,6 +14,46 @@ function safeUnescape(str: string): string {
   return res;
 }
 
+function safeParseParams(rawStr: string): any {
+  if (!rawStr) return {};
+  const clean = rawStr
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&')
+    .replace(/&#039;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>');
+
+  try {
+    return JSON.parse(clean);
+  } catch (_) {}
+
+  const result: any = {};
+  const hlsMatch = clean.match(/"hls"\s*:\s*(\{[\s\S]*?\}|"[^"]+")/i) || clean.match(/'hls'\s*:\s*(\{[\s\S]*?\}|'[^']+')/i);
+  if (hlsMatch) {
+    try {
+      result.hls = JSON.parse(hlsMatch[1].replace(/\\"/g, '"'));
+    } catch (_) {
+      result.hls = hlsMatch[1];
+    }
+  }
+
+  const dashMatch = clean.match(/"dash"\s*:\s*(\{[\s\S]*?\}|"[^"]+")/i) || clean.match(/'dash'\s*:\s*(\{[\s\S]*?\}|'[^']+')/i);
+  if (dashMatch) {
+    try {
+      result.dash = JSON.parse(dashMatch[1].replace(/\\"/g, '"'));
+    } catch (_) {
+      result.dash = dashMatch[1];
+    }
+  }
+
+  const idMatch = clean.match(/"id"\s*:\s*"([^"]+)"/i) || clean.match(/"id"\s*:\s*([0-9a-zA-Z_\-]+)/i);
+  if (idMatch) {
+    result.id = idMatch[1];
+  }
+
+  return result;
+}
+
 export async function onRequest(context: any) {
   const { request } = context;
   const urlObj = new URL(request.url);
@@ -127,28 +167,8 @@ export async function onRequest(context: any) {
       });
     }
 
-    const rawParams = match[1]
-      .replace(/&quot;/g, '"')
-      .replace(/&amp;/g, '&')
-      .replace(/&#039;/g, "'")
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>');
-
-    let decoded: any;
-    try {
-      decoded = JSON.parse(rawParams);
-    } catch (parseErr: any) {
-      return new Response(JSON.stringify({
-        success: false,
-        error: `Failed to parse data-parameters JSON: ${parseErr.message}`
-      }), {
-        status: 500,
-        headers: {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*'
-        }
-      });
-    }
+    const rawParams = match[1];
+    const decoded: any = safeParseParams(rawParams);
 
     // CDN2 Handshake via POST (Referer: cleanEmbedUrl, Origin: https://aniboom.one)
     const videoHash = decoded.id;
