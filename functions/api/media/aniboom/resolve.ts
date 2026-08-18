@@ -225,7 +225,6 @@ export async function onRequest(context: any) {
       });
     }
 
-    const rawParams = match[1];
     const decoded: any = safeParseParams(rawParams);
 
     // CDN2 Handshake via POST (Referer: cleanEmbedUrl, Origin: https://aniboom.one)
