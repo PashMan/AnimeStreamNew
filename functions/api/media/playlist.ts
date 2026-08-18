@@ -75,7 +75,7 @@ export async function onRequest(context: any) {
 
   const safeUnescapeUrl = (u: string): string => {
     let res = u || '';
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 4; i++) {
       if (res.includes('%')) {
         try {
           const next = decodeURIComponent(res);
@@ -91,7 +91,39 @@ export async function onRequest(context: any) {
     return res;
   };
 
-  const cleanUrlParam = safeUnescapeUrl(urlParam);
+  let cleanUrlParam = safeUnescapeUrl(urlParam);
+  let cleanFallbackUrl = fallbackUrl ? safeUnescapeUrl(fallbackUrl) : '';
+
+  // Recursively extract nested /api/media/playlist?url=...
+  while (cleanUrlParam.includes('/api/media/playlist') && cleanUrlParam.includes('url=')) {
+    try {
+      const parsed = new URL(cleanUrlParam, 'http://localhost');
+      const nested = parsed.searchParams.get('url');
+      if (nested) {
+        cleanUrlParam = safeUnescapeUrl(nested);
+      } else {
+        break;
+      }
+    } catch (_) {
+      break;
+    }
+  }
+
+  if (cleanFallbackUrl) {
+    while (cleanFallbackUrl.includes('/api/media/playlist') && cleanFallbackUrl.includes('url=')) {
+      try {
+        const parsed = new URL(cleanFallbackUrl, 'http://localhost');
+        const nested = parsed.searchParams.get('url');
+        if (nested) {
+          cleanFallbackUrl = safeUnescapeUrl(nested);
+        } else {
+          break;
+        }
+      } catch (_) {
+        break;
+      }
+    }
+  }
 
   // If Aniboom URL
   if (cleanUrlParam.includes('aniboom')) {
@@ -117,7 +149,7 @@ export async function onRequest(context: any) {
       }
 
       const existingTranslation = parsedTargetUrl.searchParams.get('translation');
-      const translationCandidates = existingTranslation ? [existingTranslation] : ['16', '24', '1', '2', '3', ''];
+      const translationCandidates = existingTranslation ? [existingTranslation] : ['', '16', '24', '1', '2', '3'];
 
       const originalParent = parsedTargetUrl.searchParams.get('parent') || referer;
       const originHost = originalParent.startsWith('http') ? new URL(originalParent).origin : 'https://animego.me';

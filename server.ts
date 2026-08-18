@@ -3550,7 +3550,7 @@ app.get('/api/media/playlist', async (c) => {
   // Helper for recursive decoding of double/triple-encoded URLs
   const safeUnescapeUrl = (u: string): string => {
     let res = u || '';
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 4; i++) {
       if (res.includes('%')) {
         try {
           const next = decodeURIComponent(res);
@@ -3567,6 +3567,38 @@ app.get('/api/media/playlist', async (c) => {
   };
 
   let cleanTargetUrl = safeUnescapeUrl(targetUrl);
+  let cleanFallbackUrl = fallbackUrl ? safeUnescapeUrl(fallbackUrl) : '';
+
+  // Recursively extract nested /api/media/playlist?url=...
+  while (cleanTargetUrl.includes('/api/media/playlist') && cleanTargetUrl.includes('url=')) {
+    try {
+      const parsed = new URL(cleanTargetUrl, 'http://localhost');
+      const nested = parsed.searchParams.get('url');
+      if (nested) {
+        cleanTargetUrl = safeUnescapeUrl(nested);
+      } else {
+        break;
+      }
+    } catch (_) {
+      break;
+    }
+  }
+
+  if (cleanFallbackUrl) {
+    while (cleanFallbackUrl.includes('/api/media/playlist') && cleanFallbackUrl.includes('url=')) {
+      try {
+        const parsed = new URL(cleanFallbackUrl, 'http://localhost');
+        const nested = parsed.searchParams.get('url');
+        if (nested) {
+          cleanFallbackUrl = safeUnescapeUrl(nested);
+        } else {
+          break;
+        }
+      } catch (_) {
+        break;
+      }
+    }
+  }
 
   // 1. Check in-memory cache
   const now = Date.now();
@@ -3658,7 +3690,8 @@ app.get('/api/media/playlist', async (c) => {
       }
 
       const existingTranslation = parsedTargetUrl.searchParams.get('translation');
-      const translationCandidates = existingTranslation ? [existingTranslation] : ['16', '24', '1', '2', '3', ''];
+      // Always try the exact specified URL first before trying arbitrary numeric translations
+      const translationCandidates = existingTranslation ? [existingTranslation] : ['', '16', '24', '1', '2', '3'];
 
       const originalParent = parsedTargetUrl.searchParams.get('parent') || referer;
       const originHost = originalParent.startsWith('http') ? new URL(originalParent).origin : 'https://animego.me';
@@ -3876,15 +3909,18 @@ app.get('/api/media/playlist', async (c) => {
     }
 
     // Direct streaming redirect
+    c.header('X-Stream-Provider', 'aniboom');
     return c.redirect(finalStreamUrl, 302);
 
   } catch (err: any) {
-    if (fallbackUrl) {
-      console.log(`[Playlist Resolver] Aniboom failed (${err.message}). Seamlessly intercepting Kodik fallback: ${fallbackUrl}`);
+    const activeFallback = cleanFallbackUrl || fallbackUrl;
+    if (activeFallback) {
+      console.log(`[Playlist Resolver] Aniboom failed (${err.message}). Seamlessly intercepting Kodik fallback: ${activeFallback}`);
       try {
-        const kodikResult = await extractKodikStream(fallbackUrl, requestedQuality, resolveOnly, c);
+        const kodikResult = await extractKodikStream(activeFallback, requestedQuality, resolveOnly, c);
+        c.header('X-Stream-Provider', 'kodik');
         if (kodikResult.type === 'json') {
-          return c.json(kodikResult.data);
+          return c.json({ ...kodikResult.data, provider: 'kodik' });
         }
         if (kodikResult.type === 'redirect') {
           return c.redirect(kodikResult.url, 302);
