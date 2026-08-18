@@ -684,9 +684,21 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
       selectedQualityRef.current = selectedQuality;
     }, [selectedQuality]);
 
+    const isAniboomStream = Boolean(
+      (provider && provider.toLowerCase().includes("aniboom")) ||
+      src.includes("aniboom") ||
+      (src.includes("playlist") && src.includes("aniboom")) ||
+      streamType === "dash" ||
+      src.includes("cdn1.kamianime.club") ||
+      src.includes("cdn.kamianime.club") ||
+      (!provider && !src.includes("kodik"))
+    );
+
     const isKodikStream = Boolean(
-      (provider && provider.toLowerCase().includes("kodik")) ||
-      src.includes("kodik")
+      !isAniboomStream && (
+        (provider && provider.toLowerCase().includes("kodik")) ||
+        src.includes("kodik")
+      )
     );
 
     const [availableQualities, setAvailableQualities] = useState<
@@ -710,6 +722,28 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
         { html: "Авто", level: -1, targetH: 0 },
       ];
     });
+
+    // Sync default available qualities when source or provider changes
+    useEffect(() => {
+      if (isKodikStream) {
+        setAvailableQualities([
+          { html: "1080p (Anime4K AI)", level: 0, targetH: 1080, isAi: true },
+          { html: "720p", level: 0, targetH: -1 },
+          { html: "480p", level: 1, targetH: -1 },
+          { html: "360p", level: 2, targetH: -1 },
+          { html: "Авто", level: -1, targetH: 0 },
+        ]);
+      } else {
+        setAvailableQualities([
+          { html: "4K (Anime4K AI)", level: 0, targetH: 2160, isAi: true },
+          { html: "1080p", level: 0, targetH: -1 },
+          { html: "720p", level: 1, targetH: -1 },
+          { html: "480p", level: 2, targetH: -1 },
+          { html: "360p", level: 3, targetH: -1 },
+          { html: "Авто", level: -1, targetH: 0 },
+        ]);
+      }
+    }, [src, provider, streamType, isKodikStream]);
 
     // Keep selected quality valid across provider/quality list changes
     useEffect(() => {
@@ -1066,25 +1100,47 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                       }
                     });
                   } else {
-                    nativeList.push(
-                      { html: "720p", level: 0, targetH: -1, height: 720 }
-                    );
-                    maxNativeH = 720;
+                    if (isAniboomStream) {
+                      nativeList.push(
+                        { html: "1080p", level: 0, targetH: -1, height: 1080 },
+                        { html: "720p", level: 1, targetH: -1, height: 720 },
+                        { html: "480p", level: 2, targetH: -1, height: 480 },
+                        { html: "360p", level: 3, targetH: -1, height: 360 }
+                      );
+                      maxNativeH = 1080;
+                    } else {
+                      nativeList.push(
+                        { html: "720p", level: 0, targetH: -1, height: 720 },
+                        { html: "480p", level: 1, targetH: -1, height: 480 },
+                        { html: "360p", level: 2, targetH: -1, height: 360 }
+                      );
+                      maxNativeH = 720;
+                    }
+                  }
+
+                  if (isAniboomStream && maxNativeH < 1080) {
+                    maxNativeH = 1080;
+                    if (!nativeList.some(q => q.html === "1080p")) {
+                      nativeList.unshift({ html: "1080p", level: 0, targetH: -1, height: 1080 });
+                    }
                   }
 
                   // Sort descending
                   nativeList.sort((a, b) => b.height - a.height);
 
                   const isKodik = Boolean(
-                    (provider && provider.toLowerCase().includes("kodik")) ||
-                    src.includes("kodik")
+                    !isAniboomStream && (
+                      (provider && provider.toLowerCase().includes("kodik")) ||
+                      src.includes("kodik")
+                    )
                   );
-                  const hasNative1080 = !isKodik && maxNativeH >= 1080;
+                  const hasNative1080 = !isKodik && (maxNativeH >= 1080 || isAniboomStream);
 
                   const parsedQualities: { html: string; level: number; targetH?: number; isAi?: boolean }[] = [];
 
-                  // RULE: If has native 1080p -> 1080p can upscale to 4K. Do not offer 1080p AI.
-                  // RULE: If Kodik / max quality <= 720p -> 720p can upscale to 1080p. 4K AI is unavailable.
+                  // RULE:
+                  // 1080p native source (e.g. Aniboom) -> upscales to 4K: "4K (Anime4K AI)"
+                  // 720p native source (e.g. Kodik) -> upscales to 1080p: "1080p (Anime4K AI)"
                   if (hasNative1080) {
                     parsedQualities.push({ html: "4K (Anime4K AI)", level: 0, targetH: 2160, isAi: true });
                   } else {
@@ -1208,8 +1264,27 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
 
                   if (levels && levels.length > 0) {
                     levels.forEach((l: any, index: number) => {
-                      const height = l.height || (l.attrs && l.attrs.RESOLUTION ? parseInt(l.attrs.RESOLUTION.split("x")[1]) : 0);
+                      let height = l.height || (l.attrs && l.attrs.RESOLUTION ? parseInt(l.attrs.RESOLUTION.split("x")[1]) : 0);
                       const name = l.name || (l.attrs && l.attrs.NAME) || "";
+                      const urlStr = String(l.url || l.uri || l._url || "");
+
+                      // Infer height from URL, name or bitrate if 0
+                      if (!height) {
+                        if (urlStr.includes("1080") || name.includes("1080")) {
+                          height = 1080;
+                        } else if (urlStr.includes("720") || name.includes("720")) {
+                          height = 720;
+                        } else if (urlStr.includes("480") || name.includes("480")) {
+                          height = 480;
+                        } else if (urlStr.includes("360") || name.includes("360")) {
+                          height = 360;
+                        } else if (l.bitrate && l.bitrate > 2200000) {
+                          height = 1080;
+                        } else if (l.bitrate && l.bitrate > 1200000) {
+                          height = 720;
+                        }
+                      }
+
                       let label = "720p";
                       if (name) {
                         label = name.includes("p") ? name : `${name}p`;
@@ -1223,6 +1298,9 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                         label = "360p";
                       } else if (height > 0) {
                         label = `${height}p`;
+                      } else if (isAniboomStream && index === 0) {
+                        label = "1080p";
+                        height = 1080;
                       } else {
                         label = `Качество ${index + 1}`;
                       }
@@ -1240,22 +1318,44 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                     // Sort descending by resolution height
                     mappedLevels.sort((a, b) => b.height - a.height);
                   } else {
-                    mappedLevels.push(
-                      { html: "720p", level: 0, height: 720 }
-                    );
-                    maxNativeH = 720;
+                    if (isAniboomStream) {
+                      mappedLevels.push(
+                        { html: "1080p", level: 0, height: 1080 },
+                        { html: "720p", level: 1, height: 720 },
+                        { html: "480p", level: 2, height: 480 },
+                        { html: "360p", level: 3, height: 360 }
+                      );
+                      maxNativeH = 1080;
+                    } else {
+                      mappedLevels.push(
+                        { html: "720p", level: 0, height: 720 },
+                        { html: "480p", level: 1, height: 480 },
+                        { html: "360p", level: 2, height: 360 }
+                      );
+                      maxNativeH = 720;
+                    }
+                  }
+
+                  if (isAniboomStream && maxNativeH < 1080) {
+                    maxNativeH = 1080;
+                    if (!mappedLevels.some(q => q.html === "1080p")) {
+                      mappedLevels.unshift({ html: "1080p", level: 0, height: 1080 });
+                    }
                   }
 
                   const isKodik = Boolean(
-                    (provider && provider.toLowerCase().includes("kodik")) ||
-                    src.includes("kodik")
+                    !isAniboomStream && (
+                      (provider && provider.toLowerCase().includes("kodik")) ||
+                      src.includes("kodik")
+                    )
                   );
-                  const hasNative1080 = !isKodik && maxNativeH >= 1080;
+                  const hasNative1080 = !isKodik && (maxNativeH >= 1080 || isAniboomStream);
 
                   const finalQuals: { html: string; level: number; targetH?: number; isAi?: boolean }[] = [];
 
-                  // RULE: If has native 1080p -> 1080p can upscale to 4K. Do not offer 1080p AI.
-                  // RULE: If Kodik / max quality <= 720p -> 720p can upscale to 1080p. 4K AI is unavailable.
+                  // RULE:
+                  // 1080p native source (e.g. Aniboom) -> upscales to 4K: "4K (Anime4K AI)"
+                  // 720p native source (e.g. Kodik) -> upscales to 1080p: "1080p (Anime4K AI)"
                   if (hasNative1080) {
                     finalQuals.push({ html: "4K (Anime4K AI)", level: 0, targetH: 2160, isAi: true });
                   } else {
