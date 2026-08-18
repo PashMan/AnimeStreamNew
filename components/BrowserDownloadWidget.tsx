@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Download, Loader2, Film, CheckCircle, AlertTriangle } from "lucide-react";
+import { getCleanPlaylistUrl } from "../utils/media";
 
 interface BrowserDownloadWidgetProps {
   episodeUrl: string;
@@ -56,7 +57,7 @@ export const BrowserDownloadWidget: React.FC<BrowserDownloadWidgetProps> = ({
 
       // Attempt 1: Try primary URL (AniBoom prioritized)
       try {
-        const primaryUrl = `/api/media/playlist?url=${encodeURIComponent(episodeUrl)}&fallback_url=${encodeURIComponent(fallbackUrl || '')}&resolve=true`;
+        const primaryUrl = getCleanPlaylistUrl(episodeUrl, fallbackUrl);
         const res = await fetch(primaryUrl);
         const text = await res.text();
         const trimmed = text.trim().toLowerCase();
@@ -87,7 +88,7 @@ export const BrowserDownloadWidget: React.FC<BrowserDownloadWidgetProps> = ({
       // Attempt 2: If primary failed and fallbackUrl exists, try fallback (Kodik)
       if (fallbackUrl && fallbackUrl !== episodeUrl) {
         try {
-          const fallbackReqUrl = `/api/media/playlist?url=${encodeURIComponent(fallbackUrl)}&resolve=true`;
+          const fallbackReqUrl = getCleanPlaylistUrl(fallbackUrl);
           const fRes = await fetch(fallbackReqUrl);
           const fText = await fRes.text();
           const fTrimmed = fText.trim().toLowerCase();
@@ -198,7 +199,7 @@ export const BrowserDownloadWidget: React.FC<BrowserDownloadWidgetProps> = ({
         status: "running",
         fileName: outputFileName
       });
-      const playlistUrl = `/api/media/playlist?url=${encodeURIComponent(activeUrl)}&fallback_url=${encodeURIComponent(fallbackUrl || '')}&quality=${quality}`;
+      const playlistUrl = getCleanPlaylistUrl(activeUrl, fallbackUrl, quality);
       const playlistRes = await fetch(playlistUrl);
       
       const playlistText = await playlistRes.text();

@@ -58,6 +58,7 @@ import { BrowserDownloadWidget } from "../components/BrowserDownloadWidget";
 import { useSlugBlocks } from "../store/slugBlocks";
 import { useDmcaBlocks } from "../store/dmcaBlocks";
 import { filterProfanity } from "../utils/profanity";
+import { getCleanPlaylistUrl } from "../utils/media";
 
 const formatWorkerEmbedUrl = (rawEmbedUrl: string, epNum: number) => {
   try {
@@ -315,9 +316,7 @@ const Details: React.FC = () => {
     // Instant local activation if translation already has stream available
     if (aniboomStream) {
       setResolvedStream({
-        url: `/api/media/playlist?url=${encodeURIComponent(aniboomStream)}${
-          kodikIframeUrl ? `&fallback_url=${encodeURIComponent(kodikIframeUrl)}` : ""
-        }`,
+        url: getCleanPlaylistUrl(aniboomStream, kodikIframeUrl),
         streamType: "hls",
         provider: "aniboom"
       });
@@ -325,7 +324,7 @@ const Details: React.FC = () => {
       return;
     } else if (kodikIframeUrl) {
       setResolvedStream({
-        url: `/api/media/playlist?url=${encodeURIComponent(kodikIframeUrl)}`,
+        url: getCleanPlaylistUrl(kodikIframeUrl),
         streamType: "hls",
         provider: "kodik"
       });
@@ -359,9 +358,7 @@ const Details: React.FC = () => {
         if (data && data.source === "aniboom" && data.embed_url) {
           if (isCurrent) {
             const formattedEmbedUrl = formatWorkerEmbedUrl(data.embed_url, epNum);
-            const playlistUrl = `/api/media/playlist?url=${encodeURIComponent(formattedEmbedUrl)}${
-              kodikIframeUrl ? `&fallback_url=${encodeURIComponent(kodikIframeUrl)}` : ""
-            }`;
+            const playlistUrl = getCleanPlaylistUrl(formattedEmbedUrl, kodikIframeUrl);
 
             setResolvedStream({
               url: playlistUrl,
@@ -379,7 +376,7 @@ const Details: React.FC = () => {
         if (isCurrent) {
           if (kodikIframeUrl) {
             setResolvedStream({
-              url: `/api/media/playlist?url=${encodeURIComponent(kodikIframeUrl)}`,
+              url: getCleanPlaylistUrl(kodikIframeUrl),
               streamType: "hls",
               provider: "kodik"
             });
@@ -391,7 +388,7 @@ const Details: React.FC = () => {
         }
       } catch (err: any) {
         if (err.name === "AbortError") {
-          console.warn("⏱️ [Worker Resolver] Request timed out (2.5s limit) or aborted. Falling back to Kodik.");
+          console.warn("⏱️ [Worker Resolver] Request timed out (6s limit) or aborted. Falling back to Kodik.");
         } else {
           console.info("ℹ️ [Worker Resolver] Worker note:", err.message);
         }
@@ -399,7 +396,7 @@ const Details: React.FC = () => {
         if (isCurrent) {
           if (kodikIframeUrl) {
             setResolvedStream({
-              url: `/api/media/playlist?url=${encodeURIComponent(kodikIframeUrl)}`,
+              url: getCleanPlaylistUrl(kodikIframeUrl),
               streamType: "hls",
               provider: "kodik"
             });
@@ -2014,15 +2011,13 @@ const Details: React.FC = () => {
                               const kodikIframeUrl = getResolvedKodikUrl(selectedTranslation, epNum, defaultKodik);
 
                               if (resolvedStream && resolvedStream.url) {
-                                customSrc = resolvedStream.url;
+                                customSrc = getCleanPlaylistUrl(resolvedStream.url, kodikIframeUrl);
                               } else if (aniboomStream) {
-                                customSrc = `/api/media/playlist?url=${encodeURIComponent(aniboomStream)}${
-                                  kodikIframeUrl ? `&fallback_url=${encodeURIComponent(kodikIframeUrl)}` : ""
-                                }`;
+                                customSrc = getCleanPlaylistUrl(aniboomStream, kodikIframeUrl);
                               } else if (kodikIframeUrl) {
-                                customSrc = `/api/media/playlist?url=${encodeURIComponent(kodikIframeUrl)}`;
+                                customSrc = getCleanPlaylistUrl(kodikIframeUrl);
                               } else {
-                                customSrc = `/api/proxy-4k?url=${encodeURIComponent("https://cdn.kamianime.club/kimi-no-na-wa/master.m3u8")}`;
+                                customSrc = getCleanPlaylistUrl("https://cdn.kamianime.club/kimi-no-na-wa/master.m3u8");
                               }
                             }
 

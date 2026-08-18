@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, ImgHTMLAttributes } from 'react';
 import { ImageOff } from 'lucide-react';
 import { fetchAnimeImage } from '../services/animeImages';
 import { FALLBACK_IMAGE } from '../constants';
+import { isTvDevice } from '../utils/tvDetection';
 
 interface ImageProps extends ImgHTMLAttributes<HTMLImageElement> {
   fallbackClassName?: string;
@@ -12,14 +13,15 @@ interface ImageProps extends ImgHTMLAttributes<HTMLImageElement> {
 }
 
 export const Image = ({ src, alt, className, fallbackClassName, priority, animeId, animeTitle, onImageLoad, ...props }: ImageProps) => {
+  const isTv = isTvDevice();
   const [imageSrc, setImageSrc] = useState<string | undefined>(src);
   const [isLoading, setIsLoading] = useState(true);
   const [fallbackLevel, setFallbackLevel] = useState(0); // 0: Initial, 1: Anilist, 2: Failed
-  const [isInView, setIsInView] = useState(priority || false);
+  const [isInView, setIsInView] = useState(priority || isTv || false);
   const imgRef = useRef<HTMLImageElement>(null);
 
   useEffect(() => {
-      if (priority) {
+      if (priority || isTv) {
           setIsInView(true);
           return;
       }
@@ -29,10 +31,10 @@ export const Image = ({ src, alt, className, fallbackClassName, priority, animeI
               setIsInView(true);
               observer.disconnect();
           }
-      }, { rootMargin: '400px' }); // Increased rootMargin
+      }, { rootMargin: '600px' });
       observer.observe(imgRef.current);
       return () => observer.disconnect();
-  }, [priority]);
+  }, [priority, isTv]);
 
   useEffect(() => {
       if (src !== imageSrc) {
@@ -95,7 +97,7 @@ export const Image = ({ src, alt, className, fallbackClassName, priority, animeI
       className={`${className} ${isLoading ? 'opacity-0' : 'opacity-100'} transition-opacity duration-300`}
       onError={handleError}
       onLoad={handleLoad}
-      loading={priority ? "eager" : "lazy"}
+      loading={priority || isTv ? "eager" : "lazy"}
       referrerPolicy="no-referrer"
       // @ts-ignore
       fetchpriority={priority ? "high" : "auto"}

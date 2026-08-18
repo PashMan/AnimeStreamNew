@@ -13,21 +13,31 @@ export const isTvDevice = (): boolean => {
     "Android TV", "AFTT", "AFTM", "AFTA", "AFTB", "FireTV", "HbbTV",
     "AppleTV", "BRAVIA", "NetCast", "GoogleTV", "Opera TV", "Viera",
     "SmartHub", "DuneHD", "MAG250", "MiTV", "Hisense",
-    "SonyDTV", "LOEWE", "Vestel"
+    "SonyDTV", "LOEWE", "Vestel", "Large Screen", "TV"
   ];
 
-  return tvKeywords.some((kw) => new RegExp(kw, "i").test(ua));
+  const isMatched = tvKeywords.some((kw) => new RegExp(kw, "i").test(ua));
+  const isLargeLandscape = typeof window !== "undefined" && window.innerWidth >= 1280 && window.innerHeight >= 720;
+  
+  return isMatched || (isMatched && isLargeLandscape);
 };
 
-export const isTvModeEnabled = (): boolean => {
-  return false;
+export const applyTvModeClass = (enabled: boolean) => {
+  if (typeof document === "undefined") return;
+  if (enabled) {
+    document.documentElement.style.fontSize = '22px';
+    document.documentElement.classList.add('tv-mode');
+  } else {
+    document.documentElement.style.fontSize = '';
+    document.documentElement.classList.remove('tv-mode');
+  }
 };
 
-export const setTvMode = (_enabled: boolean) => {};
+export const initTvSystem = () => {
+  if (typeof window === "undefined") return;
+  if (isTvDevice()) {
+    applyTvModeClass(true);
+  }
+};
 
-export const toggleTvMode = (): boolean => false;
-
-export const applyTvModeClass = (_enabled: boolean) => {};
-
-export const initTvSystem = () => {};
 

@@ -323,4 +323,28 @@ a, button, .group {
   color: #8B5CF6 !important;
 }
 
+/* ==========================================================================
+   Smart TV 10-foot UI & Overscan Safe-Area
+   ========================================================================== */
+.tv-mode body,
+.tv-mode #root {
+  padding: 3.5vh 4vw !important;
+  box-sizing: border-box;
+}
+
+/* Hide scrollbars on Smart TV remote navigation */
+.tv-mode ::-webkit-scrollbar {
+  display: none !important;
+}
+
+.tv-mode * {
+  scrollbar-width: none !important;
+}
+
+/* Prevent Flexbox text truncation / collapsing in TV browsers */
+.tv-mode .flex {
+  min-width: 0;
+}
+
+
 

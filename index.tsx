@@ -3,7 +3,11 @@ import ReactDOM from 'react-dom/client';
 import { HelmetProvider } from 'react-helmet-async';
 import App from './App';
 import { AuthProvider } from './context/AuthContext';
+import { initTvSystem } from './utils/tvDetection';
 import './index.css';
+
+// Initialize 10-foot TV UI scaling and safe-area if running on a Smart TV
+initTvSystem();
 
 // Automatically handle Vite dynamic import / chunk load errors after new deployments
 window.addEventListener('vite:preloadError', (event) => {
