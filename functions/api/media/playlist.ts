@@ -71,6 +71,19 @@ export async function onRequest(context: any) {
         if (hlsSrc) {
           if (hlsSrc.startsWith('//')) hlsSrc = `https:${hlsSrc}`;
           
+          // CDN2 Handshake for AniBoom session initialization
+          try {
+            const videoHash = decoded.id || decoded.hash || (hlsSrc.match(/\/([a-f0-9]{32,64})/i)?.[1]);
+            const cdn2Url = videoHash ? `https://aniboom.one/cdn2/${videoHash}` : 'https://aniboom.one/';
+            await fetch(cdn2Url, {
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Referer': 'https://aniboom.one/',
+                'Origin': 'https://aniboom.one'
+              }
+            }).catch(() => {});
+          } catch (_) {}
+
           if (resolveOnly) {
             return new Response(JSON.stringify({
               success: true,

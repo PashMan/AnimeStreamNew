@@ -3838,6 +3838,20 @@ app.get('/api/media/playlist', async (c) => {
         rawStreamUrl = 'https:' + rawStreamUrl;
       }
 
+      // CDN2 Handshake for AniBoom session authorization
+      try {
+        const videoHash = params?.id || params?.hash || (rawStreamUrl.match(/\/([a-f0-9]{32,64})/i)?.[1]);
+        const cdn2Url = videoHash ? `https://aniboom.one/cdn2/${videoHash}` : 'https://aniboom.one/';
+        await axios.get(cdn2Url, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Referer': 'https://aniboom.one/',
+            'Origin': 'https://aniboom.one'
+          },
+          timeout: 3000
+        }).catch(() => {});
+      } catch (_) {}
+
       finalStreamUrl = `/api/proxy-4k?url=${encodeURIComponent(rawStreamUrl)}&referer=${encodeURIComponent('https://aniboom.one/')}`;
       playlistCache.set(cleanTargetUrl, { streamUrl: finalStreamUrl, rawUrl: rawStreamUrl, exp: now + 4 * 3600 * 1000 });
       console.log(`✅ [Aniboom Stream Resolved]: ${rawStreamUrl}`);

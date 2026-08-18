@@ -358,7 +358,39 @@ const Details: React.FC = () => {
         if (data && data.source === "aniboom" && data.embed_url) {
           if (isCurrent) {
             const formattedEmbedUrl = formatWorkerEmbedUrl(data.embed_url, epNum);
-            const playlistUrl = getCleanPlaylistUrl(formattedEmbedUrl, kodikIframeUrl);
+
+            // Client-Side Resolution fallback for AniBoom
+            let clientHlsUrl: string | null = null;
+            try {
+              const clientFetchRes = await fetch(formattedEmbedUrl, {
+                headers: { 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' }
+              }).catch(() => null);
+
+              if (clientFetchRes && clientFetchRes.ok) {
+                const htmlText = await clientFetchRes.text();
+                const match = htmlText.match(/data-parameters="([^"]+)"/) || htmlText.match(/data-parameters='([^']+)'/);
+                if (match) {
+                  const decoded = JSON.parse(
+                    match[1]
+                      .replace(/&quot;/g, '"')
+                      .replace(/&amp;/g, '&')
+                      .replace(/&#039;/g, "'")
+                  );
+                  let hlsObj = decoded.hls || decoded.dash;
+                  if (typeof hlsObj === 'string') {
+                    try { hlsObj = JSON.parse(hlsObj); } catch (_) {}
+                  }
+                  if (hlsObj) {
+                    clientHlsUrl = typeof hlsObj === 'string' ? hlsObj : (hlsObj['1080'] || hlsObj['720'] || hlsObj['480'] || hlsObj.src || hlsObj.url || '');
+                    if (clientHlsUrl && clientHlsUrl.startsWith('//')) clientHlsUrl = `https:${clientHlsUrl}`;
+                  }
+                }
+              }
+            } catch (_) {}
+
+            const playlistUrl = clientHlsUrl 
+              ? `/api/proxy-4k?url=${encodeURIComponent(clientHlsUrl)}&referer=${encodeURIComponent('https://aniboom.one/')}`
+              : getCleanPlaylistUrl(formattedEmbedUrl, kodikIframeUrl);
 
             setResolvedStream({
               url: playlistUrl,
@@ -366,7 +398,7 @@ const Details: React.FC = () => {
               provider: "aniboom"
             });
             setIsResolvingStream(false);
-            console.log(`✅ [Worker Resolver] Aniboom stream activated (KamiPlayer 1080p): ${formattedEmbedUrl}`);
+            console.log(`✅ [Worker Resolver] Aniboom stream activated (KamiPlayer 1080p): ${clientHlsUrl || formattedEmbedUrl}`);
           }
           return;
         }
