@@ -139,22 +139,43 @@ export async function onRequest(context: any) {
 
     let aRes = await fetch(cleanEmbedUrl, { headers: fetchHeaders });
     let html = aRes.ok ? await aRes.text() : '';
-    let match = html ? (html.match(/data-parameters="([^"]+)"/) || html.match(/data-parameters='([^']+)'/)) : null;
+
+    // 1. Поиск через data-parameters (двойные или одинарные кавычки)
+    let match = html.match(/data-parameters=["']([^"']+)["']/i);
+    let rawParams = '';
+
+    if (match) {
+      rawParams = match[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&#039;/g, "'");
+    } else {
+      // 2. Fallback: поиск через JS объекты (если AniBoom отдал inline script)
+      const jsMatch = html.match(/(?:window\.)?parameters\s*=\s*({.+?});/s) || 
+                      html.match(/data-aspect-ratio[^>]*data-parameters="([^"]+)"/i);
+      if (jsMatch) {
+        rawParams = jsMatch[1];
+      }
+    }
 
     // Retry without translation parameter if data-parameters was not found
-    if (!match && cleanEmbedUrl.includes('translation=')) {
+    if (!rawParams && cleanEmbedUrl.includes('translation=')) {
       try {
         const retryUrl = new URL(cleanEmbedUrl);
         retryUrl.searchParams.delete('translation');
         const retryRes = await fetch(retryUrl.toString(), { headers: fetchHeaders });
         if (retryRes.ok) {
           const retryHtml = await retryRes.text();
-          match = retryHtml.match(/data-parameters="([^"]+)"/) || retryHtml.match(/data-parameters='([^']+)'/);
+          match = retryHtml.match(/data-parameters=["']([^"']+)["']/i);
+          if (match) {
+            rawParams = match[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&#039;/g, "'");
+          } else {
+            const jsMatch = retryHtml.match(/(?:window\.)?parameters\s*=\s*({.+?});/s) || 
+                            retryHtml.match(/data-aspect-ratio[^>]*data-parameters="([^"]+)"/i);
+            if (jsMatch) rawParams = jsMatch[1];
+          }
         }
       } catch (_) {}
     }
 
-    if (!match) {
+    if (!rawParams) {
       // Automatic Kodik Fallback on Worker
       const shikimoriId = urlObj.searchParams.get('shikimori_id');
       if (shikimoriId) {
@@ -193,7 +214,8 @@ export async function onRequest(context: any) {
 
       return new Response(JSON.stringify({
         success: false,
-        error: 'data-parameters attribute not found in Aniboom embed HTML'
+        error: 'data-parameters not found',
+        isUnavailable: true
       }), {
         status: 200,
         headers: {

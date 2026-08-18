@@ -3282,13 +3282,22 @@ const handleAniboomResolve = async (c: any) => {
       message: "Поиск и извлечение атрибута 'data-parameters' из HTML разметки..."
     });
 
-    const match = html.match(/data-parameters="([^"]+)"/) || html.match(/data-parameters='([^']+)'/);
+    let match = html.match(/data-parameters=["']([^"']+)["']/i);
+    let rawParams = '';
 
-    if (!match) {
-      return await tryKodikFallback('data-parameters attribute not found in Aniboom embed HTML');
+    if (match) {
+      rawParams = match[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&#039;/g, "'");
+    } else {
+      const jsMatch = html.match(/(?:window\.)?parameters\s*=\s*({.+?});/s) || 
+                      html.match(/data-aspect-ratio[^>]*data-parameters="([^"]+)"/i);
+      if (jsMatch) {
+        rawParams = jsMatch[1];
+      }
     }
 
-    const rawParams = match[1];
+    if (!rawParams) {
+      return await tryKodikFallback('data-parameters not found');
+    }
     const decoded: any = safeParseParams(rawParams);
     steps.push({
       title: "Парсинг data-parameters",
