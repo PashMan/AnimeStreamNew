@@ -811,6 +811,8 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
     const onPrevEpisodeRef = useRef(onPrevEpisode);
     const onPlayerErrorRef = useRef(onPlayerError);
     const audioTrackNamesRef = useRef(audioTrackNames);
+    const lastPlaybackPosRef = useRef<number>(0);
+    const wasPlayingRef = useRef<boolean>(false);
 
     useEffect(() => {
       onNextEpisodeRef.current = onNextEpisode;
@@ -1509,17 +1511,29 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
         // Restore playback position on load
         art.on("ready", () => {
           if (!art) return;
-          if (animeId && episodeNumber) {
+          let seekTime = 0;
+          if (lastPlaybackPosRef.current > 0) {
+            seekTime = lastPlaybackPosRef.current;
+          } else if (animeId && episodeNumber) {
             const saved = localStorage.getItem(
               `anime_progress_${animeId}_${episodeNumber}`,
             );
             if (saved) {
-              const seekTime = parseFloat(saved);
-              if (!isNaN(seekTime) && seekTime > 5) {
-                art.currentTime = seekTime;
-                art.notice.show = `Продолжено с ${Math.floor(seekTime / 60)}:${Math.floor(seekTime % 60).toString().padStart(2, "0")}`;
+              const parsed = parseFloat(saved);
+              if (!isNaN(parsed) && parsed > 5) {
+                seekTime = parsed;
               }
             }
+          }
+
+          if (seekTime > 0) {
+            art.currentTime = seekTime;
+            if (art.notice) {
+              art.notice.show = `Продолжено с ${Math.floor(seekTime / 60)}:${Math.floor(seekTime % 60).toString().padStart(2, "0")}`;
+            }
+          }
+          if (wasPlayingRef.current && art.video && art.video.paused) {
+            art.video.play().catch(() => {});
           }
         });
 
@@ -1550,6 +1564,10 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
           webglInstance.destroy();
         }
         if (art) {
+          if (art.currentTime > 0) {
+            lastPlaybackPosRef.current = art.currentTime;
+            wasPlayingRef.current = !art.video?.paused;
+          }
           if (animeId && episodeNumber && art.currentTime > 5) {
             saveProgress(art.currentTime, art.duration);
           }
@@ -1578,6 +1596,10 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
       setSelectedQuality(item.html);
       localStorage.setItem("kami_player_selected_quality", item.html);
 
+      const art = artInstanceRef.current;
+      const currentPos = art ? art.currentTime : 0;
+      const wasPlaying = art && art.video && !art.video.paused;
+
       // WebGL Upscaler resolution mode
       if (webglInstanceRef.current) {
         if (item.html.includes("4K") || item.targetH === 2160) {
@@ -1595,19 +1617,29 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
         }
       }
 
-      const art = artInstanceRef.current;
       if (art && (art as any).hls) {
         const hls = (art as any).hls;
         try {
           console.log(`[Quality Switch] Applying HLS quality level ${item.level} (${item.html})`);
-          if (item.level === -1 || item.isAi) {
+          if (item.level === -1) {
             hls.currentLevel = -1;
             hls.loadLevel = -1;
             hls.nextLevel = -1;
+          } else if (item.isAi) {
+            hls.currentLevel = 0;
+            hls.loadLevel = 0;
+            hls.nextLevel = 0;
           } else {
             hls.currentLevel = item.level;
             hls.loadLevel = item.level;
             hls.nextLevel = item.level;
+          }
+
+          if (currentPos > 0 && art.video) {
+            art.currentTime = currentPos;
+            if (wasPlaying && art.video.paused) {
+              art.video.play().catch(() => {});
+            }
           }
         } catch (err) {
           console.warn("[HLS Quality Switch Error]", err);
@@ -1658,6 +1690,13 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
               if (reps && reps[item.level]) {
                 player.setRepresentationFor("video", reps[item.level]);
               }
+            }
+          }
+
+          if (currentPos > 0 && art.video) {
+            art.currentTime = currentPos;
+            if (wasPlaying && art.video.paused) {
+              art.video.play().catch(() => {});
             }
           }
         } catch (err) {

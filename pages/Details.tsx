@@ -306,19 +306,40 @@ const Details: React.FC = () => {
     }
 
     let isCurrent = true;
+    const epNum = parseInt(paramEpisode || "1") || 1;
+    const defaultAniboom = players.find((p) => p.name === "Aniboom")?.iframe;
+    const defaultKodik = players.find((p) => p.name === "Kodik")?.iframe;
+    const aniboomStream = getResolvedAniboomUrl(selectedTranslation, epNum, defaultAniboom);
+    const kodikIframeUrl = getResolvedKodikUrl(selectedTranslation, epNum, defaultKodik);
+
+    // Instant local activation if translation already has stream available
+    if (aniboomStream) {
+      setResolvedStream({
+        url: `/api/media/playlist?url=${encodeURIComponent(aniboomStream)}${
+          kodikIframeUrl ? `&fallback_url=${encodeURIComponent(kodikIframeUrl)}` : ""
+        }`,
+        streamType: "hls",
+        provider: "aniboom"
+      });
+      setIsResolvingStream(false);
+      return;
+    } else if (kodikIframeUrl) {
+      setResolvedStream({
+        url: `/api/media/playlist?url=${encodeURIComponent(kodikIframeUrl)}`,
+        streamType: "hls",
+        provider: "kodik"
+      });
+      setIsResolvingStream(false);
+    }
+
     const abortController = new AbortController();
     const timeoutId = setTimeout(() => {
       abortController.abort();
-    }, 8500);
+    }, 2500);
 
     const resolveAniboomStream = async () => {
       setIsResolvingStream(true);
       setStreamResolutionError(null);
-      setResolvedStream(null);
-
-      const epNum = parseInt(paramEpisode || "1") || 1;
-      const defaultKodik = players.find((p) => p.name === "Kodik")?.iframe;
-      const kodikIframeUrl = getResolvedKodikUrl(selectedTranslation, epNum, defaultKodik);
 
       try {
         const workerUrl = `https://parser.oshxycfdjab.workers.dev/?shikimori_id=${id}&episode=${epNum}`;
@@ -370,7 +391,7 @@ const Details: React.FC = () => {
         }
       } catch (err: any) {
         if (err.name === "AbortError") {
-          console.warn("⏱️ [Worker Resolver] Request timed out (8.5s limit) or aborted. Falling back to Kodik.");
+          console.warn("⏱️ [Worker Resolver] Request timed out (2.5s limit) or aborted. Falling back to Kodik.");
         } else {
           console.info("ℹ️ [Worker Resolver] Worker note:", err.message);
         }

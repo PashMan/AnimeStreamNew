@@ -66,10 +66,15 @@ export const BrowserDownloadWidget: React.FC<BrowserDownloadWidgetProps> = ({
           const data = JSON.parse(text);
           if (data.success && Array.isArray(data.qualities) && data.qualities.length > 0) {
             if (isMounted) {
-              const sorted = [...data.qualities].sort((a, b) => Number(b) - Number(a));
+              let qualList: (string | number)[] = [...data.qualities];
+              const isAniboom = episodeUrl.includes("aniboom") || preferredProvider === "aniboom";
+              if (isAniboom && !qualList.includes(1080) && !qualList.includes("1080")) {
+                qualList.push(1080);
+              }
+              const sorted = qualList.sort((a, b) => Number(b) - Number(a));
               setQualities(sorted.map(String));
               setActiveUrl(episodeUrl);
-              setResolvedProvider(episodeUrl.includes("aniboom") || sorted.includes(1080) || sorted.includes("1080") ? "aniboom" : "kodik");
+              setResolvedProvider(isAniboom || sorted.includes(1080) || sorted.includes("1080") ? "aniboom" : "kodik");
               setLoadingQualities(false);
               return;
             }
@@ -415,7 +420,7 @@ export const BrowserDownloadWidget: React.FC<BrowserDownloadWidgetProps> = ({
           </label>
           {!loadingQualities && qualities.length > 0 && (
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-[11px] font-bold">
-              {resolvedProvider === "aniboom" || qualities.includes("1080") ? (
+              {qualities.includes("1080") ? (
                 <span className="text-emerald-400 flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
                   AniBoom 1080p Ultra HD
@@ -423,7 +428,7 @@ export const BrowserDownloadWidget: React.FC<BrowserDownloadWidgetProps> = ({
               ) : (
                 <span className="text-cyan-400 flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
-                  Kodik HD
+                  {qualities[0] ? `${qualities[0]}p HD` : 'HD качество'}
                 </span>
               )}
             </div>
@@ -452,7 +457,11 @@ export const BrowserDownloadWidget: React.FC<BrowserDownloadWidgetProps> = ({
                   key={qual}
                   onClick={() => handleStartDownload(qual)}
                   disabled={downloading}
-                  className="flex items-center justify-center gap-1.5 bg-white/5 hover:bg-cyan-500 hover:text-white border border-white/5 hover:border-cyan-500 transition-all duration-300 text-slate-200 font-bold text-xs py-2.5 rounded-xl cursor-pointer shadow-lg active:scale-95 disabled:opacity-50"
+                  className={`flex items-center justify-center gap-1.5 border transition-all duration-300 font-bold text-xs py-2.5 rounded-xl cursor-pointer shadow-lg active:scale-95 disabled:opacity-50 ${
+                    qual === "1080"
+                      ? "bg-cyan-500/15 hover:bg-cyan-500 text-cyan-300 hover:text-white border-cyan-500/30 hover:border-cyan-500"
+                      : "bg-white/5 hover:bg-cyan-500 hover:text-white border-white/5 hover:border-cyan-500 text-slate-200"
+                  }`}
                 >
                   <Film className="w-3.5 h-3.5 shrink-0" />
                   {qual}p (.mp4)
