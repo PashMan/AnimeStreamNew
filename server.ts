@@ -512,13 +512,10 @@ async function fetchAnimegoData(shikimoriId: string, searchTitle?: string): Prom
       if (!testUrl.includes('episode=')) {
         testUrl += (testUrl.includes('?') ? '&' : '?') + 'episode=1';
       }
-      if (!testUrl.includes('translation=')) {
-        testUrl += (testUrl.includes('?') ? '&' : '?') + 'translation=16';
-      }
       const qRes = await fetch(testUrl, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-          'Referer': 'https://animego.org/'
+          'Referer': 'https://animego.me/'
         },
         signal: AbortSignal.timeout(2000)
       });
@@ -3120,31 +3117,38 @@ const handleAniboomResolve = async (c: any) => {
   try {
     const u = new URL(cleanEmbedUrl);
     u.searchParams.set('episode', String(episode));
-    // CRITICAL: Only set translation param if translation_id is numeric!
-    // Never put non-numeric strings (e.g. "AniStar & DEEP") into aniboom.one's translation param!
+    // CRITICAL: Only set translation param if translation_id is numeric and explicitly provided!
+    // Never put non-numeric strings or force translation=16 onto AniBoom embeds!
     if (translation_id && /^\d+$/.test(String(translation_id))) {
       u.searchParams.set('translation', String(translation_id));
-    } else if (!u.searchParams.has('translation')) {
-      u.searchParams.set('translation', '16');
     }
     cleanEmbedUrl = u.toString();
   } catch (_) {
     if (!cleanEmbedUrl.includes('episode=')) {
       cleanEmbedUrl += (cleanEmbedUrl.includes('?') ? '&' : '?') + `episode=${episode}`;
     }
-    if (!cleanEmbedUrl.includes('translation=')) {
-      if (translation_id && /^\d+$/.test(String(translation_id))) {
-        cleanEmbedUrl += (cleanEmbedUrl.includes('?') ? '&' : '?') + `translation=${translation_id}`;
-      } else {
-        cleanEmbedUrl += (cleanEmbedUrl.includes('?') ? '&' : '?') + `translation=16`;
-      }
+    if (translation_id && /^\d+$/.test(String(translation_id)) && !cleanEmbedUrl.includes('translation=')) {
+      cleanEmbedUrl += (cleanEmbedUrl.includes('?') ? '&' : '?') + `translation=${translation_id}`;
     }
+  }
+
+  // Extract parent parameter for Referer header matching
+  let referer = 'https://animego.me/';
+  const parentMatch = cleanEmbedUrl.match(/[?&]parent=([^&]+)/i);
+  if (parentMatch) {
+    const decodedParent = safeUnescapeUrl(parentMatch[1]);
+    if (decodedParent.startsWith('http://') || decodedParent.startsWith('https://')) {
+      referer = decodedParent;
+    }
+  } else {
+    // If parent is missing, attach parent to URL so AniBoom security validation passes
+    cleanEmbedUrl += (cleanEmbedUrl.includes('?') ? '&' : '?') + `parent=${encodeURIComponent(referer)}`;
   }
 
   steps.push({
     title: "Конечный Embed URL",
     status: "success",
-    message: `Используется нормализованный URL плеера: ${cleanEmbedUrl}`
+    message: `Используется нормализованный URL плеера: ${cleanEmbedUrl} (Referer: ${referer})`
   });
 
   // Step 2: Get HTML of Aniboom embed
@@ -3154,13 +3158,18 @@ const handleAniboomResolve = async (c: any) => {
     message: "Отправка GET-запроса на получение страницы плеера AniBoom..."
   });
   try {
+    const originHost = referer.startsWith('http') ? new URL(referer).origin : 'https://animego.me';
     const aRes = await fetch(cleanEmbedUrl, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        'Referer': 'https://animego.org/',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Referer': referer,
+        'Origin': originHost,
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Sec-Fetch-Dest': 'iframe',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'cross-site'
       },
-      signal: AbortSignal.timeout(3000)
+      signal: AbortSignal.timeout(4000)
     });
 
     if (!aRes.ok) {
@@ -3361,17 +3370,211 @@ app.post('/api/media/aniboom/resolve', handleAniboomResolve);
 // In-memory 4-hour cache for direct AniBoom Master HLS links
 const playlistCache = new Map<string, { streamUrl: string; rawUrl: string; exp: number }>();
 
+function convertChar(char: string, rotNum: number): string {
+  if (!char.match(/[a-zA-Z]/)) return char;
+  const code = char.charCodeAt(0);
+  let start = 65; // 'A'
+  if (code >= 97) start = 97; // 'a'
+  return String.fromCharCode(((code - start + rotNum) % 26) + start);
+}
+
+function decodeKodikUrl(encoded: string, rotNum?: number): string {
+  if (rotNum !== undefined) {
+    const crypted = encoded.split('').map(c => convertChar(c, rotNum)).join('');
+    const padding = (4 - (crypted.length % 4)) % 4;
+    try {
+      const decoded = atob(crypted + '='.repeat(padding));
+      if (decoded.includes('mp4:hls:manifest')) return decoded;
+    } catch {}
+  }
+  for (let rot = 0; rot < 26; rot++) {
+    const crypted = encoded.split('').map(c => convertChar(c, rot)).join('');
+    const padding = (4 - (crypted.length % 4)) % 4;
+    try {
+      const decoded = atob(crypted + '='.repeat(padding));
+      if (decoded.includes('mp4:hls:manifest')) {
+         return decoded;
+      }
+    } catch {}
+  }
+  throw new Error('Decryption of Kodik stream URL failed');
+}
+
+async function extractKodikStream(iframeUrl: string, requestedQuality?: string, resolveOnly?: boolean, c?: any) {
+  let normalizedIframe = iframeUrl.startsWith('//') ? `https:${iframeUrl}` : iframeUrl;
+  normalizedIframe = normalizedIframe.replace(/(kodik\.info|kodik\.cc|kodik\.biz|kodik\.net|kodik\.tv|kodik\.club|kodik\.site|kodik\.space|kodik\.ru|kodikonline\.com|kodikhd\.club|kodik-api\.com)/g, 'kodikplayer.com');
+
+  console.log(`[KODIK PROXY] Extracting playlist from: ${normalizedIframe}`);
+
+  const iframeRes = await fetch(normalizedIframe, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+      'Referer': 'https://shikimori.one/'
+    }
+  });
+  const html = await iframeRes.text();
+
+  const urlParamsMatch = html.match(/urlParams\s*=\s*'([^']+)'/) || html.match(/urlParams\s*=\s*"([^"]+)"/) || html.match(/urlParams\s*=\s*({[^;]+})/);
+  const hashMatch = html.match(/\.hash\s*=\s*'([^']+)'/) || html.match(/\.hash\s*=\s*"([^"]+)"/) || html.match(/\.hash\s*=\s*['"]([^'"]+)['"]/);
+  const idMatch = html.match(/\.id\s*=\s*'([^']+)'/) || html.match(/\.id\s*=\s*"([^"]+)"/) || html.match(/\.id\s*=\s*['"]([^'"]+)['"]/);
+  const typeMatch = html.match(/\.type\s*=\s*'([^']+)'/) || html.match(/\.type\s*=\s*"([^"]+)"/) || html.match(/\.type\s*=\s*['"]([^'"]+)['"]/);
+
+  if (!urlParamsMatch || !hashMatch || !idMatch || !typeMatch) {
+    throw new Error('Failed to parse Kodik iframe parameters');
+  }
+
+  const urlParams = JSON.parse(urlParamsMatch[1]);
+  const videoHash = hashMatch[1];
+  const videoId = idMatch[1];
+  const videoType = typeMatch[1];
+
+  let scriptUrl = '';
+  const scriptTagRegex = /<script\b[^>]*?\bsrc\s*=\s*["']([^"']+\.js[^"']*)["']/gi;
+  let match;
+  const candidateScripts: string[] = [];
+  while ((match = scriptTagRegex.exec(html)) !== null) {
+    candidateScripts.push(match[1]);
+  }
+
+  const assetScript = candidateScripts.find(s => s.includes('/assets/'));
+  if (assetScript) {
+    scriptUrl = assetScript;
+  } else if (candidateScripts.length > 0) {
+    scriptUrl = candidateScripts[0];
+  }
+
+  if (!scriptUrl) {
+    scriptUrl = '/assets/js/app.serial.js';
+  }
+
+  const baseUrlObj = new URL(normalizedIframe);
+  const scriptAbsoluteUrl = scriptUrl.startsWith('http') ? scriptUrl : `${baseUrlObj.protocol}//${baseUrlObj.host}${scriptUrl}`;
+
+  const scriptRes = await fetch(scriptAbsoluteUrl, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      'Referer': normalizedIframe
+    }
+  });
+  const scriptHtml = await scriptRes.text();
+
+  const ajaxMatch = scriptHtml.match(/\$.ajax\([\s\S]*?url:\s*atob\("([^"]+)"\)/) || 
+                    scriptHtml.match(/atob\("([^"'\(\)]+)"\)/);
+  if (!ajaxMatch) {
+    throw new Error('Could not extract player API script');
+  }
+
+  const gboxPath = atob(ajaxMatch[1]);
+  const gboxUrl = `${baseUrlObj.protocol}//${baseUrlObj.host}${gboxPath}`;
+
+  const payload = new URLSearchParams({
+    hash: videoHash,
+    id: videoId,
+    type: videoType,
+    d: urlParams.d || 'kodik.info',
+    d_sign: urlParams.d_sign || '',
+    pd: urlParams.pd || '',
+    pd_sign: urlParams.pd_sign || '',
+    ref: decodeURIComponent(urlParams.ref || ''),
+    ref_sign: urlParams.ref_sign || '',
+    bad_user: 'true',
+    cdn_is_working: 'true'
+  });
+
+  const gboxRes = await fetch(gboxUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      'Referer': normalizedIframe
+    },
+    body: payload.toString()
+  });
+
+  const gboxData = await gboxRes.json() as any;
+  if (!gboxData || !gboxData.links) {
+    throw new Error('Failed to retrieve stream links from Kodik');
+  }
+
+  const resolvedLinks: Record<string, string> = {};
+  for (const qual of Object.keys(gboxData.links)) {
+    const listSources = gboxData.links[qual];
+    if (listSources && listSources.length > 0) {
+      try {
+        const rawSrc = listSources[0].src;
+        const decryptedUrl = rawSrc.includes('mp4:hls:manifest') ? rawSrc : decodeKodikUrl(rawSrc);
+        resolvedLinks[qual] = decryptedUrl.startsWith('//') ? `https:${decryptedUrl}` : decryptedUrl;
+      } catch (de_err: any) {
+        console.error(`[KODIK PROXY] Decryption failed for quality ${qual}:`, de_err.message);
+      }
+    }
+  }
+
+  const qualities = Object.keys(resolvedLinks).map(Number).sort((a, b) => b - a);
+  if (qualities.length === 0) {
+    throw new Error('No working qualities resolved from Kodik');
+  }
+
+  if (resolveOnly) {
+    const highestQ = qualities[0];
+    const directSrc = resolvedLinks[String(highestQ)];
+    return {
+      type: 'json',
+      data: {
+        success: true,
+        streamType: 'hls',
+        qualities,
+        quality: highestQ,
+        direct_url: directSrc,
+        url: `/api/proxy-4k?url=${encodeURIComponent(directSrc)}`
+      }
+    };
+  }
+
+  if (requestedQuality && resolvedLinks[requestedQuality]) {
+    const targetSrc = resolvedLinks[requestedQuality];
+    return {
+      type: 'redirect',
+      url: `/api/proxy-4k?url=${encodeURIComponent(targetSrc)}`
+    };
+  }
+
+  // Master playlist
+  const masterLines = ['#EXTM3U', '#EXT-X-VERSION:3'];
+  for (const q of qualities) {
+    const qSrc = resolvedLinks[String(q)];
+    if (!qSrc) continue;
+    let bandwidth = 1400000;
+    let width = 1280;
+    let height = 720;
+    if (q >= 1080) { bandwidth = 3200000; width = 1920; height = 1080; }
+    else if (q >= 720) { bandwidth = 2000000; width = 1280; height = 720; }
+    else if (q >= 480) { bandwidth = 1000000; width = 854; height = 480; }
+    else { bandwidth = 500000; width = 640; height = 360; }
+
+    masterLines.push(`#EXT-X-STREAM-INF:BANDWIDTH=${bandwidth},RESOLUTION=${width}x${height},NAME="${q}p"`);
+    masterLines.push(`/api/proxy-4k?url=${encodeURIComponent(qSrc)}`);
+  }
+
+  return {
+    type: 'text',
+    contentType: 'application/vnd.apple.mpegurl; charset=utf-8',
+    data: masterLines.join('\n')
+  };
+}
+
 app.get('/api/media/playlist', async (c) => {
-  const targetUrl = c.req.query('url');
+  let targetUrl = c.req.query('url');
   const fallbackUrl = c.req.query('fallback_url');
   const resolveOnly = c.req.query('resolve') === 'true';
   const requestedQuality = c.req.query('quality');
 
   if (!targetUrl) {
     if (fallbackUrl) {
-      return c.redirect(`/api/proxy-4k?url=${encodeURIComponent(fallbackUrl)}`, 302);
+      targetUrl = fallbackUrl;
+    } else {
+      return c.json({ error: 'Missing url parameter' }, 400);
     }
-    return c.json({ error: 'Missing url parameter' }, 400);
   }
 
   // Helper for recursive decoding of double/triple-encoded URLs
@@ -3393,7 +3596,7 @@ app.get('/api/media/playlist', async (c) => {
     return res;
   };
 
-  const cleanTargetUrl = safeUnescapeUrl(targetUrl);
+  let cleanTargetUrl = safeUnescapeUrl(targetUrl);
 
   // 1. Check in-memory cache
   const now = Date.now();
@@ -3401,7 +3604,26 @@ app.get('/api/media/playlist', async (c) => {
   let rawStreamUrl = (cached && cached.exp > now) ? cached.rawUrl : '';
   let finalStreamUrl = (cached && cached.exp > now) ? cached.streamUrl : '';
 
-  // 2. If not Aniboom embed URL: handle as direct link or Kodik
+  // 2. If Kodik embed URL: resolve Kodik HLS streams directly
+  if (cleanTargetUrl.includes('kodik') || cleanTargetUrl.includes('kodikplayer') || cleanTargetUrl.includes('/seria/') || cleanTargetUrl.includes('/video/')) {
+    try {
+      const kodikResult = await extractKodikStream(cleanTargetUrl, requestedQuality, resolveOnly, c);
+      if (kodikResult.type === 'json') {
+        return c.json(kodikResult.data);
+      }
+      if (kodikResult.type === 'redirect') {
+        return c.redirect(kodikResult.url, 302);
+      }
+      c.header('Content-Type', kodikResult.contentType);
+      c.header('Access-Control-Allow-Origin', '*');
+      return c.text(kodikResult.data);
+    } catch (kodikErr: any) {
+      console.warn(`[Kodik Stream Extraction Error]: ${kodikErr.message}`);
+      return c.json({ error: 'kodik_stream_failed', message: kodikErr.message }, 502);
+    }
+  }
+
+  // 3. If direct link: handle as direct link
   if (!cleanTargetUrl.includes('aniboom')) {
     if (resolveOnly) {
       return c.json({
@@ -3415,7 +3637,6 @@ app.get('/api/media/playlist', async (c) => {
     }
 
     if (requestedQuality) {
-      // If it's a direct m3u8 link or proxy request
       try {
         const directRes = await fetch(cleanTargetUrl, {
           headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
@@ -3443,7 +3664,7 @@ app.get('/api/media/playlist', async (c) => {
     return c.redirect(finalUrl, 302);
   }
 
-  // 3. Resolve Aniboom stream if not in cache
+  // 4. Resolve Aniboom stream if not in cache
   try {
     if (!rawStreamUrl) {
       let referer = 'https://animego.me/';
@@ -3453,6 +3674,9 @@ app.get('/api/media/playlist', async (c) => {
         if (decodedParent.startsWith('http://') || decodedParent.startsWith('https://')) {
           referer = decodedParent;
         }
+      } else {
+        // Automatically inject parent param matching the default referer so AniBoom validation succeeds
+        cleanTargetUrl += (cleanTargetUrl.includes('?') ? '&' : '?') + `parent=${encodeURIComponent(referer)}`;
       }
 
       console.log(`🌐 [Aniboom Fetch]: ${cleanTargetUrl} | Referer: ${referer}`);
@@ -3470,7 +3694,17 @@ app.get('/api/media/playlist', async (c) => {
       for (const ref of candidateReferers) {
         try {
           const originHost = ref.startsWith('http') ? new URL(ref).origin : 'https://animego.me';
-          response = await axios.get(cleanTargetUrl, {
+          // Ensure parent query parameter matches the candidate referer if not the default
+          let fetchTarget = cleanTargetUrl;
+          if (ref !== referer) {
+            try {
+              const u = new URL(fetchTarget);
+              u.searchParams.set('parent', ref);
+              fetchTarget = u.toString();
+            } catch (_) {}
+          }
+
+          response = await axios.get(fetchTarget, {
             headers: {
               'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
               'Referer': ref,
@@ -3562,7 +3796,7 @@ app.get('/api/media/playlist', async (c) => {
       console.log(`✅ [Aniboom Stream Resolved]: ${rawStreamUrl}`);
     }
 
-    // 4. Handle resolve=true for Download Widgets
+    // Handle resolve=true for Download Widgets
     if (resolveOnly) {
       return c.json({
         success: true,
@@ -3574,7 +3808,7 @@ app.get('/api/media/playlist', async (c) => {
       });
     }
 
-    // 5. Handle specific quality download playlist rewrite (1080p, 720p, etc.)
+    // Handle specific quality download playlist rewrite (1080p, 720p, etc.)
     if (requestedQuality) {
       try {
         console.log(`📥 [Aniboom Quality Playlist]: Fetching ${requestedQuality}p variant for ${rawStreamUrl}`);
@@ -3650,20 +3884,29 @@ app.get('/api/media/playlist', async (c) => {
       }
     }
 
-    // 6. Direct streaming redirect
+    // Direct streaming redirect
     return c.redirect(finalStreamUrl, 302);
 
   } catch (err: any) {
-    console.warn(`[Playlist Resolver Error]: ${err.message}. Returning 502 to trigger player fallback.`);
-    
-    if (resolveOnly) {
-      return c.json({
-        success: false,
-        error: 'aniboom_stream_failed',
-        message: err.message
-      }, 502);
+    if (fallbackUrl) {
+      console.log(`[Playlist Resolver] Aniboom failed (${err.message}). Seamlessly intercepting Kodik fallback: ${fallbackUrl}`);
+      try {
+        const kodikResult = await extractKodikStream(fallbackUrl, requestedQuality, resolveOnly, c);
+        if (kodikResult.type === 'json') {
+          return c.json(kodikResult.data);
+        }
+        if (kodikResult.type === 'redirect') {
+          return c.redirect(kodikResult.url, 302);
+        }
+        c.header('Content-Type', kodikResult.contentType);
+        c.header('Access-Control-Allow-Origin', '*');
+        return c.text(kodikResult.data);
+      } catch (fErr: any) {
+        console.warn(`[Kodik Fallback Failed]: ${fErr.message}`);
+      }
     }
-    
+
+    console.warn(`[Playlist Resolver Error]: ${err.message}. Returning 502.`);
     return c.json({
       error: 'aniboom_stream_failed',
       message: err.message

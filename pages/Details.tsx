@@ -65,17 +65,11 @@ const formatWorkerEmbedUrl = (rawEmbedUrl: string, epNum: number) => {
     if (!url.searchParams.has("episode")) {
       url.searchParams.set("episode", String(epNum));
     }
-    if (!url.searchParams.has("translation")) {
-      url.searchParams.set("translation", "16");
-    }
     return url.toString();
   } catch (_) {
     let result = rawEmbedUrl;
     if (!result.includes("episode=")) {
       result += (result.includes("?") ? "&" : "?") + `episode=${epNum}`;
-    }
-    if (!result.includes("translation=")) {
-      result += (result.includes("?") ? "&" : "?") + `translation=16`;
     }
     return result;
   }
@@ -100,11 +94,8 @@ const getResolvedAniboomUrl = (t: any, epNum: number, defaultUrl?: string | null
   try {
     const url = new URL(target.startsWith("//") ? `https:${target}` : target);
     url.searchParams.set("episode", String(num));
-    // NOTE: Keep original translation parameter from Aniboom/AnimeGO target URL.
-    // Do NOT overwrite with Kodik internal translation ID (t.id).
-    if (!url.searchParams.has("translation")) {
-      url.searchParams.set("translation", "16");
-    }
+    // NOTE: Keep original translation parameter from Aniboom/AnimeGO target URL if present.
+    // Do NOT force translation=16 or overwrite with unrelated IDs.
     const resolved = url.toString();
     console.log(`🔥 [Aniboom Resolver] RESOLVED: ${resolved} | Ep: ${num} | Voice: ${t?.title || 'Default'}`);
     return resolved;
@@ -112,9 +103,6 @@ const getResolvedAniboomUrl = (t: any, epNum: number, defaultUrl?: string | null
     let result = target;
     if (!result.includes("episode=")) {
       result += (result.includes("?") ? "&" : "?") + `episode=${num}`;
-    }
-    if (!result.includes("translation=")) {
-      result += (result.includes("?") ? "&" : "?") + `translation=16`;
     }
     console.log(`🔥 [Aniboom Resolver] RESOLVED (STRING): ${result}`);
     return result;
@@ -2001,18 +1989,19 @@ const Details: React.FC = () => {
                               const defaultAniboom = players.find((p) => p.name === "Aniboom")?.iframe;
                               const aniboomStream = getResolvedAniboomUrl(selectedTranslation, epNum, defaultAniboom);
 
+                              const defaultKodik = players.find((p) => p.name === "Kodik")?.iframe;
+                              const kodikIframeUrl = getResolvedKodikUrl(selectedTranslation, epNum, defaultKodik);
+
                               if (resolvedStream && resolvedStream.url) {
                                 customSrc = resolvedStream.url;
                               } else if (aniboomStream) {
-                                customSrc = `/api/media/playlist?url=${encodeURIComponent(aniboomStream)}`;
+                                customSrc = `/api/media/playlist?url=${encodeURIComponent(aniboomStream)}${
+                                  kodikIframeUrl ? `&fallback_url=${encodeURIComponent(kodikIframeUrl)}` : ""
+                                }`;
+                              } else if (kodikIframeUrl) {
+                                customSrc = `/api/media/playlist?url=${encodeURIComponent(kodikIframeUrl)}`;
                               } else {
-                                const defaultKodik = players.find((p) => p.name === "Kodik")?.iframe;
-                                const kodikIframeUrl = getResolvedKodikUrl(selectedTranslation, epNum, defaultKodik);
-                                if (kodikIframeUrl) {
-                                  customSrc = `/api/media/playlist?url=${encodeURIComponent(kodikIframeUrl)}`;
-                                } else {
-                                  customSrc = `/api/proxy-4k?url=${encodeURIComponent("https://cdn.kamianime.club/kimi-no-na-wa/master.m3u8")}`;
-                                }
+                                customSrc = `/api/proxy-4k?url=${encodeURIComponent("https://cdn.kamianime.club/kimi-no-na-wa/master.m3u8")}`;
                               }
                             }
 

@@ -310,18 +310,16 @@ export async function onRequest(context: any) {
   try {
     const u = new URL(cleanEmbedUrl);
     u.searchParams.set('episode', String(episode));
-    if (translation_id && !u.searchParams.has('translation')) {
+    if (translation_id && /^\d+$/.test(String(translation_id))) {
       u.searchParams.set('translation', String(translation_id));
-    } else if (!u.searchParams.has('translation')) {
-      u.searchParams.set('translation', '16');
     }
     cleanEmbedUrl = u.toString();
   } catch (_) {
     if (!cleanEmbedUrl.includes('episode=')) {
       cleanEmbedUrl += (cleanEmbedUrl.includes('?') ? '&' : '?') + `episode=${episode}`;
     }
-    if (!cleanEmbedUrl.includes('translation=')) {
-      cleanEmbedUrl += (cleanEmbedUrl.includes('?') ? '&' : '?') + `translation=${translation_id || '16'}`;
+    if (translation_id && /^\d+$/.test(String(translation_id)) && !cleanEmbedUrl.includes('translation=')) {
+      cleanEmbedUrl += (cleanEmbedUrl.includes('?') ? '&' : '?') + `translation=${translation_id}`;
     }
   }
 
@@ -340,8 +338,8 @@ export async function onRequest(context: any) {
   try {
     const aRes = await fetch(cleanEmbedUrl, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        'Referer': 'https://animego.org/',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Referer': cleanEmbedUrl.includes('parent=') ? (decodeURIComponent(cleanEmbedUrl.match(/[?&]parent=([^&]+)/i)?.[1] || 'https://animego.me/')) : 'https://animego.me/',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
       }
     });

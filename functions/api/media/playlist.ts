@@ -98,11 +98,15 @@ export async function onRequest(context: any) {
     try {
       let referer = 'https://animego.me/';
       const parentMatch = cleanUrlParam.match(/[?&]parent=([^&]+)/i);
+      let targetFetchUrl = cleanUrlParam;
       if (parentMatch) {
         const decodedParent = safeUnescapeUrl(parentMatch[1]);
         if (decodedParent.startsWith('http://') || decodedParent.startsWith('https://')) {
           referer = decodedParent;
         }
+      } else {
+        // Automatically inject parent param matching the default referer so AniBoom validation succeeds
+        targetFetchUrl += (targetFetchUrl.includes('?') ? '&' : '?') + `parent=${encodeURIComponent(referer)}`;
       }
 
       const candidateReferers = [
@@ -116,7 +120,16 @@ export async function onRequest(context: any) {
       for (const ref of candidateReferers) {
         try {
           const originHost = ref.startsWith('http') ? new URL(ref).origin : 'https://animego.me';
-          const aRes = await fetch(cleanUrlParam, {
+          let fetchTarget = targetFetchUrl;
+          if (ref !== referer) {
+            try {
+              const u = new URL(fetchTarget);
+              u.searchParams.set('parent', ref);
+              fetchTarget = u.toString();
+            } catch (_) {}
+          }
+
+          const aRes = await fetch(fetchTarget, {
             headers: {
               'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
               'Referer': ref,
@@ -276,17 +289,22 @@ export async function onRequest(context: any) {
       }
       throw new Error('Aniboom stream extraction failed');
     } catch (aErr: any) {
-      console.warn(`[CF Playlist Resolver Error]: ${aErr.message}. Returning 502 to trigger player fallback.`);
-      return new Response(
-        JSON.stringify({ error: 'aniboom_stream_failed', message: aErr.message }),
-        {
-          status: 502,
-          headers: {
-            'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*'
+      if (fallbackUrl) {
+        console.log(`[CF Playlist Resolver] Aniboom failed (${aErr.message}). Seamlessly intercepting fallback stream from Kodik: ${fallbackUrl}`);
+        urlParam = fallbackUrl;
+      } else {
+        console.warn(`[CF Playlist Resolver Error]: ${aErr.message}. Returning 502.`);
+        return new Response(
+          JSON.stringify({ error: 'aniboom_stream_failed', message: aErr.message }),
+          {
+            status: 502,
+            headers: {
+              'Content-Type': 'application/json',
+              'Access-Control-Allow-Origin': '*'
+            }
           }
-        }
-      );
+        );
+      }
     }
   }
 
