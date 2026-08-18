@@ -1058,18 +1058,6 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
 
               const player = dashjs.MediaPlayer().create();
 
-              // Перехватываем каждый чанк и направляем через proxy-4k
-              (player as any).extend("RequestModifier", () => {
-                return {
-                  modifyRequest: (request: any) => {
-                    if (request.url && !request.url.includes('/api/proxy-4k')) {
-                      request.url = `/api/proxy-4k?url=${encodeURIComponent(request.url)}&referer=${encodeURIComponent('https://aniboom.one/')}`;
-                    }
-                    return request;
-                  }
-                };
-              }, true);
-
               // Оптимальные стандартные настройки dash.js без устаревших параметров
               (player as any).updateSettings({
                 streaming: {
@@ -1089,16 +1077,10 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                 },
               });
 
-              // Формируем безопасный прокси-URL для Dash.js
-              let proxyUrl = url;
-              if (!proxyUrl.startsWith("/api/proxy-4k") && !proxyUrl.startsWith("http://localhost") && proxyUrl.startsWith("http")) {
-                proxyUrl = `/api/proxy-4k?url=${encodeURIComponent(url)}&referer=${encodeURIComponent("https://aniboom.one/")}`;
-              }
-
-              // Преобразуем в полный абсолютный URL (с протоколом и доменом), чтобы new URL() в dash.js не падал
-              const absoluteManifestUrl = proxyUrl.startsWith("http")
-                ? proxyUrl
-                : `${window.location.origin}${proxyUrl.startsWith("/") ? "" : "/"}${proxyUrl}`;
+              // Инициализируем плеер прямым URL манифеста
+              const absoluteManifestUrl = url.startsWith("http")
+                ? url
+                : `${window.location.origin}${url.startsWith("/") ? "" : "/"}${url}`;
 
               const shouldAutoPlay = Boolean(autoPlay);
               player.initialize(video, absoluteManifestUrl, shouldAutoPlay);

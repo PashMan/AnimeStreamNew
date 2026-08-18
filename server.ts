@@ -3382,11 +3382,12 @@ const handleAniboomResolve = async (c: any) => {
     const proxiedDashUrl = dashSrc ? `${proxyOrigin}/api/proxy-4k?url=${encodeURIComponent(dashSrc)}` : undefined;
     const proxiedHlsUrl = hlsSrc ? `${proxyOrigin}/api/proxy-4k?url=${encodeURIComponent(hlsSrc)}` : undefined;
     const mainProxiedUrl = proxiedDashUrl || proxiedHlsUrl || '';
+    const mainUrl = streamType === 'dash' ? (dashSrc || primarySrc) : mainProxiedUrl;
 
     steps.push({
       title: "Настройка 4K прокси",
       status: "success",
-      message: `Прокси-ссылка готова: ${mainProxiedUrl.substring(0, 80)}...`
+      message: `Ссылка на поток готова: ${mainUrl.substring(0, 80)}...`
     });
 
     steps.push({
@@ -3399,9 +3400,9 @@ const handleAniboomResolve = async (c: any) => {
       success: true,
       is_cache_hit: false,
       stream_type: streamType as 'dash' | 'hls',
-      url: mainProxiedUrl,
+      url: mainUrl,
       direct_url: primarySrc,
-      dash_url: proxiedDashUrl,
+      dash_url: dashSrc || proxiedDashUrl,
       hls_url: proxiedHlsUrl,
       quality: decoded.qualityVideo ? `${decoded.qualityVideo}p` : '1080p',
       poster: decoded.poster || null,

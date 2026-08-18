@@ -267,12 +267,13 @@ export async function onRequest(context: any) {
     }
 
     const proxiedUrl = `/api/proxy-4k?url=${encodeURIComponent(primarySrc)}&referer=${encodeURIComponent('https://aniboom.one/')}`;
+    const mainUrl = streamType === 'dash' ? primarySrc : proxiedUrl;
 
     return new Response(JSON.stringify({
       success: true,
       streamType: streamType,
       stream_type: streamType,
-      url: proxiedUrl,
+      url: mainUrl,
       direct_url: primarySrc,
       quality: decoded.qualityVideo ? `${decoded.qualityVideo}p` : '1080p'
     }), {
