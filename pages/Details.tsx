@@ -38,6 +38,7 @@ import {
   Play,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import { fetchPlayersClientSide } from "../services/balancer";
 import {
   fetchAnimeDetails,
   fetchRelatedAnimes,
@@ -1075,8 +1076,6 @@ const Details: React.FC = () => {
           const title = anime.originalName || anime.title;
           const year = anime.year || 0;
 
-          const { fetchPlayersClientSide } =
-            await import("../services/balancer");
           const data = await fetchPlayersClientSide(
             anime.id,
             title,

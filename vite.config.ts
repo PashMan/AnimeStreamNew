@@ -70,7 +70,7 @@ export default defineConfig({
     assetsDir: 'assets',
     target: 'esnext',
     sourcemap: false,
-    emptyOutDir: false,
+    emptyOutDir: true,
     chunkSizeWarningLimit: 1000,
     cssCodeSplit: true,
     minify: 'esbuild',

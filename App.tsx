@@ -24,18 +24,48 @@ function lazyWithRetry<T extends React.ComponentType<any>>(
   componentImport: () => Promise<{ default: T }>
 ) {
   return React.lazy(async () => {
-    const pageHasBeenForceRefreshed = sessionStorage.getItem('kami_chunk_page_reload');
     try {
-      return await componentImport();
-    } catch (error: any) {
-      console.warn('[Chunk Load Failed] Stale bundle chunk detected. Refreshing for updated version...', error);
-      if (!pageHasBeenForceRefreshed) {
-        sessionStorage.setItem('kami_chunk_page_reload', 'true');
-        window.location.reload();
-        return new Promise<{ default: T }>(() => {});
+      const component = await componentImport();
+      if (!component || !component.default) {
+        throw new Error('Imported module missing default export');
       }
-      sessionStorage.removeItem('kami_chunk_page_reload');
-      throw error;
+      return component;
+    } catch (error: any) {
+      console.warn('[Chunk Load Failed] Stale bundle chunk detected. Auto refreshing for updated version...', error);
+      
+      const reloadKey = 'kami_chunk_page_reload';
+      const lastReload = sessionStorage.getItem(reloadKey);
+      const now = Date.now();
+      
+      // Auto-reload with timestamp parameter to bypass browser/CDN cache (3s cooldown)
+      if (!lastReload || (now - parseInt(lastReload, 10)) > 3000) {
+        sessionStorage.setItem(reloadKey, String(now));
+        
+        // Clear caches if supported
+        if ('caches' in window) {
+          try {
+            caches.keys().then((names) => {
+              names.forEach((name) => caches.delete(name));
+            });
+          } catch (_) {}
+        }
+
+        const url = new URL(window.location.href);
+        url.searchParams.set('_v', String(now));
+        window.location.replace(url.toString());
+      }
+
+      // Return a safe fallback component instead of undefined/throwing to avoid React TypeError
+      const SafeFallback: React.FC = () => (
+        <div className="min-h-screen flex flex-col items-center justify-center bg-dark text-slate-400 p-4">
+          <div className="flex items-center gap-3 bg-slate-900/80 border border-slate-800 px-5 py-3.5 rounded-2xl shadow-xl">
+            <Loader2 className="w-5 h-5 animate-spin text-primary" />
+            <span className="text-sm font-medium text-slate-200">Обновление компонентов приложения...</span>
+          </div>
+        </div>
+      );
+
+      return { default: SafeFallback as unknown as T };
     }
   });
 }
@@ -77,11 +107,32 @@ class ChunkErrorBoundary extends React.Component<
 
   componentDidCatch(error: any, errorInfo: any) {
     console.error('[ChunkErrorBoundary caught error]:', error, errorInfo);
+    
+    // Auto-recover if error is caused by missing chunk or module import error
+    const msg = String(error?.message || error || '');
+    if (
+      msg.includes('dynamically imported module') ||
+      msg.includes('Cannot read properties of undefined') ||
+      msg.includes('Failed to fetch') ||
+      msg.includes('Importing a module script failed')
+    ) {
+      const reloadKey = 'kami_chunk_page_reload';
+      const lastReload = sessionStorage.getItem(reloadKey);
+      const now = Date.now();
+      if (!lastReload || (now - parseInt(lastReload, 10)) > 3000) {
+        sessionStorage.setItem(reloadKey, String(now));
+        const url = new URL(window.location.href);
+        url.searchParams.set('_v', String(now));
+        window.location.replace(url.toString());
+      }
+    }
   }
 
   handleReload = () => {
     sessionStorage.removeItem('kami_chunk_page_reload');
-    window.location.reload();
+    const url = new URL(window.location.href);
+    url.searchParams.set('_v', String(Date.now()));
+    window.location.replace(url.toString());
   };
 
   render() {
