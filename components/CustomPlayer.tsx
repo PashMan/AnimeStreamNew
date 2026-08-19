@@ -905,8 +905,8 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
     const [activeSubmenu, setActiveSubmenu] = useState<"main" | "quality" | "speed">("main");
     const [isFullscreen, setIsFullscreen] = useState(false);
 
-    // Split-screen comparison state for Anime4K WebGL2
-    const [isSplitScreenActive, setIsSplitScreenActive] = useState(false);
+    // Split-screen comparison state for Anime4K WebGL2 (Always active)
+    const [isSplitScreenActive, setIsSplitScreenActive] = useState(true);
     const [splitPos, setSplitPos] = useState(0.5);
     const isDraggingSplitRef = useRef(false);
 
@@ -936,10 +936,9 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
     };
 
     const toggleSplitScreen = () => {
-      const next = !isSplitScreenActive;
-      setIsSplitScreenActive(next);
+      setIsSplitScreenActive(true);
       if (webglInstanceRef.current) {
-        webglInstanceRef.current.setSplitMode(next, splitPos);
+        webglInstanceRef.current.setSplitMode(true, splitPos);
       }
     };
 
@@ -1490,6 +1489,7 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                       upscaler.setTargetResolution(-1);
                     }
 
+                    upscaler.setSplitMode(true, splitPos);
                     upscaler.start();
                   } catch (e) {
                     console.error("Anime WebGL Initialization Error with DASH:", e);
@@ -1753,6 +1753,7 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                         upscaler.setTargetResolution(-1);
                       }
 
+                      upscaler.setSplitMode(true, splitPos);
                       upscaler.start();
                     } catch (e) {
                       console.error("Anime WebGL Initialization Error with HLS:", e);
@@ -1783,9 +1784,15 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
         // Track Fullscreen state
         art.on("fullscreen", (state: boolean) => {
           setIsFullscreen(state || !!document.fullscreenElement);
+          if (state && containerRef.current && document.fullscreenElement !== containerRef.current) {
+            containerRef.current.requestFullscreen?.().catch(() => {});
+          }
         });
         art.on("fullscreenWeb", (state: boolean) => {
           setIsFullscreen(state || !!document.fullscreenElement);
+          if (state && containerRef.current && document.fullscreenElement !== containerRef.current) {
+            containerRef.current.requestFullscreen?.().catch(() => {});
+          }
         });
 
         // Time updates: Progress, Skip Opening (+85s) & Skip Ending logic
@@ -2079,7 +2086,11 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
     return (
       <div
         ref={containerRef}
-        className="relative w-full aspect-video rounded-[1.5rem] md:rounded-[2rem] bg-black overflow-hidden group/player select-none"
+        className={`relative w-full aspect-video bg-black overflow-hidden group/player select-none ${
+          isFullscreen
+            ? "fixed inset-0 z-[999999] w-screen h-screen rounded-none"
+            : "rounded-[1.5rem] md:rounded-[2rem]"
+        }`}
       >
         {/* Invisible HTML5 video element strictly for SEO crawlers */}
         {src && (
@@ -2143,20 +2154,15 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
             )}
           </div>
 
-          {/* Top Right: Player Settings & Split Screen Button */}
+          {/* Top Right: Player Settings & Permanent Split Screen Badge */}
           <div className="flex items-center gap-2 pointer-events-auto">
-            <button
-              onClick={toggleSplitScreen}
-              className={`px-3 py-1.5 rounded-xl border flex items-center gap-1.5 backdrop-blur-md text-xs font-bold transition-all cursor-pointer shadow-lg active:scale-95 ${
-                isSplitScreenActive
-                  ? "bg-[#8B5CF6] text-white border-[#8B5CF6] shadow-[0_0_15px_rgba(139,92,246,0.6)]"
-                  : "bg-black/70 hover:bg-black/90 text-white/80 hover:text-white border-white/15 hover:border-[#8B5CF6]/50"
-              }`}
-              title="Режим сравнения «До / После» (Anime4K)"
+            <div
+              className="px-3 py-1.5 rounded-xl border border-[#8B5CF6] bg-[#8B5CF6]/90 text-white shadow-[0_0_15px_rgba(139,92,246,0.6)] flex items-center gap-1.5 backdrop-blur-md text-xs font-bold pointer-events-auto select-none"
+              title="Режим сравнения «До / После» (Включен постоянно)"
             >
               <Sparkles className="w-3.5 h-3.5 text-[#A78BFA]" />
-              <span className="hidden sm:inline">До / После</span>
-            </button>
+              <span className="hidden sm:inline">Anime4K До / После</span>
+            </div>
 
             <button
               onClick={() => {
