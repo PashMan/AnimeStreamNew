@@ -22,7 +22,7 @@ export const onRequest = async (context: any) => {
   const cacheKey = new Request(url.toString(), { method: 'GET' });
   let response = await cache.match(cacheKey);
 
-  if (response) {
+  if (response && response.ok) {
     // Return cached response immediately with a custom header
     const cachedResponse = new Response(response.body, response);
     cachedResponse.headers.set('X-Image-Cache', 'HIT');
