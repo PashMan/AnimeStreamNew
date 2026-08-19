@@ -78,7 +78,7 @@ const formatWorkerEmbedUrl = (rawEmbedUrl: string, epNum: number) => {
   }
 };
 
-const getResolvedAniboomUrl = (t: any, epNum: number) => {
+const getResolvedAniboomUrl = (t: any, epNum: number, defaultUrl?: string | null) => {
   const num = epNum || 1;
   let target: string | null = null;
 
@@ -86,6 +86,8 @@ const getResolvedAniboomUrl = (t: any, epNum: number) => {
     target = t.aniboom_iframe;
   } else if (t?.iframe && t.iframe.includes("aniboom")) {
     target = t.iframe;
+  } else if (defaultUrl && defaultUrl.includes("aniboom")) {
+    target = defaultUrl;
   }
 
   if (!target || !target.includes("aniboom.one/embed/")) {
@@ -96,14 +98,14 @@ const getResolvedAniboomUrl = (t: any, epNum: number) => {
     const url = new URL(target.startsWith("//") ? `https:${target}` : target);
     url.searchParams.set("episode", String(num));
     const resolved = url.toString();
-    console.log(`🔥 [Aniboom Resolver] RESOLVED: ${resolved} | Ep: ${num} | Voice: ${t?.title || 'Default'}`);
+    console.log(`🔥 [Aniboom Resolver] TARGET: ${resolved} | Ep: ${num} | Voice: ${t?.title || 'Default'}`);
     return resolved;
   } catch (_) {
     let result = target;
     if (!result.includes("episode=")) {
       result += (result.includes("?") ? "&" : "?") + `episode=${num}`;
     }
-    console.log(`🔥 [Aniboom Resolver] RESOLVED (STRING): ${result}`);
+    console.log(`🔥 [Aniboom Resolver] TARGET (STRING): ${result}`);
     return result;
   }
 };
@@ -299,11 +301,12 @@ const Details: React.FC = () => {
 
     let isCurrent = true;
     const epNum = parseInt(paramEpisode || "1") || 1;
-    const embedToResolve = getResolvedAniboomUrl(selectedTranslation, epNum);
+    const defaultAniboom = players.find((p) => p.name === "Aniboom" || (p.iframe && p.iframe.includes("aniboom")))?.iframe;
+    const embedToResolve = getResolvedAniboomUrl(selectedTranslation, epNum, defaultAniboom);
 
     const abortController = new AbortController();
 
-    // 1. Если AniBoom для этой озвучки нет — СРАЗУ открываем Kodik iframe
+    // 1. Если AniBoom для этой озвучки нет — переключаем на нативный Kodik
     if (!embedToResolve) {
       if (isCurrent) {
         setIsResolvingStream(false);
@@ -376,7 +379,7 @@ const Details: React.FC = () => {
       isCurrent = false;
       abortController.abort();
     };
-  }, [paramEpisode, selectedTranslation, id]);
+  }, [paramEpisode, selectedTranslation, id, players]);
 
   useEffect(() => {
     const activeEp = paramEpisode || "1";
@@ -441,9 +444,7 @@ const Details: React.FC = () => {
             }
           }
         }
-      } catch (_) {
-        // Ignored
-      }
+      } catch (_) {}
     };
 
     const handleCustomWatch = (e: Event) => {
@@ -2228,14 +2229,14 @@ const Details: React.FC = () => {
               const defaultAniboom = players.find((p) => p.name === "Aniboom")?.iframe;
               const defaultKodik = players.find((p) => p.name === "Kodik")?.iframe;
 
-              let aniboomIframe = getResolvedAniboomUrl(selectedTranslation, epNum);
+              let aniboomIframe = getResolvedAniboomUrl(selectedTranslation, epNum, defaultAniboom);
               if (!aniboomIframe && resolvedStream?.provider === "aniboom" && resolvedStream?.url) {
                 aniboomIframe = resolvedStream.url;
               }
               if (!aniboomIframe) {
                 const trWithAniboom = translations.find((tr: any) => tr?.aniboom_iframe || (tr?.iframe && tr.iframe.includes("aniboom")));
                 if (trWithAniboom) {
-                  aniboomIframe = getResolvedAniboomUrl(trWithAniboom, epNum);
+                  aniboomIframe = getResolvedAniboomUrl(trWithAniboom, epNum, defaultAniboom);
                 }
               }
 
@@ -2686,14 +2687,14 @@ const Details: React.FC = () => {
               const defaultAniboom = players.find((p) => p.name === "Aniboom")?.iframe;
               const defaultKodik = players.find((p) => p.name === "Kodik")?.iframe;
 
-              let aniboomIframe = getResolvedAniboomUrl(selectedTranslation, epNum);
+              let aniboomIframe = getResolvedAniboomUrl(selectedTranslation, epNum, defaultAniboom);
               if (!aniboomIframe && resolvedStream?.provider === "aniboom" && resolvedStream?.url) {
                 aniboomIframe = resolvedStream.url;
               }
               if (!aniboomIframe) {
                 const trWithAniboom = translations.find((tr: any) => tr?.aniboom_iframe || (tr?.iframe && tr.iframe.includes("aniboom")));
                 if (trWithAniboom) {
-                  aniboomIframe = getResolvedAniboomUrl(trWithAniboom, epNum);
+                  aniboomIframe = getResolvedAniboomUrl(trWithAniboom, epNum, defaultAniboom);
                 }
               }
 
