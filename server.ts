@@ -2180,11 +2180,40 @@ app.get('/api/image/*', async (c) => {
       response = await fetch(desuUrl, { headers });
     }
 
-    // Second Fallback to Kodik API if Shikimori returns error (404, 403, etc.)
+    // Second Fallback to AniList GraphQL, Kodik API, and Jikan
     if (!response.ok) {
-      const animeIdMatch = imagePath.match(/\/(\d+)\.(jpg|png|webp|jpeg)$/);
+      const animeIdMatch = imagePath.match(/\/(\d+)\.(jpg|png|webp|jpeg)$/) || c.req.url.match(/id=(\d+)/);
       if (animeIdMatch) {
-        const animeId = animeIdMatch[1];
+        const animeId = parseInt(animeIdMatch[1], 10);
+
+        // 2a. Try AniList GraphQL first
+        try {
+          const anilistQuery = `query ($idMal: Int) { Media(idMal: $idMal, type: ANIME) { coverImage { extraLarge large medium } } }`;
+          const aniRes = await fetch('https://graphql.anilist.co', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            body: JSON.stringify({ query: anilistQuery, variables: { idMal: animeId } })
+          });
+          if (aniRes.ok) {
+            const aniData = await aniRes.json() as any;
+            const imgUrl = aniData?.data?.Media?.coverImage?.extraLarge || aniData?.data?.Media?.coverImage?.large || aniData?.data?.Media?.coverImage?.medium;
+            if (imgUrl) {
+              const aniImgRes = await fetch(imgUrl);
+              if (aniImgRes.ok) {
+                return new Response(aniImgRes.body, {
+                  status: 200,
+                  headers: {
+                    'Content-Type': aniImgRes.headers.get('content-type') || 'image/jpeg',
+                    'Cache-Control': 'public, max-age=2592000',
+                    'X-Image-Source': 'AniList-Fallback'
+                  }
+                });
+              }
+            }
+          }
+        } catch (_) {}
+
+        // 2b. Try Kodik API
         try {
           const kodikRes = await fetch(`https://kodikapi.com/search?token=e3189966144beaa4a54c600125c1109a&shikimori_id=${animeId}&with_material_data=true`);
           if (kodikRes.ok) {
@@ -2207,9 +2236,9 @@ app.get('/api/image/*', async (c) => {
           }
         } catch (_) {}
 
-        // Third Fallback to Jikan API
+        // 2c. Try Jikan API
         try {
-          let imageUrl = jikanImageCache.get(animeId);
+          let imageUrl = jikanImageCache.get(animeId.toString());
           
           if (!imageUrl) {
             const jikanRes = await fetch(`https://api.jikan.moe/v4/anime/${animeId}`);
@@ -2217,7 +2246,7 @@ app.get('/api/image/*', async (c) => {
               const jikanData = await jikanRes.json() as any;
               imageUrl = jikanData.data?.images?.jpg?.large_image_url || jikanData.data?.images?.jpg?.image_url;
               if (imageUrl) {
-                jikanImageCache.set(animeId, imageUrl);
+                jikanImageCache.set(animeId.toString(), imageUrl);
               }
             }
           }

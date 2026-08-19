@@ -83,10 +83,39 @@ export const onRequest = async (context: any) => {
       } catch (_) {}
     }
 
-    // 4. Fallback to Kodik search for poster
-    const animeIdMatch = path.match(/\/(\d+)\.(jpg|png|webp|jpeg)$/);
+    // 4. Fallback to AniList GraphQL, Kodik, and Jikan
+    const animeIdMatch = path.match(/\/(\d+)\.(jpg|png|webp|jpeg)$/) || url.search.match(/id=(\d+)/);
     if (animeIdMatch) {
-      const animeId = animeIdMatch[1];
+      const animeId = parseInt(animeIdMatch[1], 10);
+
+      // 4a. Try AniList GraphQL (has comprehensive high-res posters for all anime/donghua/sequels)
+      try {
+        const anilistQuery = `query ($idMal: Int) { Media(idMal: $idMal, type: ANIME) { coverImage { extraLarge large medium } } }`;
+        const aniRes = await fetch('https://graphql.anilist.co', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body: JSON.stringify({ query: anilistQuery, variables: { idMal: animeId } })
+        });
+        if (aniRes.ok) {
+          const aniData: any = await aniRes.json();
+          const imgUrl = aniData?.data?.Media?.coverImage?.extraLarge || aniData?.data?.Media?.coverImage?.large || aniData?.data?.Media?.coverImage?.medium;
+          if (imgUrl) {
+            const aniImgRes = await fetch(imgUrl);
+            if (aniImgRes.ok) {
+              const newHeaders = new Headers(aniImgRes.headers);
+              newHeaders.set('Access-Control-Allow-Origin', '*');
+              newHeaders.set('Cache-Control', 'public, max-age=2592000, s-maxage=2592000');
+              response = new Response(aniImgRes.body, { status: 200, headers: newHeaders });
+              context.waitUntil(cache.put(cacheKey, response.clone()));
+              return response;
+            }
+          }
+        }
+      } catch (aniErr) {
+        console.warn('AniList fallback error:', aniErr);
+      }
+
+      // 4b. Try Kodik search
       try {
         const kodikRes = await fetch(`https://kodikapi.com/search?token=e3189966144beaa4a54c600125c1109a&shikimori_id=${animeId}&with_material_data=true`);
         if (kodikRes.ok) {
@@ -107,7 +136,7 @@ export const onRequest = async (context: any) => {
         }
       } catch (_) {}
 
-      // 5. Fallback to Jikan API
+      // 4c. Try Jikan API
       try {
         const jikanRes = await fetch(`https://api.jikan.moe/v4/anime/${animeId}`);
         if (jikanRes.ok) {

@@ -98,6 +98,25 @@ const processQueue = async () => {
                 } catch (_) {}
             }
 
+            // 3. Fallback to AniList GraphQL by search title
+            if (!imageUrl) {
+                try {
+                    const anilistQuery = `query ($search: String) { Media(search: $search, type: ANIME) { coverImage { extraLarge large medium } } }`;
+                    const aRes = await fetch('https://graphql.anilist.co', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                        body: JSON.stringify({ query: anilistQuery, variables: { search: cleanTitle } })
+                    });
+                    if (aRes.ok) {
+                        const aData = await aRes.json();
+                        const aImg = aData?.data?.Media?.coverImage?.extraLarge || aData?.data?.Media?.coverImage?.large;
+                        if (aImg) {
+                            imageUrl = aImg;
+                        }
+                    }
+                } catch (_) {}
+            }
+
             if (imageUrl) {
                 saveToStorage(`anime_cover_${title}`, imageUrl);
             }
@@ -106,17 +125,21 @@ const processQueue = async () => {
         } catch (e: any) {
             queue.shift(); // Remove failed item
             
-            // Fallback directly to Kodik on Shikimori network failure
+            // Fallback directly to AniList / Kodik on Shikimori network failure
             try {
                 const cleanTitle = title.split('/')[0].trim();
-                const kRes = await fetch(`/api/media/search?title=${encodeURIComponent(cleanTitle)}`);
-                if (kRes.ok) {
-                    const kData = await kRes.json();
-                    const poster = kData?.results?.[0]?.material_data?.poster_url;
-                    if (poster) {
-                        const formatted = formatImageUrl(poster);
-                        saveToStorage(`anime_cover_${title}`, formatted);
-                        resolve(formatted);
+                const anilistQuery = `query ($search: String) { Media(search: $search, type: ANIME) { coverImage { extraLarge large medium } } }`;
+                const aRes = await fetch('https://graphql.anilist.co', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                    body: JSON.stringify({ query: anilistQuery, variables: { search: cleanTitle } })
+                });
+                if (aRes.ok) {
+                    const aData = await aRes.json();
+                    const aImg = aData?.data?.Media?.coverImage?.extraLarge || aData?.data?.Media?.coverImage?.large;
+                    if (aImg) {
+                        saveToStorage(`anime_cover_${title}`, aImg);
+                        resolve(aImg);
                         continue;
                     }
                 }

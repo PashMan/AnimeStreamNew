@@ -44,9 +44,9 @@ export const Image = ({ src, alt, className, fallbackClassName, priority, animeI
       }
   }, [src]);
 
-  // If src is missing initially, start fallback chain immediately
+  // If src is missing or placeholder initially, start fallback chain immediately
   useEffect(() => {
-      if ((!src || src === FALLBACK_IMAGE) && fallbackLevel === 0) {
+      if ((!src || src === FALLBACK_IMAGE || src.includes('missing') || src.includes('none.png')) && fallbackLevel === 0) {
           setFallbackLevel(1);
       }
   }, [src, fallbackLevel, animeTitle]);
