@@ -1,31 +1,100 @@
 
 export const CACHE_PREFIX = 'as_cache_';
 
+/**
+ * Checks if a piece of data is non-empty and worth caching long term
+ */
+export const isValidCacheData = (data: any): boolean => {
+  if (data === null || data === undefined) return false;
+  
+  if (typeof data === 'string') {
+    const trimmed = data.trim();
+    if (!trimmed) return false;
+    if (trimmed === 'Описание отсутствует' || trimmed === 'Без названия') return false;
+    if (trimmed.includes('missing') || trimmed.includes('none.png')) return false;
+    return true;
+  }
+
+  if (Array.isArray(data)) {
+    if (data.length === 0) return false;
+    // For arrays, ensure it has at least one valid element
+    return data.some(item => isValidCacheData(item));
+  }
+
+  if (typeof data === 'object') {
+    const keys = Object.keys(data);
+    if (keys.length === 0) return false;
+    
+    // For Anime objects specifically
+    if ('id' in data || 'title' in data) {
+      const hasTitle = Boolean(data.title && data.title !== 'Без названия');
+      const hasDescription = Boolean(data.description && data.description !== 'Описание отсутствует' && data.description.trim().length > 0);
+      const hasGenres = Array.isArray(data.genres) && data.genres.length > 0;
+      const hasImage = Boolean(data.image && !data.image.includes('missing') && !data.image.includes('none.png'));
+      // Keep if it has at least real title and some valid metadata
+      return hasTitle && (hasDescription || hasGenres || hasImage);
+    }
+
+    return true;
+  }
+
+  return true;
+};
+
 export const getFromStorage = (key: string): any | null => {
   try {
     const item = localStorage.getItem(CACHE_PREFIX + key);
     if (!item) return null;
-    return JSON.parse(item);
+    const parsed = JSON.parse(item);
+    if (!parsed || !isValidCacheData(parsed.data)) {
+      return null;
+    }
+    return parsed;
   } catch (e) {
     return null;
   }
 };
 
 export const saveToStorage = (key: string, data: any) => {
+  if (!isValidCacheData(data)) {
+    return;
+  }
+
   try {
     localStorage.setItem(CACHE_PREFIX + key, JSON.stringify({
       data,
       timestamp: Date.now()
     }));
   } catch (e) {
-    // If quota exceeded, clear all cache
+    // If quota exceeded, do smart LRU eviction instead of clearing everything
     try {
+      const items: { key: string; timestamp: number }[] = [];
       for (let i = 0; i < localStorage.length; i++) {
         const k = localStorage.key(i);
         if (k && k.startsWith(CACHE_PREFIX)) {
-          localStorage.removeItem(k);
+          try {
+            const raw = localStorage.getItem(k);
+            if (raw) {
+              const parsed = JSON.parse(raw);
+              items.push({ key: k, timestamp: parsed.timestamp || 0 });
+            }
+          } catch (_) {
+            items.push({ key: k, timestamp: 0 });
+          }
         }
       }
+      items.sort((a, b) => a.timestamp - b.timestamp);
+      // Remove oldest 30% of cache items to make room
+      const countToRemove = Math.max(1, Math.floor(items.length * 0.3));
+      for (let i = 0; i < countToRemove; i++) {
+        localStorage.removeItem(items[i].key);
+      }
+      // Re-attempt saving
+      localStorage.setItem(CACHE_PREFIX + key, JSON.stringify({
+        data,
+        timestamp: Date.now()
+      }));
     } catch (e2) {}
   }
 };
+

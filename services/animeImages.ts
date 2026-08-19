@@ -2,7 +2,7 @@
 import { getFromStorage, saveToStorage } from './cache';
 
 const SHIKIMORI_API = 'https://shikimori.one/api/animes';
-const CACHE_TTL = 30 * 24 * 60 * 60 * 1000; // 30 days
+const CACHE_TTL = 180 * 24 * 60 * 60 * 1000; // 180 days long-term cache
 
 // Request queue
 const queue: { title: string; resolve: (value: string | null) => void; reject: (reason?: any) => void }[] = [];
@@ -59,14 +59,42 @@ const processQueue = async () => {
             queue.shift(); // Remove from queue
 
             if (!response.ok) {
+                // Fallback to Kodik search for poster
+                try {
+                    const clean = title.split('/')[0].trim();
+                    const kRes = await fetch(`/api/media/search?title=${encodeURIComponent(clean)}`);
+                    if (kRes.ok) {
+                        const kData = await kRes.json();
+                        const poster = kData?.results?.[0]?.material_data?.poster_url;
+                        if (poster) {
+                            saveToStorage(`anime_cover_${title}`, poster);
+                            resolve(poster);
+                            continue;
+                        }
+                    }
+                } catch (_) {}
                 resolve(null);
             } else {
                 const data = await response.json();
-                if (data && data.length > 0 && data[0].image?.original) {
+                if (data && data.length > 0 && data[0].image?.original && !data[0].image.original.includes('missing') && !data[0].image.original.includes('none.png')) {
                     const imageUrl = `https://shikimori.one${data[0].image.original}`;
                     saveToStorage(`anime_cover_${title}`, imageUrl);
                     resolve(imageUrl);
                 } else {
+                    // Fallback to Kodik search for poster
+                    try {
+                        const clean = title.split('/')[0].trim();
+                        const kRes = await fetch(`/api/media/search?title=${encodeURIComponent(clean)}`);
+                        if (kRes.ok) {
+                            const kData = await kRes.json();
+                            const poster = kData?.results?.[0]?.material_data?.poster_url;
+                            if (poster) {
+                                saveToStorage(`anime_cover_${title}`, poster);
+                                resolve(poster);
+                                continue;
+                            }
+                        }
+                    } catch (_) {}
                     resolve(null);
                 }
             }

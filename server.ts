@@ -978,11 +978,8 @@ app.get('/api/balancer', async (c) => {
     // Resolve all promises concurrently
     await Promise.allSettled(jobs);
 
-    // Build list of successfully resolved players
+    // Build list of successfully resolved players (Aniboom button removed, parsed into unified player voiceovers)
     const players: any[] = [];
-    if (aniboom_iframe) {
-      players.push({ name: 'Aniboom', iframe: aniboom_iframe });
-    }
     if (kodik_iframe) {
       players.push({ name: 'Kodik', iframe: kodik_iframe });
     }
@@ -994,10 +991,6 @@ app.get('/api/balancer', async (c) => {
     if (iframe_video_iframe) players.push({ name: 'Iframe', iframe: iframe_video_iframe });
     if (pleer_iframe) players.push({ name: 'Pleer', iframe: pleer_iframe });
     if (anilibria_iframe) players.push({ name: 'Anilibria', iframe: anilibria_iframe });
-
-    // Determine quality badge: 4K for native 4K films, 1080p for standard series (Kodik/Aniboom with 1080p/Anime4K)
-    const isNative4K = shikimori_id === '32281' || shikimori_id === '50594' || shikimori_id === '62568' || shikimori_id === '38826' || shikimori_id === '16782';
-    const qualityBadge = isNative4K ? '4K' : '1080p';
 
     const normalizeVoice = (name: string): string => {
       return (name || '')
@@ -1012,124 +1005,84 @@ app.get('/api/balancer', async (c) => {
       return raw.replace(/\s*\((4K|1080|720|4к|1080p|720p)\)\s*/gi, '').trim();
     };
 
-    const matchedAnimegoVoices = new Set<string>();
     const unifiedTranslations: any[] = [];
 
-    // Step 1: Process Kodik translations and match with AniBoom
+    // Step 1: Parse all AniBoom translations (labeled 4K)
+    if (animego_aniboom_map && animego_aniboom_map.length > 0) {
+      animego_aniboom_map.forEach((ab, idx) => {
+        const baseVoice = cleanTitle(ab.voice || 'Основная озвучка');
+        const normAb = normalizeVoice(baseVoice);
+        const maxEpisodes = Math.max(
+          animego_total_episodes || 0,
+          ab.episodesCount || 0,
+          1
+        );
+
+        unifiedTranslations.push({
+          id: `aniboom_${idx}_${normAb}`,
+          title: baseVoice,
+          type: 'voice',
+          provider: 'AniBoom',
+          iframe: ab.url,
+          aniboom_iframe: ab.url,
+          kodik_iframe: null,
+          episodes_count: maxEpisodes,
+          last_episode: maxEpisodes,
+          quality_label: '4K',
+          is_native_4k: true
+        });
+      });
+    }
+
+    // Step 2: Parse all Kodik translations (labeled 720p)
     if (kodik_translations && kodik_translations.length > 0) {
-      kodik_translations.forEach((kt: any) => {
-        const baseVoice = cleanTitle(kt.title || '');
+      kodik_translations.forEach((kt: any, idx: number) => {
+        const baseVoice = cleanTitle(kt.title || 'Озвучка Kodik');
         const normKt = normalizeVoice(baseVoice);
-
-        // Find match in AniBoom
-        let matchedAb: { voice: string; url: string; episodesCount?: number } | null = null;
-        if (animego_aniboom_map.length > 0) {
-          matchedAb = animego_aniboom_map.find(ab => {
-            const normAb = normalizeVoice(ab.voice);
-            return normAb === normKt || normAb.includes(normKt) || normKt.includes(normAb);
-          }) || null;
-        }
-
         const maxEpisodes = Math.max(
           kt.episodes_count || 1,
           kt.last_episode || 1,
-          animego_total_episodes || 0,
-          matchedAb?.episodesCount || 0
+          1
         );
 
-        if (matchedAb) {
-          // Present in both: ALWAYS prefer AniBoom as primary stream, Kodik as fallback
-          matchedAnimegoVoices.add(normalizeVoice(matchedAb.voice));
-          unifiedTranslations.push({
-            id: kt.id || `voice_${normKt}`,
-            title: baseVoice,
-            type: kt.type || 'voice',
-            provider: 'AniBoom',
-            iframe: matchedAb.url,
-            aniboom_iframe: matchedAb.url,
-            kodik_iframe: kt.iframe,
-            episodes_count: maxEpisodes,
-            last_episode: maxEpisodes,
-            quality_label: qualityBadge,
-            is_native_1080: isNative4K
-          });
-        } else {
-          // Kodik only (Displays as 1080p, never 4K)
-          unifiedTranslations.push({
-            id: kt.id || `kodik_${normKt}`,
-            title: baseVoice,
-            type: kt.type || 'voice',
-            provider: 'Kodik',
-            iframe: kt.iframe,
-            aniboom_iframe: null,
-            kodik_iframe: kt.iframe,
-            episodes_count: maxEpisodes,
-            last_episode: maxEpisodes,
-            quality_label: isNative4K ? '4K' : '1080p',
-            is_native_1080: isNative4K
-          });
-        }
-      });
-    }
-
-    // Step 2: Add AniBoom translations not found in Kodik
-    if (animego_aniboom_map.length > 0) {
-      animego_aniboom_map.forEach((ab, idx) => {
-        const normAb = normalizeVoice(ab.voice);
-        if (!normAb || matchedAnimegoVoices.has(normAb)) return;
-
-        // Check if already in unified list
-        const alreadyExists = unifiedTranslations.some(t => {
-          const normT = normalizeVoice(cleanTitle(t.title || ''));
-          return normT === normAb || normT.includes(normAb) || normAb.includes(normT);
+        unifiedTranslations.push({
+          id: kt.id ? `kodik_${kt.id}` : `kodik_${idx}_${normKt}`,
+          title: baseVoice,
+          type: kt.type || 'voice',
+          provider: 'Kodik',
+          iframe: kt.iframe,
+          aniboom_iframe: null,
+          kodik_iframe: kt.iframe,
+          episodes_count: maxEpisodes,
+          last_episode: maxEpisodes,
+          quality_label: '720p',
+          is_native_4k: false
         });
-
-        if (!alreadyExists) {
-          const baseVoice = cleanTitle(ab.voice);
-          const maxEpisodes = Math.max(
-            animego_total_episodes || 0,
-            ab.episodesCount || 0,
-            1
-          );
-
-          unifiedTranslations.push({
-            id: `aniboom_only_${idx}`,
-            title: baseVoice,
-            type: 'voice',
-            provider: 'AniBoom',
-            iframe: ab.url,
-            aniboom_iframe: ab.url,
-            kodik_iframe: null,
-            episodes_count: maxEpisodes,
-            last_episode: maxEpisodes,
-            quality_label: qualityBadge,
-            is_native_1080: isNative4K
-          });
-        }
       });
     }
 
-    // Step 3: Fallback if no voiceovers found but we have player iframes
+    // Step 3: Fallback if no voiceovers found in either map
     if (unifiedTranslations.length === 0) {
       if (aniboom_iframe) {
         const maxEpisodes = Math.max(animego_total_episodes || 0, 1);
         unifiedTranslations.push({
           id: 'aniboom_default',
-          title: `Основная озвучка`,
+          title: 'Основная озвучка (AniBoom)',
           type: 'voice',
           provider: 'AniBoom',
           iframe: aniboom_iframe,
           aniboom_iframe: aniboom_iframe,
-          kodik_iframe: kodik_iframe || null,
+          kodik_iframe: null,
           episodes_count: maxEpisodes,
           last_episode: maxEpisodes,
-          quality_label: qualityBadge,
-          is_native_1080: isNative4K
+          quality_label: '4K',
+          is_native_4k: true
         });
-      } else if (kodik_iframe) {
+      }
+      if (kodik_iframe) {
         unifiedTranslations.push({
           id: 'kodik_default',
-          title: `Основная озвучка`,
+          title: 'Основная озвучка (Kodik)',
           type: 'voice',
           provider: 'Kodik',
           iframe: kodik_iframe,
@@ -1137,18 +1090,20 @@ app.get('/api/balancer', async (c) => {
           kodik_iframe: kodik_iframe,
           episodes_count: 1,
           last_episode: 1,
-          quality_label: isNative4K ? '4K' : '1080p',
-          is_native_1080: isNative4K
+          quality_label: '720p',
+          is_native_4k: false
         });
       }
     }
 
-    // Step 4: Sort translations so highest native quality (4K/AniBoom) comes FIRST
+    // Step 4: Sort translations so 4K (AniBoom) top priority voices come FIRST, then other 4K, then 720p Kodik
     const priorityVoices = ['anilibria', 'дубляж', 'shiza', 'studioband', 'anidub', 'dreamcast', 'субтитры'];
     unifiedTranslations.sort((a, b) => {
-      // 1. Highest quality first (4K > 1080)
-      if (a.is_native_1080 && !b.is_native_1080) return -1;
-      if (!a.is_native_1080 && b.is_native_1080) return 1;
+      // 1. AniBoom 4K before Kodik 720p
+      const aIs4k = a.quality_label === '4K' || a.is_native_4k || a.provider === 'AniBoom';
+      const bIs4k = b.quality_label === '4K' || b.is_native_4k || b.provider === 'AniBoom';
+      if (aIs4k && !bIs4k) return -1;
+      if (!aIs4k && bIs4k) return 1;
 
       // 2. Priority voice names
       const aNorm = normalizeVoice(a.title);
@@ -1157,7 +1112,10 @@ app.get('/api/balancer', async (c) => {
       const bPriIdx = priorityVoices.findIndex(p => bNorm.includes(p));
       if (aPriIdx !== -1 && bPriIdx === -1) return -1;
       if (aPriIdx === -1 && bPriIdx !== -1) return 1;
-      if (aPriIdx !== -1 && bPriIdx !== -1) return aPriIdx - bPriIdx;
+      if (aPriIdx !== -1 && bPriIdx !== -1) {
+        const diff = aPriIdx - bPriIdx;
+        if (diff !== 0) return diff;
+      }
 
       // 3. Highest episode count
       const aEp = a.episodes_count || a.last_episode || 0;
@@ -1169,7 +1127,7 @@ app.get('/api/balancer', async (c) => {
 
     kodik_translations = unifiedTranslations;
 
-    console.log(`[BALANCER] Unification complete. Generated ${kodik_translations.length} translations. Max episodes: ${kodik_translations[0]?.episodes_count || 1}`);
+    console.log(`[BALANCER] Unification complete. Generated ${kodik_translations.length} translations (4K AniBoom + 720p Kodik).`);
 
     console.log(`[BALANCER] Found IDs -> Shikimori: ${shikimori_id}, Kinopoisk: ${kinopoisk_id}, IMDb: ${imdb_id}, WorldArt: ${world_art_id}`);
     addLog(`Balancer Completed`, { playersCount: players.length, ids });
@@ -2825,6 +2783,107 @@ app.get('/api/media/search', async (c) => {
   }
 });
 
+app.get('/api/anime/:id', async (c) => {
+  const rawId = c.req.param('id');
+  const shikimoriId = rawId ? rawId.split('-')[0] : '';
+  if (!shikimoriId) return c.json({ error: 'shikimori_id is required' }, 400);
+
+  let aniboomVoices: any[] = [];
+  let aniboomId: string | null = null;
+  let animegoSlug: string | null = null;
+  let titleRu: string | null = null;
+
+  try {
+    const workerRes = await fetch(`https://parser.oshxycfdjab.workers.dev/?shikimori_id=${shikimoriId}`, {
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+      signal: AbortSignal.timeout(3500)
+    });
+    if (workerRes.ok) {
+      const workerData = await workerRes.json() as any;
+      if (workerData?.voices && Array.isArray(workerData.voices)) {
+        aniboomVoices = workerData.voices;
+      }
+      if (workerData?.aniboom_id) aniboomId = workerData.aniboom_id;
+    }
+  } catch (_) {}
+
+  if (aniboomVoices.length === 0) {
+    try {
+      const animegoData = await fetchAnimegoData(shikimoriId);
+      if (animegoData && animegoData.aniboomMap) {
+        aniboomVoices = animegoData.aniboomMap.map((m, idx) => ({
+          voice: m.voice,
+          aniboom_id: animegoData.animegoId || `ab_${idx}`,
+          url: m.url
+        }));
+        aniboomId = animegoData.animegoId || null;
+      }
+    } catch (_) {}
+  }
+
+  c.header('Access-Control-Allow-Origin', '*');
+  c.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  c.header('Cache-Control', 'public, max-age=300');
+
+  return c.json({
+    shikimori_id: shikimoriId,
+    aniboom_id: aniboomId,
+    animego_slug: animegoSlug,
+    title_ru: titleRu,
+    voices: aniboomVoices
+  });
+});
+
+app.get('/api/aniboom', async (c) => {
+  const shikimoriId = c.req.query('shikimori_id') || c.req.query('id');
+  if (!shikimoriId) return c.json({ error: 'shikimori_id is required' }, 400);
+
+  let aniboomVoices: any[] = [];
+  let aniboomId: string | null = null;
+  let animegoSlug: string | null = null;
+  let titleRu: string | null = null;
+
+  try {
+    const workerRes = await fetch(`https://parser.oshxycfdjab.workers.dev/?shikimori_id=${shikimoriId}`, {
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+      signal: AbortSignal.timeout(3500)
+    });
+    if (workerRes.ok) {
+      const workerData = await workerRes.json() as any;
+      if (workerData?.voices && Array.isArray(workerData.voices)) {
+        aniboomVoices = workerData.voices;
+      }
+      if (workerData?.aniboom_id) aniboomId = workerData.aniboom_id;
+    }
+  } catch (_) {}
+
+  if (aniboomVoices.length === 0) {
+    try {
+      const animegoData = await fetchAnimegoData(shikimoriId);
+      if (animegoData && animegoData.aniboomMap) {
+        aniboomVoices = animegoData.aniboomMap.map((m, idx) => ({
+          voice: m.voice,
+          aniboom_id: animegoData.animegoId || `ab_${idx}`,
+          url: m.url
+        }));
+        aniboomId = animegoData.animegoId || null;
+      }
+    } catch (_) {}
+  }
+
+  c.header('Access-Control-Allow-Origin', '*');
+  c.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  c.header('Cache-Control', 'public, max-age=300');
+
+  return c.json({
+    shikimori_id: shikimoriId,
+    aniboom_id: aniboomId,
+    animego_slug: animegoSlug,
+    title_ru: titleRu,
+    voices: aniboomVoices
+  });
+});
+
 app.get('/api/collaps/embed', (c) => {
   let urlParam = c.req.query('url');
   if (!urlParam) {
@@ -3302,6 +3361,37 @@ const handleAniboomResolve = async (c: any) => {
       }
     }
 
+    if (!rawParams && cleanEmbedUrl.includes('translation=')) {
+      try {
+        const retryEmbedUrl = cleanEmbedUrl.replace(/[?&]translation=\d+/g, '').replace(/\?&/, '?').replace(/\?$/, '');
+        const retryRes = await fetch(retryEmbedUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'Referer': referer,
+            'Origin': originHost,
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Sec-Fetch-Dest': 'iframe',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'cross-site'
+          },
+          signal: AbortSignal.timeout(3500)
+        });
+        if (retryRes.ok) {
+          const retryHtml = await retryRes.text();
+          const retryMatch = retryHtml.match(/data-parameters=["']([^"']+)["']/i);
+          if (retryMatch) {
+            rawParams = retryMatch[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&#039;/g, "'");
+          } else {
+            const retryJsMatch = retryHtml.match(/(?:window\.)?parameters\s*=\s*({.+?});/s) ||
+                                retryHtml.match(/data-aspect-ratio[^>]*data-parameters="([^"]+)"/i);
+            if (retryJsMatch) {
+              rawParams = retryJsMatch[1];
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
     if (!rawParams) {
       return await tryKodikFallback('data-parameters not found');
     }
@@ -3474,17 +3564,49 @@ const playlistCache = new Map<string, { streamUrl: string; rawUrl: string; exp: 
 
 async function extractKodikStream(iframeUrl: string, requestedQuality?: string, resolveOnly?: boolean, c?: any) {
   let normalizedIframe = iframeUrl.startsWith('//') ? `https:${iframeUrl}` : iframeUrl;
-  normalizedIframe = normalizedIframe.replace(/(kodik\.info|kodik\.cc|kodik\.biz|kodik\.net|kodik\.tv|kodik\.club|kodik\.site|kodik\.space|kodik\.ru|kodikonline\.com|kodikhd\.club|kodik-api\.com)/g, 'kodikplayer.com');
+  
+  // Extract base domain and test candidate mirror domains
+  let targetDomains: string[] = [];
+  try {
+    const u = new URL(normalizedIframe);
+    if (u.hostname) targetDomains.push(u.hostname);
+  } catch (_) {}
 
-  console.log(`[KODIK PROXY] Extracting playlist from: ${normalizedIframe}`);
+  const mirrorFallbacks = ['kodik.info', 'kodik.biz', 'kodik.cc', 'kodikplayer.com', 'kodikonline.com', 'anivod.com'];
+  for (const m of mirrorFallbacks) {
+    if (!targetDomains.includes(m)) targetDomains.push(m);
+  }
 
-  const iframeRes = await fetch(normalizedIframe, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-      'Referer': 'https://shikimori.one/'
+  let html = '';
+  let successfulIframe = normalizedIframe;
+
+  for (const domain of targetDomains) {
+    try {
+      const candidateUrl = normalizedIframe.replace(/(kodik\.info|kodik\.cc|kodik\.biz|kodik\.net|kodik\.tv|kodik\.club|kodik\.site|kodik\.space|kodik\.ru|kodikonline\.com|kodikhd\.club|kodik-api\.com|kodikplayer\.com|anivod\.com)/g, domain);
+      console.log(`[KODIK PROXY] Trying Kodik mirror: ${candidateUrl}`);
+      const iframeRes = await fetch(candidateUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          'Referer': 'https://shikimori.one/'
+        },
+        signal: AbortSignal.timeout(4000)
+      });
+      if (iframeRes.ok) {
+        const text = await iframeRes.text();
+        if (text.includes('urlParams') || text.includes('.hash') || text.includes('videoInfo')) {
+          html = text;
+          successfulIframe = candidateUrl;
+          break;
+        }
+      }
+    } catch (e: any) {
+      console.warn(`[KODIK PROXY] Mirror ${domain} failed: ${e.message}`);
     }
-  });
-  const html = await iframeRes.text();
+  }
+
+  if (!html) {
+    throw new Error('Failed to fetch valid Kodik player page from any mirror');
+  }
 
   const urlParamsMatch = html.match(/urlParams\s*=\s*'([^']+)'/) || html.match(/urlParams\s*=\s*"([^"]+)"/) || html.match(/urlParams\s*=\s*({[^;]+})/);
   const hashMatch = html.match(/\.hash\s*=\s*'([^']+)'/) || html.match(/\.hash\s*=\s*"([^"]+)"/) || html.match(/\.hash\s*=\s*['"]([^'"]+)['"]/);
@@ -3495,7 +3617,9 @@ async function extractKodikStream(iframeUrl: string, requestedQuality?: string, 
     throw new Error('Failed to parse Kodik iframe parameters');
   }
 
-  const urlParams = JSON.parse(urlParamsMatch[1]);
+  const urlParams = typeof urlParamsMatch[1] === 'string' && urlParamsMatch[1].startsWith('{') 
+    ? JSON.parse(urlParamsMatch[1]) 
+    : JSON.parse(urlParamsMatch[1]);
   const videoHash = hashMatch[1];
   const videoId = idMatch[1];
   const videoType = typeMatch[1];
@@ -3519,13 +3643,13 @@ async function extractKodikStream(iframeUrl: string, requestedQuality?: string, 
     scriptUrl = '/assets/js/app.serial.js';
   }
 
-  const baseUrlObj = new URL(normalizedIframe);
+  const baseUrlObj = new URL(successfulIframe);
   const scriptAbsoluteUrl = scriptUrl.startsWith('http') ? scriptUrl : `${baseUrlObj.protocol}//${baseUrlObj.host}${scriptUrl}`;
 
   const scriptRes = await fetch(scriptAbsoluteUrl, {
     headers: {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      'Referer': normalizedIframe
+      'Referer': successfulIframe
     }
   });
   const scriptHtml = await scriptRes.text();
@@ -3543,7 +3667,7 @@ async function extractKodikStream(iframeUrl: string, requestedQuality?: string, 
     hash: videoHash,
     id: videoId,
     type: videoType,
-    d: urlParams.d || 'kodik.info',
+    d: urlParams.d || baseUrlObj.hostname || 'kodik.info',
     d_sign: urlParams.d_sign || '',
     pd: urlParams.pd || '',
     pd_sign: urlParams.pd_sign || '',

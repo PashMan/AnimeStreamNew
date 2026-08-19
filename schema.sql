@@ -257,3 +257,14 @@ CREATE TABLE IF NOT EXISTS slug_blocks (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 24. Animego Catalog (AniBoom Embeds & Voiceovers Map)
+CREATE TABLE IF NOT EXISTS animego_catalog (
+  shikimori_id INTEGER PRIMARY KEY,
+  animego_slug TEXT,
+  title_ru TEXT,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  aniboom_id TEXT,
+  aniboom_map TEXT
+);
+
+

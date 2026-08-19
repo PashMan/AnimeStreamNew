@@ -38,7 +38,7 @@ import {
   Play,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
-import { fetchPlayersClientSide } from "../services/balancer";
+import { fetchPlayersClientSide, KodikTranslation } from "../services/balancer";
 import {
   fetchAnimeDetails,
   fetchRelatedAnimes,
@@ -204,17 +204,8 @@ const Details: React.FC = () => {
   const [players, setPlayers] = useState<
     { name: string; iframe: string | null; isCustom?: boolean }[]
   >([{ name: "KamiPlayer (1080p)", iframe: null, isCustom: true }]);
-  const [translations, setTranslations] = useState<
-    { id: string | number; title: string; type: string; iframe: string; episodes_count?: number; last_episode?: number }[]
-  >([]);
-  const [selectedTranslation, setSelectedTranslation] = useState<{
-    id: string | number;
-    title: string;
-    type: string;
-    iframe: string;
-    episodes_count?: number;
-    last_episode?: number;
-  } | null>(null);
+  const [translations, setTranslations] = useState<KodikTranslation[]>([]);
+  const [selectedTranslation, setSelectedTranslation] = useState<KodikTranslation | null>(null);
   const [hasFetchedPlayers, setHasFetchedPlayers] = useState(false);
   const [isPlayersLoading, setIsPlayersLoading] = useState(false);
   const [playersError, setPlayersError] = useState<string | null>(null);
@@ -259,14 +250,14 @@ const Details: React.FC = () => {
   };
 
   const getTranslationQuality = (t: any) => {
-    if (!t) return "1080p";
+    if (!t) return "720p";
     if (t.quality_label) return t.quality_label;
     const baseTitle = getCleanTitle(t.title || "");
     const override = translationQualityOverrides[baseTitle];
     if (override) return override;
 
     const isNative4KFilm = id === "50594" || id === "62568" || id === "38826" || id === "16782" || id === "32281";
-    if (isNative4KFilm || t.is_native_4k) return "4K Ultra";
+    if (isNative4KFilm || t.is_native_4k) return "4K";
 
     const hasAniboom = Boolean(
       t.aniboom_iframe ||
@@ -275,7 +266,7 @@ const Details: React.FC = () => {
       (t.sources && t.sources.some((s: any) => s.provider === "aniboom" && s.embedUrl))
     );
 
-    if (hasAniboom) return "FHD 1080p";
+    if (hasAniboom) return "4K";
 
     const match = (t.title || "").match(/\b(4K|1080|720)\b/i);
     if (match) {
@@ -285,7 +276,7 @@ const Details: React.FC = () => {
       if (val === "720") return "720p";
     }
 
-    return "HD 720p";
+    return "720p";
   };
 
   const getDisplayTitle = (title: string) => {
@@ -304,7 +295,7 @@ const Details: React.FC = () => {
     }
   }, [selectedPlayer]);
 
-  // Плавное получение потока AniBoom 1080p через resolve-воркер
+  // Плавное получение потока (AniBoom 4K или Kodik 720p) при выборе озвучки
   useEffect(() => {
     const isSuzume = id === "50594" || id === "62568";
     const isWeathering = id === "38826";
@@ -321,11 +312,42 @@ const Details: React.FC = () => {
     let isCurrent = true;
     const epNum = parseInt(paramEpisode || "1") || 1;
     const defaultAniboom = players.find((p) => p.name === "Aniboom" || (p.iframe && p.iframe.includes("aniboom")))?.iframe;
-    const embedToResolve = getResolvedAniboomUrl(selectedTranslation, epNum, defaultAniboom);
+    const isAniboomTranslation = Boolean(
+      selectedTranslation?.aniboom_iframe ||
+      selectedTranslation?.provider === "AniBoom" ||
+      selectedTranslation?.provider === "aniboom" ||
+      selectedTranslation?.quality_label === "4K"
+    );
 
     const abortController = new AbortController();
 
-    // 1. Если AniBoom для этой озвучки нет — используем чистый поток Kodik в KamiPlayer
+    if (!isAniboomTranslation) {
+      // Kodik translation selected (720p)
+      const defaultKodik = players.find((p) => p.name === "Kodik")?.iframe;
+      const kodikIframeUrl = getResolvedKodikUrl(selectedTranslation, epNum, defaultKodik);
+      if (kodikIframeUrl) {
+        const streamUrl = getCleanPlaylistUrl(kodikIframeUrl, null, null, false);
+        if (isCurrent) {
+          setResolvedStream({
+            url: streamUrl,
+            streamType: "hls",
+            provider: "kodik"
+          });
+          setIsResolvingStream(false);
+          setSelectedPlayer("KamiPlayer (1080p)");
+        }
+      } else {
+        if (isCurrent) {
+          setResolvedStream(null);
+          setIsResolvingStream(false);
+        }
+      }
+      return;
+    }
+
+    // AniBoom translation selected (4K)
+    const embedToResolve = getResolvedAniboomUrl(selectedTranslation, epNum, defaultAniboom);
+
     if (!embedToResolve) {
       if (isCurrent) {
         setIsResolvingStream(false);
@@ -352,7 +374,7 @@ const Details: React.FC = () => {
             });
             setIsResolvingStream(false);
             setSelectedPlayer("KamiPlayer (1080p)");
-            console.log(`🔥 [KamiPlayer 1080p] Прямой поток AniBoom активирован:`, embedToResolve);
+            console.log(`🔥 [KamiPlayer 4K] Прямой поток AniBoom активирован:`, embedToResolve);
             return;
           }
         }
@@ -375,7 +397,7 @@ const Details: React.FC = () => {
           });
           setIsResolvingStream(false);
           setSelectedPlayer("KamiPlayer (1080p)");
-          console.log(`🔥 [KamiPlayer 1080p] AniBoom успешно активирован:`, data.url);
+          console.log(`🔥 [KamiPlayer 4K] AniBoom успешно активирован:`, data.url);
           return;
         }
 
@@ -384,7 +406,18 @@ const Details: React.FC = () => {
         if (err.name !== "AbortError") {
           if (isCurrent) {
             setIsResolvingStream(false);
-            setResolvedStream(null);
+            // Fallback to Kodik if AniBoom resolve fails
+            const defaultKodik = players.find((p) => p.name === "Kodik")?.iframe;
+            const kodikIframeUrl = getResolvedKodikUrl(selectedTranslation, epNum, defaultKodik);
+            if (kodikIframeUrl) {
+              setResolvedStream({
+                url: getCleanPlaylistUrl(kodikIframeUrl, null, null, false),
+                streamType: "hls",
+                provider: "kodik"
+              });
+            } else {
+              setResolvedStream(null);
+            }
           }
         }
       }
@@ -1821,26 +1854,28 @@ const Details: React.FC = () => {
               )}
 
               <div className="flex flex-col gap-6">
-                {players.length > 0 && (
+                {players.filter((p) => p.name !== "Aniboom").length > 0 && (
                   <div className="flex items-center justify-between gap-3 flex-wrap">
                     <div className="flex items-center gap-2 overflow-x-auto pb-1 max-w-full custom-scrollbar">
-                      {players.map((p) => {
-                        const isSelected = selectedPlayer === p.name;
-                        return (
-                          <button
-                            key={p.name}
-                            id={`select-player-${p.name.replace(/\s+/g, '-').toLowerCase()}`}
-                            onClick={() => setSelectedPlayer(p.name)}
-                            className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer whitespace-nowrap border ${
-                              isSelected
-                                ? "bg-primary text-white border-primary shadow-lg shadow-primary/25"
-                                : "bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white border-white/10"
-                            }`}
-                          >
-                            {p.name}
-                          </button>
-                        );
-                      })}
+                      {players
+                        .filter((p) => p.name !== "Aniboom")
+                        .map((p) => {
+                          const isSelected = selectedPlayer === p.name;
+                          return (
+                            <button
+                              key={p.name}
+                              id={`select-player-${p.name.replace(/\s+/g, '-').toLowerCase()}`}
+                              onClick={() => setSelectedPlayer(p.name)}
+                              className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer whitespace-nowrap border ${
+                                isSelected
+                                  ? "bg-primary text-white border-primary shadow-lg shadow-primary/25"
+                                  : "bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white border-white/10"
+                              }`}
+                            >
+                              {p.name}
+                            </button>
+                          );
+                        })}
                     </div>
                   </div>
                 )}
@@ -2080,7 +2115,11 @@ const Details: React.FC = () => {
                                     <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-white/10 text-slate-300">
                                       {activeEpTotal} сер.
                                     </span>
-                                    <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-primary/20 text-primary border border-primary/30">
+                                    <span className={`text-[10px] font-black px-2 py-0.5 rounded uppercase tracking-wider ${
+                                      activeQuality === "4K"
+                                        ? "bg-emerald-500/25 text-emerald-300 border border-emerald-400/40"
+                                        : "bg-amber-500/20 text-amber-300 border border-amber-400/30"
+                                    }`}>
                                       {activeQuality}
                                     </span>
                                   </div>
@@ -2127,10 +2166,14 @@ const Details: React.FC = () => {
                                       <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-white/10 text-slate-300">
                                         {epTotal} сер.
                                       </span>
-                                      <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${
-                                        isSelected
-                                          ? "bg-primary/20 text-primary border border-primary/30"
-                                          : "bg-white/5 text-slate-400 border border-white/10"
+                                      <span className={`text-[10px] font-black px-2 py-0.5 rounded uppercase tracking-wider ${
+                                        tQuality === "4K"
+                                          ? isSelected
+                                            ? "bg-emerald-500/30 text-emerald-300 border border-emerald-400/50 shadow-sm shadow-emerald-500/20"
+                                            : "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
+                                          : isSelected
+                                            ? "bg-amber-500/30 text-amber-300 border border-amber-400/50 shadow-sm shadow-amber-500/20"
+                                            : "bg-slate-700/40 text-slate-400 border border-slate-600/40"
                                       }`}>
                                         {tQuality}
                                       </span>
