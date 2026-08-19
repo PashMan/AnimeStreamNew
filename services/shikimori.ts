@@ -459,10 +459,22 @@ export const getAnimeById = async (id: string | number) => {
 };
 
 export const enrichAnimeWithKodik = async (anime: Anime, id: string, searchTitle?: string): Promise<Anime> => {
+  const isMissingImage = (img: any): boolean => {
+    if (!img) return true;
+    if (typeof img === 'string') {
+      return img === PLACEHOLDER_IMAGE || img.includes('missing') || img.includes('none.png');
+    }
+    if (typeof img === 'object') {
+      const src = img.original || img.preview || '';
+      return !src || (typeof src === 'string' && (src.includes('missing') || src.includes('none.png')));
+    }
+    return false;
+  };
+
   const needsDescription = !anime.description || anime.description === 'Описание отсутствует' || anime.description.trim().length === 0;
-  const needsGenres = !anime.genres || anime.genres.length === 0;
-  const needsImage = !anime.image || anime.image === PLACEHOLDER_IMAGE || anime.image.includes('missing') || anime.image.includes('none.png');
-  const needsCover = !anime.cover || anime.cover === PLACEHOLDER_IMAGE || anime.cover.includes('missing') || anime.cover.includes('none.png');
+  const needsGenres = !anime.genres || !Array.isArray(anime.genres) || anime.genres.length === 0;
+  const needsImage = isMissingImage(anime.image);
+  const needsCover = isMissingImage(anime.cover);
 
   if (!needsDescription && !needsGenres && !needsImage && !needsCover) {
     return anime;

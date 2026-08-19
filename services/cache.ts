@@ -2,6 +2,26 @@
 export const CACHE_PREFIX = 'as_cache_';
 
 /**
+ * Helper to safely check if an image is valid and not a placeholder
+ */
+const isRealImage = (img: any): boolean => {
+  if (!img) return false;
+  if (typeof img === 'string') {
+    const trimmed = img.trim();
+    if (!trimmed) return false;
+    if (trimmed.includes('missing') || trimmed.includes('none.png')) return false;
+    return true;
+  }
+  if (typeof img === 'object') {
+    const src = img.original || img.preview || img.x96 || img.x48 || img.url || '';
+    if (typeof src === 'string' && src) {
+      return !src.includes('missing') && !src.includes('none.png');
+    }
+  }
+  return false;
+};
+
+/**
  * Checks if a piece of data is non-empty and worth caching long term
  */
 export const isValidCacheData = (data: any): boolean => {
@@ -17,22 +37,21 @@ export const isValidCacheData = (data: any): boolean => {
 
   if (Array.isArray(data)) {
     if (data.length === 0) return false;
-    // For arrays, ensure it has at least one valid element
-    return data.some(item => isValidCacheData(item));
+    return true;
   }
 
   if (typeof data === 'object') {
     const keys = Object.keys(data);
     if (keys.length === 0) return false;
     
-    // For Anime objects specifically
-    if ('id' in data || 'title' in data) {
-      const hasTitle = Boolean(data.title && data.title !== 'Без названия');
-      const hasDescription = Boolean(data.description && data.description !== 'Описание отсутствует' && data.description.trim().length > 0);
+    // For Anime / Material objects specifically
+    if ('id' in data || 'title' in data || 'name' in data || 'russian' in data) {
+      const hasTitle = Boolean(data.title || data.name || data.russian);
+      const hasDesc = typeof data.description === 'string' && data.description.trim().length > 0 && data.description !== 'Описание отсутствует';
       const hasGenres = Array.isArray(data.genres) && data.genres.length > 0;
-      const hasImage = Boolean(data.image && !data.image.includes('missing') && !data.image.includes('none.png'));
-      // Keep if it has at least real title and some valid metadata
-      return hasTitle && (hasDescription || hasGenres || hasImage);
+      const hasImg = isRealImage(data.image);
+      // Keep if it has at least a title or valid payload
+      return hasTitle || hasDesc || hasGenres || hasImg;
     }
 
     return true;
