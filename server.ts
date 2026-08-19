@@ -3357,21 +3357,25 @@ const handleAniboomResolve = async (c: any) => {
       message: "Анализ доступных форматов стриминга (DASH, HLS)..."
     });
 
-    let dashSrc = '';
-    if (decoded.dash) {
-      try {
-        const dashObj = typeof decoded.dash === 'string' ? JSON.parse(decoded.dash) : decoded.dash;
-        dashSrc = dashObj.src || dashObj.url || '';
-      } catch (_) {}
-    }
+    const extractSrc = (data: any): string => {
+      if (!data) return '';
+      let target = data;
+      if (typeof target === 'string') {
+        const unescaped = target.replace(/\\"/g, '"').replace(/\\\//g, '/');
+        try {
+          target = JSON.parse(unescaped);
+        } catch (_) {
+          return unescaped;
+        }
+      }
+      if (typeof target === 'object' && target !== null) {
+        return target['1080'] || target['720'] || target.src || target.url || '';
+      }
+      return '';
+    };
 
-    let hlsSrc = '';
-    if (decoded.hls) {
-      try {
-        const hlsObj = typeof decoded.hls === 'string' ? JSON.parse(decoded.hls) : decoded.hls;
-        hlsSrc = hlsObj.src || hlsObj.url || '';
-      } catch (_) {}
-    }
+    let dashSrc = extractSrc(decoded.dash);
+    let hlsSrc = extractSrc(decoded.hls);
 
     if (dashSrc.startsWith('//')) dashSrc = `https:${dashSrc}`;
     if (hlsSrc.startsWith('//')) hlsSrc = `https:${hlsSrc}`;
