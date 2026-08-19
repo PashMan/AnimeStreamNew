@@ -70,7 +70,7 @@ class AnimeWebGL1080p {
   public isActive = false;
   private targetMode: number = 0; // 0 = Auto (1080p -> 4K 2160p, 720p -> 1080p), 2160 = 4K, 1080 = 1080p, -1 = Off
   private sharpness: number = 0.50; // AMD CAS sharpness
-  public splitEnabled: boolean = false;
+  public splitEnabled: boolean = true;
   public splitPos: number = 0.5; // 0.0 .. 1.0
   public strength: number = 1.25; // 1.0 .. 2.5
 
@@ -441,6 +441,16 @@ class AnimeWebGL1080p {
       void main() {
         vec3 orig = texture(u_texture, v_texCoord).rgb;
 
+        // Ultra-crisp divider separator line with subtle glow
+        float distFromSplit = abs(v_texCoord.x - u_splitPos) * u_resolution.x;
+        if (u_splitEnabled > 0.5 && distFromSplit < 1.25) {
+          fragColor = vec4(1.0, 1.0, 1.0, 1.0);
+          return;
+        } else if (u_splitEnabled > 0.5 && distFromSplit < 3.0) {
+          fragColor = vec4(0.545, 0.361, 0.965, 1.0);
+          return;
+        }
+
         if (u_splitEnabled > 0.5 && v_texCoord.x < u_splitPos) {
           fragColor = vec4(orig, 1.0);
           return;
@@ -494,6 +504,16 @@ class AnimeWebGL1080p {
 
       void main() {
         vec3 orig = texture2D(u_texture, v_texCoord).rgb;
+
+        // Ultra-crisp divider separator line with subtle glow
+        float distFromSplit = abs(v_texCoord.x - u_splitPos) * u_resolution.x;
+        if (u_splitEnabled > 0.5 && distFromSplit < 1.25) {
+          gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
+          return;
+        } else if (u_splitEnabled > 0.5 && distFromSplit < 3.0) {
+          gl_FragColor = vec4(0.545, 0.361, 0.965, 1.0);
+          return;
+        }
 
         if (u_splitEnabled > 0.5 && v_texCoord.x < u_splitPos) {
           gl_FragColor = vec4(orig, 1.0);
@@ -1248,6 +1268,75 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
           fullscreen: true,
           fullscreenWeb: true,
           miniProgressBar: true,
+          layers: [
+            {
+              name: "anime4k-split-layer",
+              html: `
+                <div class="art-split-container" style="position: absolute; inset: 0; pointer-events: none; user-select: none; z-index: 25; width: 100%; height: 100%;">
+                  <div class="art-split-label-left" style="position: absolute; top: 16px; left: 16px; padding: 4px 10px; border-radius: 8px; background: rgba(0,0,0,0.8); border: 1px solid rgba(255,255,255,0.25); backdrop-filter: blur(8px); font-family: monospace; font-size: 11px; font-weight: bold; color: #cbd5e1; box-shadow: 0 4px 12px rgba(0,0,0,0.6); pointer-events: none;">
+                    Оригинал
+                  </div>
+                  <div class="art-split-label-right" style="position: absolute; top: 16px; right: 16px; padding: 4px 10px; border-radius: 8px; background: #8B5CF6; border: 1px solid rgba(255,255,255,0.3); backdrop-filter: blur(8px); font-family: monospace; font-size: 11px; font-weight: bold; color: #ffffff; box-shadow: 0 4px 12px rgba(139,92,246,0.5); pointer-events: none; display: flex; align-items: center; gap: 4px;">
+                    ✨ Anime4K AI (2160p)
+                  </div>
+                  <div class="art-split-drag-area" style="position: absolute; top: 0; bottom: 0; width: 48px; left: 50%; transform: translateX(-50%); pointer-events: auto; cursor: col-resize; display: flex; align-items: center; justify-content: center; z-index: 30;">
+                    <div class="art-split-handle" style="width: 34px; height: 34px; border-radius: 50%; background: #8B5CF6; border: 2px solid #ffffff; box-shadow: 0 0 20px rgba(139,92,246,0.95), 0 4px 12px rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; color: #ffffff; font-size: 14px; font-weight: 900; user-select: none; transition: transform 0.1s ease;">
+                      ↔
+                    </div>
+                  </div>
+                </div>
+              `,
+              mounted: function ($el: HTMLElement) {
+                const dragArea = $el.querySelector(".art-split-drag-area") as HTMLElement;
+                let isDragging = false;
+
+                const updatePos = (clientX: number) => {
+                  const rect = $el.getBoundingClientRect();
+                  if (rect.width <= 0) return;
+                  const x = Math.max(0, Math.min(rect.width, clientX - rect.left));
+                  const newRatio = Math.max(0.02, Math.min(0.98, x / rect.width));
+                  if (dragArea) {
+                    dragArea.style.left = `${newRatio * 100}%`;
+                  }
+                  setSplitPos(newRatio);
+                  if (webglInstanceRef.current) {
+                    webglInstanceRef.current.setSplitMode(true, newRatio);
+                  }
+                };
+
+                const onPointerDown = (e: PointerEvent) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  isDragging = true;
+                  (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+                  updatePos(e.clientX);
+                };
+
+                const onPointerMove = (e: PointerEvent) => {
+                  if (!isDragging) return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  updatePos(e.clientX);
+                };
+
+                const onPointerUp = (e: PointerEvent) => {
+                  if (isDragging) {
+                    isDragging = false;
+                    try {
+                      (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
+                    } catch (_) {}
+                  }
+                };
+
+                if (dragArea) {
+                  dragArea.addEventListener("pointerdown", onPointerDown);
+                  dragArea.addEventListener("pointermove", onPointerMove);
+                  dragArea.addEventListener("pointerup", onPointerUp);
+                  dragArea.addEventListener("pointercancel", onPointerUp);
+                }
+              },
+            },
+          ],
           lang: "ru",
           i18n: {
             ru: {
@@ -2176,38 +2265,6 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
             </button>
           </div>
         </div>
-
-        {/* Interactive Split-Screen Slider Overlay */}
-        {isSplitScreenActive && (
-          <div
-            className="absolute inset-0 z-30 pointer-events-auto cursor-col-resize select-none touch-none"
-            onPointerDown={handleSplitPointerDown}
-            onPointerMove={handleSplitPointerMove}
-            onPointerUp={handleSplitPointerUp}
-            onPointerCancel={handleSplitPointerUp}
-          >
-            {/* Left Label: Original */}
-            <div className="absolute top-16 left-6 z-40 px-3 py-1.5 rounded-xl bg-black/80 border border-white/20 backdrop-blur-md text-[11px] font-mono font-bold text-slate-300 shadow-xl pointer-events-none">
-              Оригинал (1080p)
-            </div>
-
-            {/* Right Label: Anime4K AI */}
-            <div className="absolute top-16 right-6 z-40 px-3 py-1.5 rounded-xl bg-[#8B5CF6] border border-white/20 backdrop-blur-md text-[11px] font-mono font-bold text-white shadow-xl pointer-events-none flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5" />
-              Anime4K AI (2160p)
-            </div>
-
-            {/* Split Divider Handle */}
-            <div
-              className="absolute top-0 bottom-0 w-1 bg-[#8B5CF6] shadow-[0_0_20px_rgba(139,92,246,0.9)] pointer-events-none flex items-center justify-center"
-              style={{ left: `${splitPos * 100}%` }}
-            >
-              <div className="w-9 h-9 rounded-full bg-[#8B5CF6] border-2 border-white text-white shadow-2xl flex items-center justify-center font-bold text-xs pointer-events-none transform -translate-x-1/2">
-                ↔
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* REFERENCE-PERFECT POPUP SETTINGS MODAL */}
         {isSettingsOpen && createPortal(
