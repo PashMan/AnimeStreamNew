@@ -264,9 +264,28 @@ const Details: React.FC = () => {
     const baseTitle = getCleanTitle(t.title || "");
     const override = translationQualityOverrides[baseTitle];
     if (override) return override;
+
+    const isNative4KFilm = id === "50594" || id === "62568" || id === "38826" || id === "16782" || id === "32281";
+    if (isNative4KFilm || t.is_native_4k) return "4K Ultra";
+
+    const hasAniboom = Boolean(
+      t.aniboom_iframe ||
+      t.provider === "AniBoom" ||
+      t.provider === "aniboom" ||
+      (t.sources && t.sources.some((s: any) => s.provider === "aniboom" && s.embedUrl))
+    );
+
+    if (hasAniboom) return "FHD 1080p";
+
     const match = (t.title || "").match(/\b(4K|1080|720)\b/i);
-    if (match) return match[0].toUpperCase() === "4K" ? "4K" : `${match[0]}p`;
-    return "1080p";
+    if (match) {
+      const val = match[0].toUpperCase();
+      if (val === "4K") return "4K";
+      if (val === "1080") return "1080p";
+      if (val === "720") return "720p";
+    }
+
+    return "HD 720p";
   };
 
   const getDisplayTitle = (title: string) => {
@@ -306,12 +325,11 @@ const Details: React.FC = () => {
 
     const abortController = new AbortController();
 
-    // 1. Если AniBoom для этой озвучки нет — переключаем на нативный Kodik
+    // 1. Если AniBoom для этой озвучки нет — используем чистый поток Kodik в KamiPlayer
     if (!embedToResolve) {
       if (isCurrent) {
         setIsResolvingStream(false);
         setResolvedStream(null);
-        setSelectedPlayer("Kodik");
       }
       return;
     }
@@ -367,7 +385,6 @@ const Details: React.FC = () => {
           if (isCurrent) {
             setIsResolvingStream(false);
             setResolvedStream(null);
-            setSelectedPlayer("Kodik");
           }
         }
       }
@@ -1899,7 +1916,14 @@ const Details: React.FC = () => {
                             } else if (resolvedStream && resolvedStream.url) {
                               customSrc = resolvedStream.url;
                             } else {
-                              customSrc = "";
+                              const epNum = parseInt(paramEpisode || "1") || 1;
+                              const defaultKodik = players.find((p) => p.name === "Kodik")?.iframe;
+                              const kodikIframeUrl = getResolvedKodikUrl(selectedTranslation, epNum, defaultKodik);
+                              if (kodikIframeUrl) {
+                                customSrc = getCleanPlaylistUrl(kodikIframeUrl, null, null, false);
+                              } else {
+                                customSrc = "";
+                              }
                             }
 
                             const episodesCount = selectedTranslation?.last_episode || selectedTranslation?.episodes_count || (anime

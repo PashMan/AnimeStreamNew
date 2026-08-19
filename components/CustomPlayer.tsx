@@ -496,21 +496,15 @@ class AnimeWebGL1080p {
     // 1. 720p -> 1080p (Anime4K AI)
     // 2. 1080p -> 4K 2160p (Anime4K AI)
     // 3. 720p -> 4K is strictly FORBIDDEN (clamped to 1080p)
-    let targetH = 1080;
-    if (vH < 1000) {
-      // Source is 720p (or lower) - 4K is strictly prohibited!
-      targetH = 1080;
+    let targetH = 2160;
+    if (this.targetMode === 2160) {
+      targetH = 2160; // Forced 4K AI Super Resolution
+    } else if (this.targetMode === 1080) {
+      targetH = 1080; // Forced 1080p AI Super Resolution
+    } else if (this.targetMode === 0) {
+      targetH = vH >= 1000 ? 2160 : 1080; // Auto selection
     } else {
-      // Source is native 1080p (or higher)
-      if (this.targetMode === 2160 || this.targetMode === 0) {
-        targetH = 2160; // 1080p -> 4K
-      } else if (this.targetMode === 1080) {
-        // Native 1080p selected without upscale
-        this.canvas.style.opacity = "0";
-        return;
-      } else {
-        targetH = this.targetMode;
-      }
+      targetH = this.targetMode;
     }
 
     const aspect = vW / vH;
@@ -1656,22 +1650,21 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
         const hls = (art as any).hls;
         try {
           console.log(`[Quality Switch] Applying HLS quality level ${item.level} (${item.html})`);
-          if (item.level === -1) {
-            hls.currentLevel = -1;
-            hls.loadLevel = -1;
-            hls.nextLevel = -1;
-          } else if (item.isAi) {
-            const maxLvl = (hls.levels && hls.levels.length > 0) ? hls.levels.length - 1 : (item.level >= 0 ? item.level : 0);
-            hls.currentLevel = maxLvl;
-            hls.loadLevel = maxLvl;
-            hls.nextLevel = maxLvl;
-          } else {
-            hls.currentLevel = item.level;
-            hls.loadLevel = item.level;
-            hls.nextLevel = item.level;
+          let targetLvl = item.level;
+          if (item.isAi || targetLvl === -1) {
+            targetLvl = (hls.levels && hls.levels.length > 0) ? hls.levels.length - 1 : (item.level >= 0 ? item.level : 0);
           }
 
-          if (currentPos > 0 && art.video) {
+          if (item.level === -1 && !item.isAi) {
+            hls.currentLevel = -1;
+            hls.nextLevel = -1;
+          } else {
+            hls.nextLevel = targetLvl;
+            if (hls.loadLevel !== undefined) hls.loadLevel = targetLvl;
+            hls.currentLevel = targetLvl;
+          }
+
+          if (currentPos > 0 && art.video && Math.abs(art.currentTime - currentPos) > 1.5) {
             art.currentTime = currentPos;
             if (wasPlaying && art.video.paused) {
               art.video.play().catch(() => {});
