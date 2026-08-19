@@ -77,7 +77,7 @@ const formatWorkerEmbedUrl = (rawEmbedUrl: string, epNum: number) => {
   }
 };
 
-const getResolvedAniboomUrl = (t: any, epNum: number, defaultUrl?: string | null) => {
+const getResolvedAniboomUrl = (t: any, epNum: number) => {
   const num = epNum || 1;
   let target: string | null = null;
 
@@ -85,19 +85,15 @@ const getResolvedAniboomUrl = (t: any, epNum: number, defaultUrl?: string | null
     target = t.aniboom_iframe;
   } else if (t?.iframe && t.iframe.includes("aniboom")) {
     target = t.iframe;
-  } else if (defaultUrl && defaultUrl.includes("aniboom")) {
-    target = defaultUrl;
   }
 
-  if (!target) {
+  if (!target || !target.includes("aniboom.one/embed/")) {
     return null;
   }
 
   try {
     const url = new URL(target.startsWith("//") ? `https:${target}` : target);
     url.searchParams.set("episode", String(num));
-    // NOTE: Keep original translation parameter from Aniboom/AnimeGO target URL if present.
-    // Do NOT force translation=16 or overwrite with unrelated IDs.
     const resolved = url.toString();
     console.log(`🔥 [Aniboom Resolver] RESOLVED: ${resolved} | Ep: ${num} | Voice: ${t?.title || 'Default'}`);
     return resolved;
@@ -309,35 +305,26 @@ const Details: React.FC = () => {
 
     let isCurrent = true;
     const epNum = parseInt(paramEpisode || "1") || 1;
-    const defaultAniboom = players.find((p) => p.name === "Aniboom")?.iframe;
-    const aniboomStream = getResolvedAniboomUrl(selectedTranslation, epNum, defaultAniboom);
+    const embedToResolve = getResolvedAniboomUrl(selectedTranslation, epNum);
 
     const abortController = new AbortController();
+
+    // 1. Если AniBoom для этой озвучки нет — СРАЗУ открываем Kodik iframe
+    if (!embedToResolve) {
+      if (isCurrent) {
+        setIsResolvingStream(false);
+        setResolvedStream(null);
+        setSelectedPlayer("Kodik");
+      }
+      return;
+    }
 
     const resolveStream = async () => {
       setIsResolvingStream(true);
       setStreamResolutionError(null);
 
       try {
-        let embedToResolve = aniboomStream;
-
-        // 1. Если прямой ссылки нет, запрашиваем D1 воркер
-        if (!embedToResolve) {
-          const workerUrl = `https://parser.oshxycfdjab.workers.dev/?shikimori_id=${id}&episode=${epNum}`;
-          const wRes = await fetch(workerUrl, { signal: abortController.signal });
-          if (wRes.ok) {
-            const wData = await wRes.json();
-            if (wData?.source === "aniboom" && wData.embed_url) {
-              embedToResolve = formatWorkerEmbedUrl(wData.embed_url, epNum);
-            }
-          }
-        }
-
-        if (!embedToResolve) {
-          throw new Error("AniBoom embed URL not found");
-        }
-
-        // Если embedToResolve УЖЕ является готовым потоком или прокси (.mpd / .m3u8 / /api/proxy-4k)
+        // Если embedToResolve УЖЕ является готовым прокси или прямым потоком (.mpd / .m3u8 / /api/proxy-4k)
         if (
           embedToResolve.includes("/api/proxy-4k") ||
           embedToResolve.includes(".mpd") ||
@@ -364,26 +351,9 @@ const Details: React.FC = () => {
           throw new Error(`Resolver returned ${res.status}`);
         }
 
-        const contentType = res.headers.get("content-type") || "";
-        let data: any = null;
-        if (contentType.includes("json") || contentType.includes("application/json")) {
-          try {
-            data = await res.json();
-          } catch (_) {
-            data = null;
-          }
-        }
+        const data = await res.json().catch(() => null);
 
-        if (!data) {
-          const resText = await res.text();
-          data = {
-            success: true,
-            url: res.url || `/api/media/aniboom/resolve?embed_url=${encodeURIComponent(embedToResolve)}`,
-            streamType: resText.includes("<MPD") || embedToResolve.includes(".mpd") ? "dash" : "hls"
-          };
-        }
-
-        if (data.success && data.url && isCurrent) {
+        if (data && data.success && data.url && isCurrent) {
           setResolvedStream({
             url: data.url,
             streamType: data.streamType || data.stream_type || (data.url.includes(".mpd") ? "dash" : "hls"),
@@ -394,23 +364,16 @@ const Details: React.FC = () => {
           return;
         }
 
-        throw new Error(data.error || "Failed to resolve stream");
+        throw new Error(data?.error || "Failed to resolve stream");
       } catch (err: any) {
         if (err.name !== "AbortError") {
-          console.warn("⚠️ [AniBoom Resolver]:", err.message);
           if (isCurrent) {
             setIsResolvingStream(false);
-            setStreamResolutionError(err.message);
-
-            // Бесшовное переключение на Kodik или любой другой доступный плеер
+            setResolvedStream(null);
+            // Мягкий откат на Kodik без спама в консоль
             const kodik = players.find((p) => p.name === "Kodik");
-            const anyOther = players.find((p) => p.name !== "KamiPlayer (1080p)" && p.name !== "Aniboom");
             if (kodik) {
-              console.log("🔄 [AniBoom Resolver] AniBoom недоступен для серии. Автопереключение на Kodik");
               setSelectedPlayer("Kodik");
-            } else if (anyOther) {
-              console.log(`🔄 [AniBoom Resolver] Переключение на плеер ${anyOther.name}`);
-              setSelectedPlayer(anyOther.name);
             }
           }
         }
@@ -1141,7 +1104,7 @@ const Details: React.FC = () => {
             setTranslations(translationsList);
             if (translationsList.length > 0) {
               const matchedTranslation = selectedTranslation
-                ? translationsList.find((t: any) => t.title === selectedTranslation.title)
+                ? translationsList.find((t: any) => getCleanTitle(t.title) === getCleanTitle(selectedTranslation.title))
                 : null;
               setSelectedTranslation(matchedTranslation || translationsList[0]);
             }
@@ -2330,14 +2293,14 @@ const Details: React.FC = () => {
               const defaultKodik = players.find((p) => p.name === "Kodik")?.iframe;
 
               // 1. AniBoom URL (Prioritized for 1080p Ultra HD)
-              let aniboomIframe = getResolvedAniboomUrl(selectedTranslation, epNum, defaultAniboom);
+              let aniboomIframe = getResolvedAniboomUrl(selectedTranslation, epNum);
               if (!aniboomIframe && resolvedStream?.provider === "aniboom" && resolvedStream?.url) {
                 aniboomIframe = resolvedStream.url;
               }
               if (!aniboomIframe) {
                 const trWithAniboom = translations.find((tr: any) => tr?.aniboom_iframe || (tr?.iframe && tr.iframe.includes("aniboom")));
                 if (trWithAniboom) {
-                  aniboomIframe = getResolvedAniboomUrl(trWithAniboom, epNum, defaultAniboom);
+                  aniboomIframe = getResolvedAniboomUrl(trWithAniboom, epNum);
                 }
               }
 
@@ -2793,14 +2756,14 @@ const Details: React.FC = () => {
               const defaultKodik = players.find((p) => p.name === "Kodik")?.iframe;
 
               // 1. AniBoom URL (Prioritized for 1080p Ultra HD)
-              let aniboomIframe = getResolvedAniboomUrl(selectedTranslation, epNum, defaultAniboom);
+              let aniboomIframe = getResolvedAniboomUrl(selectedTranslation, epNum);
               if (!aniboomIframe && resolvedStream?.provider === "aniboom" && resolvedStream?.url) {
                 aniboomIframe = resolvedStream.url;
               }
               if (!aniboomIframe) {
                 const trWithAniboom = translations.find((tr: any) => tr?.aniboom_iframe || (tr?.iframe && tr.iframe.includes("aniboom")));
                 if (trWithAniboom) {
-                  aniboomIframe = getResolvedAniboomUrl(trWithAniboom, epNum, defaultAniboom);
+                  aniboomIframe = getResolvedAniboomUrl(trWithAniboom, epNum);
                 }
               }
 

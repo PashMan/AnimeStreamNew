@@ -533,19 +533,26 @@ async function fetchAnimegoData(shikimoriId: string, searchTitle?: string): Prom
       for (const m of buttonMatches) {
         const fullTag = m[0];
         const rawPlayerUrl = m[1].replace(/&amp;/g, '&').replace(/\\/g, '');
-        const providerTitle = fullTag.match(/data-provider-title="([^"]+)"/i)?.[1];
-        const translationTitle = fullTag.match(/data-translation-title="([^"]+)"/i)?.[1];
+        const providerTitle = fullTag.match(/data-provider-title="([^"]+)"/i)?.[1] ||
+                              fullTag.match(/data-provider="([^"]+)"/i)?.[1];
+        const translationTitle = fullTag.match(/data-translation-title="([^"]+)"/i)?.[1] ||
+                                 fullTag.match(/data-dubbing-title="([^"]+)"/i)?.[1] ||
+                                 fullTag.match(/data-translation="([^"]+)"/i)?.[1] ||
+                                 fullTag.match(/data-voice="([^"]+)"/i)?.[1];
 
         if (providerTitle === 'AniBoom' || rawPlayerUrl.includes('aniboom')) {
           let cleanUrl = rawPlayerUrl;
           if (cleanUrl.startsWith('//')) cleanUrl = 'https:' + cleanUrl;
           
           if (translationTitle) {
-            aniboomMap.push({ 
-              voice: translationTitle, 
-              url: cleanUrl,
-              episodesCount: detectedEpisodes || undefined
-            });
+            const voiceClean = translationTitle.trim();
+            if (!aniboomMap.some(item => item.voice.toLowerCase() === voiceClean.toLowerCase())) {
+              aniboomMap.push({ 
+                voice: voiceClean, 
+                url: cleanUrl,
+                episodesCount: detectedEpisodes || undefined
+              });
+            }
           }
           if (!defaultAniboomUrl) {
             defaultAniboomUrl = cleanUrl;
@@ -1054,7 +1061,7 @@ app.get('/api/balancer', async (c) => {
             type: kt.type || 'voice',
             provider: 'Kodik',
             iframe: kt.iframe,
-            aniboom_iframe: aniboom_iframe || null,
+            aniboom_iframe: null,
             kodik_iframe: kt.iframe,
             episodes_count: maxEpisodes,
             last_episode: maxEpisodes,
