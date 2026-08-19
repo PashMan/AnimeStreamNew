@@ -2180,36 +2180,51 @@ app.get('/api/image/*', async (c) => {
       response = await fetch(desuUrl, { headers });
     }
 
-    // Second Fallback to Jikan API if Shikimori returns error (404, 403, etc.)
+    // Second Fallback to Kodik API if Shikimori returns error (404, 403, etc.)
     if (!response.ok) {
-      const animeIdMatch = imagePath.match(/\/(\d+)\.jpg$/);
+      const animeIdMatch = imagePath.match(/\/(\d+)\.(jpg|png|webp|jpeg)$/);
       if (animeIdMatch) {
         const animeId = animeIdMatch[1];
-        console.log(`[DEBUG] Image error (${response.status}) on Shikimori for ID: ${animeId}, trying Jikan fallback`);
-        
+        try {
+          const kodikRes = await fetch(`https://kodikapi.com/search?token=e3189966144beaa4a54c600125c1109a&shikimori_id=${animeId}&with_material_data=true`);
+          if (kodikRes.ok) {
+            const kData = await kodikRes.json() as any;
+            const poster = kData?.results?.[0]?.material_data?.poster_url || kData?.results?.[0]?.material_data?.anime_photos?.[0];
+            if (poster) {
+              const pUrl = poster.startsWith('//') ? `https:${poster}` : poster;
+              const pRes = await fetch(pUrl);
+              if (pRes.ok) {
+                return new Response(pRes.body, {
+                  status: 200,
+                  headers: {
+                    'Content-Type': pRes.headers.get('content-type') || 'image/jpeg',
+                    'Cache-Control': 'public, max-age=2592000',
+                    'X-Image-Source': 'Kodik-Fallback'
+                  }
+                });
+              }
+            }
+          }
+        } catch (_) {}
+
+        // Third Fallback to Jikan API
         try {
           let imageUrl = jikanImageCache.get(animeId);
           
           if (!imageUrl) {
-            // Jikan API has rate limits (3 requests per second)
             const jikanRes = await fetch(`https://api.jikan.moe/v4/anime/${animeId}`);
             if (jikanRes.ok) {
               const jikanData = await jikanRes.json() as any;
               imageUrl = jikanData.data?.images?.jpg?.large_image_url || jikanData.data?.images?.jpg?.image_url;
               if (imageUrl) {
                 jikanImageCache.set(animeId, imageUrl);
-              } else {
-                console.warn(`[DEBUG] Jikan found anime ${animeId} but no image URL`);
               }
-            } else {
-              console.error(`[DEBUG] Jikan API error for ${animeId}: ${jikanRes.status}`);
             }
           }
 
           if (imageUrl) {
             const fallbackRes = await fetch(imageUrl);
             if (fallbackRes.ok) {
-              console.log(`[DEBUG] Jikan fallback SUCCESS for ID: ${animeId}`);
               return new Response(fallbackRes.body, {
                 status: 200,
                 headers: {
@@ -2218,8 +2233,6 @@ app.get('/api/image/*', async (c) => {
                   'X-Image-Source': 'Jikan-Fallback'
                 }
               });
-            } else {
-              console.error(`[DEBUG] Jikan image fetch failed for ${imageUrl}: ${fallbackRes.status}`);
             }
           }
         } catch (e) {
@@ -2228,6 +2241,18 @@ app.get('/api/image/*', async (c) => {
       }
     }
     
+    if (!response.ok) {
+      const fallbackSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="900" viewBox="0 0 600 900"><rect width="600" height="900" fill="#0f172a"/><path d="M250 400 L350 400 L300 330 Z" fill="#334155"/><circle cx="300" cy="450" r="30" fill="#334155"/><text x="300" y="530" font-family="sans-serif" font-size="24" font-weight="600" fill="#64748b" text-anchor="middle">KamiAnime</text><text x="300" y="565" font-family="sans-serif" font-size="16" fill="#475569" text-anchor="middle">Обложка скоро появится</text></svg>`;
+      return new Response(fallbackSvg, {
+        status: 200,
+        headers: {
+          'Content-Type': 'image/svg+xml',
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'public, max-age=86400'
+        }
+      });
+    }
+
     return new Response(response.body, {
       status: response.status,
       headers: {

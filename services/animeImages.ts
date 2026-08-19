@@ -1,13 +1,28 @@
 
 import { getFromStorage, saveToStorage } from './cache';
 
-const SHIKIMORI_API = 'https://shikimori.one/api/animes';
+const SHIKIMORI_API = '/api/shikimori/animes';
 const CACHE_TTL = 180 * 24 * 60 * 60 * 1000; // 180 days long-term cache
 
 // Request queue
 const queue: { title: string; resolve: (value: string | null) => void; reject: (reason?: any) => void }[] = [];
 let isProcessing = false;
 let rateLimitResetTime = 0;
+
+const formatImageUrl = (url: string): string => {
+  if (!url) return '';
+  if (url.startsWith('/')) {
+    return `/api/image${url}`;
+  }
+  if (url.includes('shikimori.one')) {
+    const path = url.split('shikimori.one')[1];
+    return `/api/image${path}`;
+  }
+  if (url.startsWith('//')) {
+    return `https:${url}`;
+  }
+  return url;
+};
 
 const processQueue = async () => {
     if (isProcessing) return;
@@ -33,15 +48,15 @@ const processQueue = async () => {
         }
 
         try {
+            const cleanTitle = title.split('/')[0].trim();
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
+            const timeoutId = setTimeout(() => controller.abort(), 10000);
 
-            const response = await fetch(`${SHIKIMORI_API}?search=${encodeURIComponent(title)}&limit=1`, {
+            // 1. First try relative Shikimori search through proxy
+            const response = await fetch(`${SHIKIMORI_API}?search=${encodeURIComponent(cleanTitle)}&limit=1`, {
                 method: 'GET',
                 headers: {
-                    'Accept': 'application/json',
-                    // User-Agent is recommended by Shikimori
-                    'User-Agent': 'AnimeApp/1.0'
+                    'Accept': 'application/json'
                 },
                 signal: controller.signal
             });
@@ -50,72 +65,68 @@ const processQueue = async () => {
             if (response.status === 429) {
                 console.warn('Shikimori Rate Limit (429) - Backing off');
                 const retryAfter = response.headers.get('Retry-After');
-                const waitTime = retryAfter ? parseInt(retryAfter) * 1000 : 5000; // Default 5s
+                const waitTime = retryAfter ? parseInt(retryAfter) * 1000 : 5000;
                 rateLimitResetTime = Date.now() + waitTime;
-                // Don't shift, retry this item after wait
                 continue; 
             }
 
             queue.shift(); // Remove from queue
 
-            if (!response.ok) {
-                // Fallback to Kodik search for poster
-                try {
-                    const clean = title.split('/')[0].trim();
-                    const kRes = await fetch(`/api/media/search?title=${encodeURIComponent(clean)}`);
-                    if (kRes.ok) {
-                        const kData = await kRes.json();
-                        const poster = kData?.results?.[0]?.material_data?.poster_url;
-                        if (poster) {
-                            saveToStorage(`anime_cover_${title}`, poster);
-                            resolve(poster);
-                            continue;
-                        }
-                    }
-                } catch (_) {}
-                resolve(null);
-            } else {
+            let imageUrl: string | null = null;
+
+            if (response.ok) {
                 const data = await response.json();
-                if (data && data.length > 0 && data[0].image?.original && !data[0].image.original.includes('missing') && !data[0].image.original.includes('none.png')) {
-                    const imageUrl = `https://shikimori.one${data[0].image.original}`;
-                    saveToStorage(`anime_cover_${title}`, imageUrl);
-                    resolve(imageUrl);
-                } else {
-                    // Fallback to Kodik search for poster
-                    try {
-                        const clean = title.split('/')[0].trim();
-                        const kRes = await fetch(`/api/media/search?title=${encodeURIComponent(clean)}`);
-                        if (kRes.ok) {
-                            const kData = await kRes.json();
-                            const poster = kData?.results?.[0]?.material_data?.poster_url;
-                            if (poster) {
-                                saveToStorage(`anime_cover_${title}`, poster);
-                                resolve(poster);
-                                continue;
-                            }
-                        }
-                    } catch (_) {}
-                    resolve(null);
+                if (Array.isArray(data) && data.length > 0 && data[0].image?.original) {
+                    const orig = data[0].image.original;
+                    if (!orig.includes('missing') && !orig.includes('none.png')) {
+                        imageUrl = formatImageUrl(orig);
+                    }
                 }
             }
 
-        } catch (e: any) {
-            if (e.name !== 'AbortError' && !e.message?.includes('aborted')) {
-                console.error('Shikimori fetch error:', e);
+            // 2. Fallback to Kodik search if Shikimori has no valid image
+            if (!imageUrl) {
+                try {
+                    const kRes = await fetch(`/api/media/search?title=${encodeURIComponent(cleanTitle)}`);
+                    if (kRes.ok) {
+                        const kData = await kRes.json();
+                        const poster = kData?.results?.[0]?.material_data?.poster_url || kData?.results?.[0]?.material_data?.anime_photos?.[0];
+                        if (poster) {
+                            imageUrl = formatImageUrl(poster);
+                        }
+                    }
+                } catch (_) {}
             }
+
+            if (imageUrl) {
+                saveToStorage(`anime_cover_${title}`, imageUrl);
+            }
+            resolve(imageUrl);
+
+        } catch (e: any) {
             queue.shift(); // Remove failed item
             
-            // If network error, back off
-            if (e.name === 'TypeError' && e.message === 'Failed to fetch') {
-                 console.warn('Shikimori fetch failed. Backing off 5s.');
-                 rateLimitResetTime = Date.now() + 5000;
-            }
-            
+            // Fallback directly to Kodik on Shikimori network failure
+            try {
+                const cleanTitle = title.split('/')[0].trim();
+                const kRes = await fetch(`/api/media/search?title=${encodeURIComponent(cleanTitle)}`);
+                if (kRes.ok) {
+                    const kData = await kRes.json();
+                    const poster = kData?.results?.[0]?.material_data?.poster_url;
+                    if (poster) {
+                        const formatted = formatImageUrl(poster);
+                        saveToStorage(`anime_cover_${title}`, formatted);
+                        resolve(formatted);
+                        continue;
+                    }
+                }
+            } catch (_) {}
+
             resolve(null);
         }
 
-        // Strict delay between requests (1000ms = 60 req/min) to respect Shikimori's 90 req/min limit
-        await new Promise(r => setTimeout(r, 1000));
+        // Polite delay
+        await new Promise(r => setTimeout(r, 400));
     }
 
     isProcessing = false;

@@ -545,7 +545,7 @@ export const enrichAnimeWithKodik = async (anime: Anime, id: string, searchTitle
   return anime;
 };
 
-export const fetchAnimeDetails = async (id: string, includeScreenshots = true): Promise<Anime | null> => {
+export const fetchAnimeDetails = async (id: string, includeScreenshots = false): Promise<Anime | null> => {
   if (!id) return null;
   const cacheKey = `anime_details_v4_${id}`;
   const cached = getFromStorage(cacheKey);

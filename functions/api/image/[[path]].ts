@@ -68,14 +68,50 @@ export const onRequest = async (context: any) => {
       return missResponse;
     }
 
-    // Fallback to Jikan API if Shikimori returns error (404, 403, etc.)
-    const animeIdMatch = path.match(/\/(\d+)\.jpg$/);
+    // 3. Fallback to desu.shikimori.one
+    if (!fetchResponse.ok) {
+      try {
+        const desuResponse = await fetch(`https://desu.shikimori.one${path}${url.search}`, { headers });
+        if (desuResponse.ok) {
+          const newHeaders = new Headers(desuResponse.headers);
+          newHeaders.set('Access-Control-Allow-Origin', '*');
+          newHeaders.set('Cache-Control', 'public, max-age=2592000, s-maxage=2592000');
+          response = new Response(desuResponse.body, { status: 200, headers: newHeaders });
+          context.waitUntil(cache.put(cacheKey, response.clone()));
+          return response;
+        }
+      } catch (_) {}
+    }
+
+    // 4. Fallback to Kodik search for poster
+    const animeIdMatch = path.match(/\/(\d+)\.(jpg|png|webp|jpeg)$/);
     if (animeIdMatch) {
       const animeId = animeIdMatch[1];
       try {
+        const kodikRes = await fetch(`https://kodikapi.com/search?token=e3189966144beaa4a54c600125c1109a&shikimori_id=${animeId}&with_material_data=true`);
+        if (kodikRes.ok) {
+          const kData: any = await kodikRes.json();
+          const poster = kData?.results?.[0]?.material_data?.poster_url || kData?.results?.[0]?.material_data?.anime_photos?.[0];
+          if (poster) {
+            const pUrl = poster.startsWith('//') ? `https:${poster}` : poster;
+            const pRes = await fetch(pUrl);
+            if (pRes.ok) {
+              const newHeaders = new Headers(pRes.headers);
+              newHeaders.set('Access-Control-Allow-Origin', '*');
+              newHeaders.set('Cache-Control', 'public, max-age=2592000, s-maxage=2592000');
+              response = new Response(pRes.body, { status: 200, headers: newHeaders });
+              context.waitUntil(cache.put(cacheKey, response.clone()));
+              return response;
+            }
+          }
+        }
+      } catch (_) {}
+
+      // 5. Fallback to Jikan API
+      try {
         const jikanRes = await fetch(`https://api.jikan.moe/v4/anime/${animeId}`);
         if (jikanRes.ok) {
-          const jikanData = await jikanRes.json();
+          const jikanData: any = await jikanRes.json();
           const imageUrl = jikanData?.data?.images?.jpg?.large_image_url || jikanData?.data?.images?.jpg?.image_url;
           if (imageUrl) {
             const fallbackImageRes = await fetch(imageUrl, {
@@ -89,16 +125,12 @@ export const onRequest = async (context: any) => {
               newHeaders.set('Cache-Control', 'public, max-age=2592000, s-maxage=2592000');
               
               response = new Response(fallbackImageRes.body, {
-                status: fallbackImageRes.status,
-                statusText: fallbackImageRes.statusText,
+                status: 200,
                 headers: newHeaders,
               });
               
               context.waitUntil(cache.put(cacheKey, response.clone()));
-              
-              const missResponse = new Response(response.body, response);
-              missResponse.headers.set('X-Image-Cache', 'JIKAN-FALLBACK');
-              return missResponse;
+              return response;
             }
           }
         }
@@ -107,11 +139,15 @@ export const onRequest = async (context: any) => {
       }
     }
 
-    // If Shikimori returned an error (like 404 or 429), don't cache it for long
-    return new Response(fetchResponse.body, {
-      status: fetchResponse.status,
-      statusText: fetchResponse.statusText,
-      headers: { 'Cache-Control': 'public, max-age=60' } // Cache errors for only 1 minute
+    // 6. If no image found anywhere, return a clean SVG placeholder image (200 OK) so browser displays nicely without broken image icon
+    const fallbackSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="900" viewBox="0 0 600 900"><rect width="600" height="900" fill="#0f172a"/><path d="M250 400 L350 400 L300 330 Z" fill="#334155"/><circle cx="300" cy="450" r="30" fill="#334155"/><text x="300" y="530" font-family="sans-serif" font-size="24" font-weight="600" fill="#64748b" text-anchor="middle">KamiAnime</text><text x="300" y="565" font-family="sans-serif" font-size="16" fill="#475569" text-anchor="middle">Обложка скоро появится</text></svg>`;
+    return new Response(fallbackSvg, {
+      status: 200,
+      headers: {
+        'Content-Type': 'image/svg+xml',
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'public, max-age=86400'
+      }
     });
 
   } catch (e) {
