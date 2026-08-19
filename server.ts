@@ -4467,9 +4467,19 @@ app.get('/*', async (c) => {
   }
 
   // SPA Fallback for HTML navigation routes
-  const indexPath = path.join(process.cwd(), 'dist', 'index.html');
-  if (fs.existsSync(indexPath)) {
-    const html = await fs.promises.readFile(indexPath, 'utf-8');
+  const distIndexPath = path.join(process.cwd(), 'dist', 'index.html');
+  const rootIndexPath = path.join(process.cwd(), 'index.html');
+
+  if (fs.existsSync(distIndexPath)) {
+    const html = await fs.promises.readFile(distIndexPath, 'utf-8');
+    c.header('Content-Type', 'text/html; charset=utf-8');
+    c.header('Cache-Control', 'no-cache, no-store, must-revalidate, proxy-revalidate, max-age=0');
+    c.header('Pragma', 'no-cache');
+    c.header('Expires', '0');
+    c.header('Surrogate-Control', 'no-store');
+    return c.html(html);
+  } else if (fs.existsSync(rootIndexPath)) {
+    const html = await fs.promises.readFile(rootIndexPath, 'utf-8');
     c.header('Content-Type', 'text/html; charset=utf-8');
     c.header('Cache-Control', 'no-cache, no-store, must-revalidate, proxy-revalidate, max-age=0');
     c.header('Pragma', 'no-cache');
