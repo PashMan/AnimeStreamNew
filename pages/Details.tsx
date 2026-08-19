@@ -60,6 +60,7 @@ import { useSlugBlocks } from "../store/slugBlocks";
 import { useDmcaBlocks } from "../store/dmcaBlocks";
 import { filterProfanity } from "../utils/profanity";
 import { getCleanPlaylistUrl } from "../utils/media";
+import { generateAnimeSEO } from "../utils/seoGenerator";
 
 const formatWorkerEmbedUrl = (rawEmbedUrl: string, epNum: number) => {
   try {
@@ -177,7 +178,6 @@ const getResolvedIframeUrl = (t: any, epNum: number, defaultUrl?: string | null)
 
   return null;
 };
-import { generateAnimeSEO } from "../utils/seoGenerator";
 
 const Details: React.FC = () => {
   const params = useParams<{ id: string; "*": string }>();
@@ -186,7 +186,6 @@ const Details: React.FC = () => {
   const paramEpisode = starParam?.startsWith("episode/")
     ? starParam.split("episode/")[1]?.split("/")[0]
     : undefined;
-  // Extract numeric ID from the start of the string (e.g. "123-anime-slug" -> "123")
   const id = paramId ? parseInt(paramId).toString() : undefined;
 
   const { slugBlocks } = useSlugBlocks();
@@ -199,8 +198,7 @@ const Details: React.FC = () => {
   const similarRef = useRef<HTMLDivElement>(null);
 
   const [anime, setAnime] = useState<Anime | null>(null);
-  const [selectedPlayer, setSelectedPlayer] =
-    useState<string>("KamiPlayer (1080p)");
+  const [selectedPlayer, setSelectedPlayer] = useState<string>("KamiPlayer (1080p)");
   const [players, setPlayers] = useState<
     { name: string; iframe: string | null; isCustom?: boolean }[]
   >([{ name: "KamiPlayer (1080p)", iframe: null, isCustom: true }]);
@@ -218,9 +216,7 @@ const Details: React.FC = () => {
   const [hasFetchedPlayers, setHasFetchedPlayers] = useState(false);
   const [isPlayersLoading, setIsPlayersLoading] = useState(false);
   const [playersError, setPlayersError] = useState<string | null>(null);
-  const [related, setRelated] = useState<{ relation: string; anime: Anime }[]>(
-    [],
-  );
+  const [related, setRelated] = useState<{ relation: string; anime: Anime }[]>([]);
   const [similar, setSimilar] = useState<Anime[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [comments, setComments] = useState<Comment[]>([]);
@@ -246,7 +242,6 @@ const Details: React.FC = () => {
   const [epSearchVal, setEpSearchVal] = useState("");
   const [isNotifierOpen, setIsNotifierOpen] = useState(false);
 
-  // Stream Resolution State for Aniboom
   const [resolvedStream, setResolvedStream] = useState<{
     url: string;
     streamType: "dash" | "hls";
@@ -276,7 +271,6 @@ const Details: React.FC = () => {
     return getCleanTitle(title);
   };
 
-  // Log active player tab selection to console
   useEffect(() => {
     if (selectedPlayer) {
       console.log(
@@ -297,7 +291,7 @@ const Details: React.FC = () => {
     const isKimiNoNaWa = id === "32281";
     const isNative1080 = isSuzume || isWeathering || isGardenOfWords || isKimiNoNaWa;
 
-    if ((selectedPlayer !== "KamiPlayer (1080p)" && selectedPlayer !== "Aniboom") || isNative1080) {
+    if (isNative1080) {
       setResolvedStream(null);
       setIsResolvingStream(false);
       return;
@@ -324,7 +318,6 @@ const Details: React.FC = () => {
       setStreamResolutionError(null);
 
       try {
-        // Если embedToResolve УЖЕ является готовым прокси или прямым потоком (.mpd / .m3u8 / /api/proxy-4k)
         if (
           embedToResolve.includes("/api/proxy-4k") ||
           embedToResolve.includes(".mpd") ||
@@ -337,12 +330,12 @@ const Details: React.FC = () => {
               provider: "aniboom"
             });
             setIsResolvingStream(false);
+            setSelectedPlayer("KamiPlayer (1080p)");
             console.log(`🔥 [KamiPlayer 1080p] Прямой поток AniBoom активирован:`, embedToResolve);
             return;
           }
         }
 
-        // 2. Резолвим HTML AniBoom в чистый видеопоток .m3u8 / .mpd
         const res = await fetch(`/api/media/aniboom/resolve?embed_url=${encodeURIComponent(embedToResolve)}`, {
           signal: abortController.signal
         });
@@ -360,6 +353,7 @@ const Details: React.FC = () => {
             provider: "aniboom"
           });
           setIsResolvingStream(false);
+          setSelectedPlayer("KamiPlayer (1080p)");
           console.log(`🔥 [KamiPlayer 1080p] AniBoom успешно активирован:`, data.url);
           return;
         }
@@ -370,11 +364,7 @@ const Details: React.FC = () => {
           if (isCurrent) {
             setIsResolvingStream(false);
             setResolvedStream(null);
-            // Мягкий откат на Kodik без спама в консоль
-            const kodik = players.find((p) => p.name === "Kodik");
-            if (kodik) {
-              setSelectedPlayer("Kodik");
-            }
+            setSelectedPlayer("Kodik");
           }
         }
       }
@@ -386,9 +376,8 @@ const Details: React.FC = () => {
       isCurrent = false;
       abortController.abort();
     };
-  }, [selectedPlayer, paramEpisode, selectedTranslation, id, players]);
+  }, [paramEpisode, selectedTranslation, id]);
 
-  // Auto scroll to active episode on change
   useEffect(() => {
     const activeEp = paramEpisode || "1";
     const timer = setTimeout(() => {
@@ -400,7 +389,6 @@ const Details: React.FC = () => {
     return () => clearTimeout(timer);
   }, [paramEpisode]);
 
-  // Load watched history on mount/anime change
   useEffect(() => {
     if (paramId) {
       try {
@@ -430,7 +418,6 @@ const Details: React.FC = () => {
     }
   };
 
-  // Listen to message events from iframes (PlayerJS API / Kodik) and CustomPlayer custom events
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       try {
@@ -513,7 +500,6 @@ const Details: React.FC = () => {
     }
   }, [roomId]);
 
-  // Redirect to episode 1 if no episode is selected in URL to keep visual match across players
   useEffect(() => {
     if (!paramEpisode && id && anime) {
       const totalEpisodes = (selectedTranslation?.last_episode || selectedTranslation?.episodes_count) || anime.episodesAired || anime.episodes || 1;
@@ -539,13 +525,11 @@ const Details: React.FC = () => {
     );
   };
 
-  // Lazy loading states
   const [shouldLoadRelated, setShouldLoadRelated] = useState(false);
   const [shouldLoadSimilar, setShouldLoadSimilar] = useState(false);
   const [shouldLoadReviews, setShouldLoadReviews] = useState(false);
   const [shouldLoadComments, setShouldLoadComments] = useState(false);
 
-  // Share feature
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [friendsList, setFriendsList] = useState<User[]>([]);
   const [isSharing, setIsSharing] = useState(false);
@@ -593,14 +577,12 @@ const Details: React.FC = () => {
     if (!selectedPlayer) return;
     const ep = paramEpisode || "1";
     const tr = selectedTranslation?.title || "По умолчанию";
-    if (selectedPlayer === "KamiPlayer") {
-      console.log(`🎬 [Player Engine] ACTIVE PLAYER: KamiPlayer (Кастомный Artplayer) | Источник: Aniboom HLS Stream Parser | Серия: ${ep} | Озвучка: ${tr}`);
+    if (selectedPlayer === "KamiPlayer (1080p)") {
+      console.log(`🎬 [Player Engine] ACTIVE PLAYER: KamiPlayer (1080p) | Источник: AniBoom HLS | Серия: ${ep} | Озвучка: ${tr}`);
     } else if (selectedPlayer === "Collaps") {
-      console.log(`🎬 [Player Engine] ACTIVE PLAYER: Collaps Embed (/api/collaps/embed) | Источник: Collaps | Серия: ${ep} | Озвучка: ${tr}`);
+      console.log(`🎬 [Player Engine] ACTIVE PLAYER: Collaps Embed | Источник: Collaps | Серия: ${ep} | Озвучка: ${tr}`);
     } else if (selectedPlayer === "Kodik") {
       console.log(`🎬 [Player Engine] ACTIVE PLAYER: Kodik Standard Iframe | Источник: Kodik | Серия: ${ep} | Озвучка: ${tr}`);
-    } else {
-      console.log(`🎬 [Player Engine] ACTIVE PLAYER: ${selectedPlayer} | Серия: ${ep} | Озвучка: ${tr}`);
     }
   }, [selectedPlayer, selectedTranslation, paramEpisode]);
 
@@ -609,7 +591,6 @@ const Details: React.FC = () => {
     const loadDetails = async () => {
       if (!id) return;
 
-      // If we already loaded this anime, only update user-specific data if user changed
       if (lastLoadedId.current === id) {
         if (user?.email) {
           db.getProfile(user.email).then((profile) => {
@@ -646,7 +627,6 @@ const Details: React.FC = () => {
 
       lastLoadedId.current = id;
 
-      // Reset states
       setIsMainLoading(true);
       setError(null);
       setIsRelatedLoading(true);
@@ -665,22 +645,17 @@ const Details: React.FC = () => {
       setHasFetchedPlayers(false);
       setSelectedPlayer("KamiPlayer (1080p)");
 
-      // Reset lazy load triggers
       setShouldLoadRelated(false);
       setShouldLoadSimilar(false);
       setShouldLoadReviews(false);
       setShouldLoadComments(false);
 
       try {
-        // 1. Critical Path: Main Details
         let data = await fetchAnimeDetails(id);
 
         if (!isMounted) return;
 
         if (!data) {
-          console.warn(
-            `[Details] API failed for ID ${id}, using fallback mock data`,
-          );
           const mock = MOCK_ANIME.find((a) => a.id === id) || MOCK_ANIME[0];
           data = {
             ...mock,
@@ -705,7 +680,6 @@ const Details: React.FC = () => {
         setAnime(data);
         setIsMainLoading(false);
 
-        // Fetch DMCA blocks
         db.getDmcaBlocks()
           .then((blocks) => {
             if (
@@ -718,7 +692,6 @@ const Details: React.FC = () => {
           })
           .catch(console.error);
 
-        // Fetch Slug blocks
         db.getSlugBlocks()
           .then((blocks) => {
             if (
@@ -732,7 +705,6 @@ const Details: React.FC = () => {
           })
           .catch(console.error);
 
-        // User specific data (Favorites/Watched) - can be done in parallel with lazy load
         if (user?.email) {
           Promise.all([db.getFavorites(user.email), db.getProfile(user.email)])
             .then(([favs, profile]) => {
@@ -771,7 +743,6 @@ const Details: React.FC = () => {
     };
   }, [id, user?.email]);
 
-  // Lazy Load Effects
   useEffect(() => {
     if (shouldLoadRelated && id && related.length === 0) {
       fetchRelatedAnimes(id)
@@ -852,7 +823,6 @@ const Details: React.FC = () => {
     }
   }, [shouldLoadComments, id]);
 
-  // Listen to Kodik player messages to update URL when episode changes and auto-update list status
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       try {
@@ -917,7 +887,6 @@ const Details: React.FC = () => {
 
         if (pEpisode) {
           let newUrl = `/anime/${id}/episode/${pEpisode}`;
-          // Preserve query parameters, especially ?room=
           if (window.location.search) {
             newUrl += window.location.search;
           }
@@ -926,7 +895,6 @@ const Details: React.FC = () => {
           }
         }
 
-        // Automatically update the user lists based on watch activity
         if (user?.email && anime && id) {
           const totalEpisodes = (selectedTranslation?.last_episode || selectedTranslation?.episodes_count) || anime.episodesAired || anime.episodes || 0;
 
@@ -944,7 +912,6 @@ const Details: React.FC = () => {
           if (isEnded && currentEpisodeStr && totalEpisodes > 0) {
             const epNum = parseInt(currentEpisodeStr.toString());
 
-            // Check if it's the final episode
             if (epNum === totalEpisodes && animeStatus !== "watched") {
               setAnimeStatus("watched");
               setIsWatched(true);
@@ -952,8 +919,6 @@ const Details: React.FC = () => {
                 console.error,
               );
             } else {
-              // Just finished an intermediate episode
-              // Update Shiki with the new episode count!
               fetch("/api/shikimori/sync", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -967,14 +932,12 @@ const Details: React.FC = () => {
             }
           }
         }
-      } catch (e) {
-        // Ignore parsing errors
-      }
+      } catch (e) {}
     };
 
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, [id, user?.email, anime, animeStatus]);
+  }, [id, user?.email, anime, animeStatus, selectedTranslation]);
 
   const handleFavorite = async () => {
     if (!user?.email) {
@@ -1080,12 +1043,10 @@ const Details: React.FC = () => {
             year.toString(),
           );
 
-          // Keep Kodik available for selection and smooth fallback
           const playersList = data?.players || [];
           const translationsList = data?.kodik_translations || [];
 
           if (playersList.length > 0) {
-            // Append episode to iframe URLs if paramEpisode exists
             if (paramEpisode) {
               playersList.forEach((p) => {
                 if (p.iframe) {
@@ -1116,9 +1077,8 @@ const Details: React.FC = () => {
             const isCurrentPlayerValid = selectedPlayer && playersList.some((p) => p.name === selectedPlayer);
             
             if (isCurrentPlayerValid) {
-              // Keep currently selected player to prevent jarring resets on episode/translation change
+              // Сохраняем текущий плеер
             } else if (isTv && kodikPlayer) {
-              // TV browsers often prefer standard iframe playback for maximum hardware acceleration
               setSelectedPlayer("Kodik");
             } else if (customPlayer) {
               setSelectedPlayer(customPlayer.name);
@@ -1246,7 +1206,6 @@ const Details: React.FC = () => {
     );
   }
 
-  // Dynamic video URL construction for SEO / Schema
   let schemaVideoUrl = "";
   if (anime) {
     const isSuzume = id === "50594" || id === "62568";
@@ -1281,7 +1240,6 @@ const Details: React.FC = () => {
     }
   }
 
-  // Episode metadata generator for Crunchyroll-styled widescreen list
   const getEpisodeMetadata = (num: number, animeTitle: string) => {
     const titles = [
       "Прибытие и новые знакомства",
@@ -1395,7 +1353,6 @@ const Details: React.FC = () => {
       </div>
 
       <div className="max-w-[1600px] 3xl:max-w-[2000px] 4xl:max-w-[2500px] 5xl:max-w-[3200px] mx-auto px-4 sm:px-6 lg:px-8 3xl:px-16 relative z-10 pt-24 md:pt-32">
-        {/* Breadcrumbs */}
         <nav className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400 mb-8 overflow-x-auto hide-scrollbar whitespace-nowrap">
           <Link
             to="/"
@@ -1621,7 +1578,6 @@ const Details: React.FC = () => {
               </div>
             </section>
 
-            {/* SEO Long-Tail Promotion Block (НЧ-оптимизация) */}
             <section className="bg-gradient-to-br from-primary/10 via-white/5 to-transparent p-8 md:p-10 rounded-[2.5rem] border border-primary/25 shadow-xl backdrop-blur-sm space-y-4">
               <h3 className="text-xs font-black text-slate-200 uppercase tracking-widest flex items-center gap-2.5">
                 <span className="w-1.5 h-6 bg-primary rounded-full inline-block animate-pulse" /> Где смотреть аниме в 4К и без рекламы казино?
@@ -1690,7 +1646,6 @@ const Details: React.FC = () => {
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2.5">
-                      {/* Toggle Voice Channel */}
                       <button
                         onClick={toggleVoiceMute}
                         className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer border ${
@@ -1710,7 +1665,6 @@ const Details: React.FC = () => {
                         )}
                       </button>
 
-                      {/* Copy Link with reactive check icon and state */}
                       <button
                         onClick={() => {
                           navigator.clipboard.writeText(window.location.href);
@@ -1730,7 +1684,6 @@ const Details: React.FC = () => {
                         )}
                       </button>
 
-                      {/* Disconnect Room Button */}
                       <button
                         onClick={() => {
                           setRoomId(null);
@@ -1750,7 +1703,6 @@ const Details: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Joined users list */}
                   <div>
                     <span className="text-[10px] font-bold tracking-wider uppercase text-slate-400 block mb-2 pl-1">
                       Участники в комнате ({joinedUsers.length}):
@@ -1817,7 +1769,6 @@ const Details: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Host watch location display for viewers */}
                   {role === "viewer" && hostState && (
                     <div className="bg-white/5 border border-white/5 rounded-xl p-3 text-xs text-slate-400 flex items-center justify-between">
                       <span className="flex items-center gap-1.5">
@@ -1839,7 +1790,6 @@ const Details: React.FC = () => {
                     </div>
                   )}
 
-                  {/* Micro permissions warnings */}
                   {voiceError && (
                     <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-3 flex items-start gap-2.5 text-xs text-yellow-400 animate-headShake">
                       <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
@@ -1853,7 +1803,6 @@ const Details: React.FC = () => {
               )}
 
               <div className="flex flex-col gap-6">
-                {/* Player Switcher Bar (Tabs) */}
                 {players.length > 0 && (
                   <div className="flex items-center justify-between gap-3 flex-wrap">
                     <div className="flex items-center gap-2 overflow-x-auto pb-1 max-w-full custom-scrollbar">
@@ -1946,19 +1895,10 @@ const Details: React.FC = () => {
                                     "Оригинал",
                                   ]
                                 : undefined;
+                            } else if (resolvedStream && resolvedStream.url) {
+                              customSrc = resolvedStream.url;
                             } else {
-                              // ИСПРАВЛЕНИЕ: если поток AniBoom уже получен, отдаем его НАПРЯМУЮ в плеер!
-                              const epNum = parseInt(paramEpisode || "1") || 1;
-                              const defaultKodik = players.find((p) => p.name === "Kodik")?.iframe;
-                              const kodikIframeUrl = getResolvedKodikUrl(selectedTranslation, epNum, defaultKodik);
-
-                              if (resolvedStream && resolvedStream.url) {
-                                customSrc = resolvedStream.url;
-                              } else if (kodikIframeUrl) {
-                                customSrc = getCleanPlaylistUrl(kodikIframeUrl, null, null, false);
-                              } else {
-                                customSrc = "";
-                              }
+                              customSrc = "";
                             }
 
                             const episodesCount = selectedTranslation?.last_episode || selectedTranslation?.episodes_count || (anime
@@ -2089,12 +2029,10 @@ const Details: React.FC = () => {
                   )}
                 </div>
 
-                {/* Voice Translations & Clean Episode List Widget (Hidden when Kodik iframe is active as Kodik iframe has built-in selectors) */}
+                {/* Voice Translations & Clean Episode List Widget */}
                 {anime && selectedPlayer !== "Kodik" && !selectedPlayer?.toLowerCase().includes("kodik") && (
                   <div className="bg-[#1c1d21]/60 border border-white/5 p-5 md:p-6 rounded-[1.5rem] md:rounded-[2rem] flex flex-col gap-6 font-sans shadow-xl backdrop-blur-sm">
-                    {/* Controls Row: Voice/Translation selector & Search input */}
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-white/5">
-                      {/* Collapsible Dropdown for Voice Translations */}
                       <div className="relative flex-1 max-w-md">
                         {(() => {
                           const activeT = selectedTranslation || translations[0];
@@ -2181,7 +2119,6 @@ const Details: React.FC = () => {
                         )}
                       </div>
 
-                      {/* Episode Search Filter */}
                       {(() => {
                         const totalEps = (selectedTranslation?.last_episode || selectedTranslation?.episodes_count) || anime.episodesAired || anime.episodes || 1;
                         if (totalEps > 1) {
@@ -2216,7 +2153,6 @@ const Details: React.FC = () => {
                       })()}
                     </div>
 
-                    {/* EPISODES LIST: Compact format "[Number] - [Title]" with truncation */}
                     <div className="space-y-3">
                       <div className="flex items-center justify-between text-xs font-black uppercase tracking-wider text-slate-400">
                         <span>Список серий ({(selectedTranslation?.last_episode || selectedTranslation?.episodes_count) || anime.episodesAired || anime.episodes || 1})</span>
@@ -2292,7 +2228,6 @@ const Details: React.FC = () => {
               const defaultAniboom = players.find((p) => p.name === "Aniboom")?.iframe;
               const defaultKodik = players.find((p) => p.name === "Kodik")?.iframe;
 
-              // 1. AniBoom URL (Prioritized for 1080p Ultra HD)
               let aniboomIframe = getResolvedAniboomUrl(selectedTranslation, epNum);
               if (!aniboomIframe && resolvedStream?.provider === "aniboom" && resolvedStream?.url) {
                 aniboomIframe = resolvedStream.url;
@@ -2304,7 +2239,6 @@ const Details: React.FC = () => {
                 }
               }
 
-              // 2. Kodik URL (Fallback for 720p HD)
               const kodikIframe = getResolvedKodikUrl(selectedTranslation, epNum, defaultKodik);
 
               const primaryUrl = aniboomIframe || kodikIframe || "";
@@ -2328,7 +2262,6 @@ const Details: React.FC = () => {
           </div>
         </div>
 
-        {/* Content after player aligned to right column */}
         <div className="grid grid-cols-1 lg:grid-cols-[300px_minmax(0,1fr)] gap-12 mt-16">
           <div className="hidden lg:block"></div>
           <div className="space-y-16">
@@ -2645,7 +2578,6 @@ const Details: React.FC = () => {
         </div>
       </div>
 
-      {/* Room Instruction Modal */}
       {isRoomInstructionOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-surface border border-white/10 rounded-3xl p-6 md:p-8 max-w-md w-full shadow-2xl relative overflow-hidden animate-in zoom-in-95 duration-300">
@@ -2728,7 +2660,6 @@ const Details: React.FC = () => {
         </div>
       )}
 
-       {/* Download Series Modal */}
       {isDownloadModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
           <div className="bg-[#111827] border border-white/10 rounded-3xl p-6 md:p-8 max-w-2xl w-full shadow-2xl relative overflow-hidden animate-in zoom-in-95 duration-300">
@@ -2755,7 +2686,6 @@ const Details: React.FC = () => {
               const defaultAniboom = players.find((p) => p.name === "Aniboom")?.iframe;
               const defaultKodik = players.find((p) => p.name === "Kodik")?.iframe;
 
-              // 1. AniBoom URL (Prioritized for 1080p Ultra HD)
               let aniboomIframe = getResolvedAniboomUrl(selectedTranslation, epNum);
               if (!aniboomIframe && resolvedStream?.provider === "aniboom" && resolvedStream?.url) {
                 aniboomIframe = resolvedStream.url;
@@ -2767,7 +2697,6 @@ const Details: React.FC = () => {
                 }
               }
 
-              // 2. Kodik URL (Fallback for 720p HD)
               const kodikIframe = getResolvedKodikUrl(selectedTranslation, epNum, defaultKodik);
 
               const primaryUrl = aniboomIframe || kodikIframe || "";
@@ -2812,7 +2741,6 @@ const Details: React.FC = () => {
         </div>
       )}
 
-      {/* Share Modal */}
       {isShareModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-surface border border-white/10 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl animate-in zoom-in-95 duration-300">
