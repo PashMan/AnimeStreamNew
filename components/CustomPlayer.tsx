@@ -70,8 +70,6 @@ class AnimeWebGL1080p {
   public isActive = false;
   private targetMode: number = 0; // 0 = Auto (1080p -> 4K 2160p, 720p -> 1080p), 2160 = 4K, 1080 = 1080p, -1 = Off
   private sharpness: number = 0.50; // AMD CAS sharpness
-  public splitEnabled: boolean = true;
-  public splitPos: number = 0.5; // 0.0 .. 1.0
   public strength: number = 1.25; // 1.0 .. 2.5
 
   // Framebuffer objects for multi-pass pipeline
@@ -422,7 +420,7 @@ class AnimeWebGL1080p {
       }
     `;
 
-    // Pass 4: WebGL2 Anime4K CAS + Sobel Edge + Line Thinning + Split Mode
+    // Pass 4: WebGL2 Anime4K CAS + Sobel Edge + Line Thinning
     const fsCasRescaleSource = this.isWebGL2 ? `#version 300 es
       precision highp float;
       in vec2 v_texCoord;
@@ -431,8 +429,6 @@ class AnimeWebGL1080p {
       uniform sampler2D u_texture;
       uniform vec2 u_resolution;
       uniform float u_strength;
-      uniform float u_splitPos;
-      uniform float u_splitEnabled;
 
       float luma(vec3 color) {
         return dot(color, vec3(0.299, 0.587, 0.114));
@@ -440,22 +436,6 @@ class AnimeWebGL1080p {
 
       void main() {
         vec3 orig = texture(u_texture, v_texCoord).rgb;
-
-        // Ultra-crisp divider separator line with subtle glow
-        float distFromSplit = abs(v_texCoord.x - u_splitPos) * u_resolution.x;
-        if (u_splitEnabled > 0.5 && distFromSplit < 1.25) {
-          fragColor = vec4(1.0, 1.0, 1.0, 1.0);
-          return;
-        } else if (u_splitEnabled > 0.5 && distFromSplit < 3.0) {
-          fragColor = vec4(0.545, 0.361, 0.965, 1.0);
-          return;
-        }
-
-        if (u_splitEnabled > 0.5 && v_texCoord.x < u_splitPos) {
-          fragColor = vec4(orig, 1.0);
-          return;
-        }
-
         vec2 step = 1.0 / u_resolution;
 
         vec3 c  = orig;
@@ -495,8 +475,6 @@ class AnimeWebGL1080p {
       uniform sampler2D u_texture;
       uniform vec2 u_resolution;
       uniform float u_strength;
-      uniform float u_splitPos;
-      uniform float u_splitEnabled;
 
       float luma(vec3 color) {
         return dot(color, vec3(0.299, 0.587, 0.114));
@@ -504,22 +482,6 @@ class AnimeWebGL1080p {
 
       void main() {
         vec3 orig = texture2D(u_texture, v_texCoord).rgb;
-
-        // Ultra-crisp divider separator line with subtle glow
-        float distFromSplit = abs(v_texCoord.x - u_splitPos) * u_resolution.x;
-        if (u_splitEnabled > 0.5 && distFromSplit < 1.25) {
-          gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
-          return;
-        } else if (u_splitEnabled > 0.5 && distFromSplit < 3.0) {
-          gl_FragColor = vec4(0.545, 0.361, 0.965, 1.0);
-          return;
-        }
-
-        if (u_splitEnabled > 0.5 && v_texCoord.x < u_splitPos) {
-          gl_FragColor = vec4(orig, 1.0);
-          return;
-        }
-
         vec2 step = 1.0 / u_resolution;
 
         vec3 c  = orig;
@@ -598,11 +560,6 @@ class AnimeWebGL1080p {
       new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]),
       gl.STATIC_DRAW,
     );
-  }
-
-  public setSplitMode(enabled: boolean, pos: number = 0.5) {
-    this.splitEnabled = enabled;
-    this.splitPos = Math.max(0.0, Math.min(1.0, pos));
   }
 
   public setStrength(val: number) {
@@ -836,7 +793,7 @@ class AnimeWebGL1080p {
     this.drawQuad(this.upscale2xProgram);
 
     // -------------------------------------------------------------
-    // PASS 4: WebGL2 Anime4K CAS, Sobel Edge, Line Thinning & Split Screen
+    // PASS 4: WebGL2 Anime4K CAS + Sobel Edge Detection + Line Thinning
     // -------------------------------------------------------------
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, renderW, renderH);
@@ -846,8 +803,6 @@ class AnimeWebGL1080p {
     gl.uniform1i(gl.getUniformLocation(this.casRescaleProgram, "u_texture"), 0);
     gl.uniform2f(gl.getUniformLocation(this.casRescaleProgram, "u_resolution"), renderW, renderH);
     gl.uniform1f(gl.getUniformLocation(this.casRescaleProgram, "u_strength"), this.strength || 1.25);
-    gl.uniform1f(gl.getUniformLocation(this.casRescaleProgram, "u_splitPos"), this.splitPos || 0.5);
-    gl.uniform1f(gl.getUniformLocation(this.casRescaleProgram, "u_splitEnabled"), this.splitEnabled ? 1.0 : 0.0);
     this.drawQuad(this.casRescaleProgram);
   }
 
@@ -924,43 +879,6 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [activeSubmenu, setActiveSubmenu] = useState<"main" | "quality" | "speed">("main");
     const [isFullscreen, setIsFullscreen] = useState(false);
-
-    // Split-screen comparison state for Anime4K WebGL2 (Always active)
-    const [isSplitScreenActive, setIsSplitScreenActive] = useState(true);
-    const [splitPos, setSplitPos] = useState(0.5);
-    const isDraggingSplitRef = useRef(false);
-
-    const handleSplitPointerDown = (e: React.PointerEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      isDraggingSplitRef.current = true;
-      (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    };
-
-    const handleSplitPointerMove = (e: React.PointerEvent) => {
-      if (!isDraggingSplitRef.current || !containerRef.current) return;
-      const rect = containerRef.current.getBoundingClientRect();
-      const x = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
-      const newPos = x / rect.width;
-      setSplitPos(newPos);
-      if (webglInstanceRef.current) {
-        webglInstanceRef.current.setSplitMode(true, newPos);
-      }
-    };
-
-    const handleSplitPointerUp = (e: React.PointerEvent) => {
-      isDraggingSplitRef.current = false;
-      try {
-        (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-      } catch (_) {}
-    };
-
-    const toggleSplitScreen = () => {
-      setIsSplitScreenActive(true);
-      if (webglInstanceRef.current) {
-        webglInstanceRef.current.setSplitMode(true, splitPos);
-      }
-    };
 
     useEffect(() => {
       const handleFullscreenChange = () => {
@@ -1268,75 +1186,6 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
           fullscreen: true,
           fullscreenWeb: true,
           miniProgressBar: true,
-          layers: [
-            {
-              name: "anime4k-split-layer",
-              html: `
-                <div class="art-split-container" style="position: absolute; inset: 0; pointer-events: none; user-select: none; z-index: 25; width: 100%; height: 100%;">
-                  <div class="art-split-label-left" style="position: absolute; top: 16px; left: 16px; padding: 4px 10px; border-radius: 8px; background: rgba(0,0,0,0.8); border: 1px solid rgba(255,255,255,0.25); backdrop-filter: blur(8px); font-family: monospace; font-size: 11px; font-weight: bold; color: #cbd5e1; box-shadow: 0 4px 12px rgba(0,0,0,0.6); pointer-events: none;">
-                    Оригинал
-                  </div>
-                  <div class="art-split-label-right" style="position: absolute; top: 16px; right: 16px; padding: 4px 10px; border-radius: 8px; background: #8B5CF6; border: 1px solid rgba(255,255,255,0.3); backdrop-filter: blur(8px); font-family: monospace; font-size: 11px; font-weight: bold; color: #ffffff; box-shadow: 0 4px 12px rgba(139,92,246,0.5); pointer-events: none; display: flex; align-items: center; gap: 4px;">
-                    ✨ Anime4K AI (2160p)
-                  </div>
-                  <div class="art-split-drag-area" style="position: absolute; top: 0; bottom: 0; width: 48px; left: 50%; transform: translateX(-50%); pointer-events: auto; cursor: col-resize; display: flex; align-items: center; justify-content: center; z-index: 30;">
-                    <div class="art-split-handle" style="width: 34px; height: 34px; border-radius: 50%; background: #8B5CF6; border: 2px solid #ffffff; box-shadow: 0 0 20px rgba(139,92,246,0.95), 0 4px 12px rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; color: #ffffff; font-size: 14px; font-weight: 900; user-select: none; transition: transform 0.1s ease;">
-                      ↔
-                    </div>
-                  </div>
-                </div>
-              `,
-              mounted: function ($el: HTMLElement) {
-                const dragArea = $el.querySelector(".art-split-drag-area") as HTMLElement;
-                let isDragging = false;
-
-                const updatePos = (clientX: number) => {
-                  const rect = $el.getBoundingClientRect();
-                  if (rect.width <= 0) return;
-                  const x = Math.max(0, Math.min(rect.width, clientX - rect.left));
-                  const newRatio = Math.max(0.02, Math.min(0.98, x / rect.width));
-                  if (dragArea) {
-                    dragArea.style.left = `${newRatio * 100}%`;
-                  }
-                  setSplitPos(newRatio);
-                  if (webglInstanceRef.current) {
-                    webglInstanceRef.current.setSplitMode(true, newRatio);
-                  }
-                };
-
-                const onPointerDown = (e: PointerEvent) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  isDragging = true;
-                  (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
-                  updatePos(e.clientX);
-                };
-
-                const onPointerMove = (e: PointerEvent) => {
-                  if (!isDragging) return;
-                  e.preventDefault();
-                  e.stopPropagation();
-                  updatePos(e.clientX);
-                };
-
-                const onPointerUp = (e: PointerEvent) => {
-                  if (isDragging) {
-                    isDragging = false;
-                    try {
-                      (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
-                    } catch (_) {}
-                  }
-                };
-
-                if (dragArea) {
-                  dragArea.addEventListener("pointerdown", onPointerDown);
-                  dragArea.addEventListener("pointermove", onPointerMove);
-                  dragArea.addEventListener("pointerup", onPointerUp);
-                  dragArea.addEventListener("pointercancel", onPointerUp);
-                }
-              },
-            },
-          ],
           lang: "ru",
           i18n: {
             ru: {
@@ -1578,7 +1427,6 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                       upscaler.setTargetResolution(-1);
                     }
 
-                    upscaler.setSplitMode(true, splitPos);
                     upscaler.start();
                   } catch (e) {
                     console.error("Anime WebGL Initialization Error with DASH:", e);
@@ -1842,7 +1690,6 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                         upscaler.setTargetResolution(-1);
                       }
 
-                      upscaler.setSplitMode(true, splitPos);
                       upscaler.start();
                     } catch (e) {
                       console.error("Anime WebGL Initialization Error with HLS:", e);
@@ -2243,16 +2090,8 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
             )}
           </div>
 
-          {/* Top Right: Player Settings & Permanent Split Screen Badge */}
+          {/* Top Right: Player Settings Button */}
           <div className="flex items-center gap-2 pointer-events-auto">
-            <div
-              className="px-3 py-1.5 rounded-xl border border-[#8B5CF6] bg-[#8B5CF6]/90 text-white shadow-[0_0_15px_rgba(139,92,246,0.6)] flex items-center gap-1.5 backdrop-blur-md text-xs font-bold pointer-events-auto select-none"
-              title="Режим сравнения «До / После» (Включен постоянно)"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-[#A78BFA]" />
-              <span className="hidden sm:inline">Anime4K До / После</span>
-            </div>
-
             <button
               onClick={() => {
                 setActiveSubmenu("main");
