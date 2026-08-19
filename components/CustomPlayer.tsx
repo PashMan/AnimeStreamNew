@@ -54,7 +54,8 @@ interface CustomPlayerProps {
 // 3. Primary Upscale 2x (Anime4K_Upscale_CNN_x2_M)
 // 4. Target Rescale to 1080p / 4K + AMD CAS (Contrast Adaptive Sharpening 0.4-0.6)
 class AnimeWebGL1080p {
-  private gl: WebGLRenderingContext;
+  private gl: WebGL2RenderingContext | WebGLRenderingContext;
+  private isWebGL2: boolean = true;
   private debandProgram: WebGLProgram;
   private restoreProgram: WebGLProgram;
   private upscale2xProgram: WebGLProgram;
@@ -69,6 +70,9 @@ class AnimeWebGL1080p {
   public isActive = false;
   private targetMode: number = 0; // 0 = Auto (1080p -> 4K 2160p, 720p -> 1080p), 2160 = 4K, 1080 = 1080p, -1 = Off
   private sharpness: number = 0.50; // AMD CAS sharpness
+  public splitEnabled: boolean = false;
+  public splitPos: number = 0.5; // 0.0 .. 1.0
+  public strength: number = 1.25; // 1.0 .. 2.5
 
   // Framebuffer objects for multi-pass pipeline
   private fboDeband: WebGLFramebuffer | null = null;
@@ -89,20 +93,41 @@ class AnimeWebGL1080p {
     this.canvas = canvas;
     this.video = video;
 
-    const gl = canvas.getContext("webgl", {
+    // Apply Blu-Ray mastering color filter
+    this.canvas.style.filter = "saturate(1.08) contrast(1.04)";
+
+    let glContext = canvas.getContext("webgl2", {
       alpha: false,
       depth: false,
       antialias: false,
       premultipliedAlpha: false,
       preserveDrawingBuffer: true,
-    });
-    if (!gl) {
+    }) as WebGL2RenderingContext | WebGLRenderingContext | null;
+
+    if (!glContext) {
+      glContext = canvas.getContext("webgl", {
+        alpha: false,
+        depth: false,
+        antialias: false,
+        premultipliedAlpha: false,
+        preserveDrawingBuffer: true,
+      });
+      this.isWebGL2 = false;
+    }
+    if (!glContext) {
       throw new Error("WebGL is not supported");
     }
-    this.gl = gl;
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    this.gl = glContext;
+    this.gl.pixelStorei(this.gl.UNPACK_FLIP_Y_WEBGL, true);
 
-    const vsSource = `
+    const vsSource = this.isWebGL2 ? `#version 300 es
+      in vec2 a_position;
+      out vec2 v_texCoord;
+      void main() {
+        v_texCoord = a_position * 0.5 + vec2(0.5);
+        gl_Position = vec4(a_position, 0.0, 1.0);
+      }
+    ` : `
       attribute vec2 a_position;
       varying vec2 v_texCoord;
       void main() {
@@ -111,8 +136,58 @@ class AnimeWebGL1080p {
       }
     `;
 
-    // 1. Debanding + Blue Noise Dither
-    const fsDebandSource = `
+    // Pass 1: Debanding + Blue Noise Dither & Deblur
+    const fsDebandSource = this.isWebGL2 ? `#version 300 es
+      precision highp float;
+      in vec2 v_texCoord;
+      out vec4 fragColor;
+      uniform sampler2D u_image;
+      uniform vec2 u_textureSize;
+
+      float hash12(vec2 p) {
+        vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+        p3 += dot(p3, p3.yzx + 33.33);
+        return fract((p3.x + p3.y) * p3.z);
+      }
+
+      float blueNoiseDither(vec2 uv) {
+        float n1 = hash12(uv * u_textureSize + vec2(1.23, 4.56));
+        float n2 = hash12(uv * u_textureSize + vec2(7.89, 0.12));
+        return (n1 + n2 - 1.0) / 255.0;
+      }
+
+      void main() {
+        vec2 texel = 1.0 / u_textureSize;
+        vec4 center = texture(u_image, v_texCoord);
+        
+        float radius = 12.0;
+        float threshold = 18.0 / 255.0;
+        vec3 sum = center.rgb;
+        float totalWeight = 1.0;
+        const float SAMPLES = 8.0;
+        float angleStep = 6.2831853 / SAMPLES;
+        
+        for (float i = 0.0; i < SAMPLES; i += 1.0) {
+          float angle = i * angleStep;
+          float r = radius * (0.7 + 0.3 * hash12(v_texCoord * u_textureSize + vec2(i, 3.14159)));
+          vec2 offset = vec2(cos(angle), sin(angle)) * r * texel;
+          vec3 sampleCol = texture(u_image, v_texCoord + offset).rgb;
+          vec3 diff = abs(sampleCol - center.rgb);
+          float maxDiff = max(max(diff.r, diff.g), diff.b);
+          
+          if (maxDiff < threshold) {
+            float weight = 1.0 - (maxDiff / threshold);
+            sum += sampleCol * weight;
+            totalWeight += weight;
+          }
+        }
+        
+        vec3 debanded = sum / totalWeight;
+        float dither = blueNoiseDither(v_texCoord);
+        vec3 finalColor = debanded + vec3(dither);
+        fragColor = vec4(clamp(finalColor, 0.0, 1.0), center.a);
+      }
+    ` : `
       precision highp float;
       varying vec2 v_texCoord;
       uniform sampler2D u_image;
@@ -133,13 +208,10 @@ class AnimeWebGL1080p {
       void main() {
         vec2 texel = 1.0 / u_textureSize;
         vec4 center = texture2D(u_image, v_texCoord);
-        
-        float radius = 12.0; // 8-16px sampling radius
-        float threshold = 18.0 / 255.0; // Banding detection threshold
-        
+        float radius = 12.0;
+        float threshold = 18.0 / 255.0;
         vec3 sum = center.rgb;
         float totalWeight = 1.0;
-        
         const float SAMPLES = 8.0;
         float angleStep = 6.2831853 / SAMPLES;
         
@@ -148,10 +220,8 @@ class AnimeWebGL1080p {
           float r = radius * (0.7 + 0.3 * hash12(v_texCoord * u_textureSize + vec2(i, 3.14159)));
           vec2 offset = vec2(cos(angle), sin(angle)) * r * texel;
           vec3 sampleCol = texture2D(u_image, v_texCoord + offset).rgb;
-          
           vec3 diff = abs(sampleCol - center.rgb);
           float maxDiff = max(max(diff.r, diff.g), diff.b);
-          
           if (maxDiff < threshold) {
             float weight = 1.0 - (maxDiff / threshold);
             sum += sampleCol * weight;
@@ -162,13 +232,58 @@ class AnimeWebGL1080p {
         vec3 debanded = sum / totalWeight;
         float dither = blueNoiseDither(v_texCoord);
         vec3 finalColor = debanded + vec3(dither);
-        
         gl_FragColor = vec4(clamp(finalColor, 0.0, 1.0), center.a);
       }
     `;
 
-    // 2. Artifact Cleaning & Line Reconstruction (Anime4K_Restore_CNN_M)
-    const fsRestoreSource = `
+    // Pass 2: Artifact Cleaning, Denoise & Ringing Suppression
+    const fsRestoreSource = this.isWebGL2 ? `#version 300 es
+      precision highp float;
+      in vec2 v_texCoord;
+      out vec4 fragColor;
+      uniform sampler2D u_image;
+      uniform vec2 u_textureSize;
+
+      float luma(vec3 c) {
+        return dot(c, vec3(0.299, 0.587, 0.114));
+      }
+
+      void main() {
+        vec2 d = 1.0 / u_textureSize;
+        vec3 cc = texture(u_image, v_texCoord).rgb;
+        vec3 tl = texture(u_image, v_texCoord + vec2(-d.x, -d.y)).rgb;
+        vec3 tc = texture(u_image, v_texCoord + vec2( 0.0, -d.y)).rgb;
+        vec3 tr = texture(u_image, v_texCoord + vec2( d.x, -d.y)).rgb;
+        vec3 ml = texture(u_image, v_texCoord + vec2(-d.x,  0.0)).rgb;
+        vec3 mr = texture(u_image, v_texCoord + vec2( d.x,  0.0)).rgb;
+        vec3 bl = texture(u_image, v_texCoord + vec2(-d.x,  d.y)).rgb;
+        vec3 bc = texture(u_image, v_texCoord + vec2( 0.0,  d.y)).rgb;
+        vec3 br = texture(u_image, v_texCoord + vec2( d.x,  d.y)).rgb;
+        
+        float lCC = luma(cc);
+        float lTL = luma(tl); float lTC = luma(tc); float lTR = luma(tr);
+        float lML = luma(ml);                      float lMR = luma(mr);
+        float lBL = luma(bl); float lBC = luma(bc); float lBR = luma(br);
+        
+        float gx = (lTR + 2.0 * lMR + lBR) - (lTL + 2.0 * lML + lBL);
+        float gy = (lBL + 2.0 * lBC + lBR) - (lTL + 2.0 * lTC + lTR);
+        float edgeStrength = sqrt(gx * gx + gy * gy);
+        
+        vec3 minNeighbor = min(min(min(tl, tc), min(tr, ml)), min(min(mr, bl), min(bc, br)));
+        vec3 maxNeighbor = max(max(max(tl, tc), max(tr, ml)), max(max(mr, bl), max(bc, br)));
+        vec3 cleaned = clamp(cc, minNeighbor, maxNeighbor);
+        
+        vec2 dir = normalize(vec2(-gy, gx) + vec2(0.0001));
+        vec3 sP = texture(u_image, v_texCoord + dir * d * 0.75).rgb;
+        vec3 sN = texture(u_image, v_texCoord - dir * d * 0.75).rgb;
+        vec3 lineAverage = (sP + sN) * 0.5;
+        
+        float isEdge = smoothstep(0.06, 0.22, edgeStrength);
+        vec3 reconstructed = mix(cleaned, min(cleaned, lineAverage), isEdge * 0.45);
+        
+        fragColor = vec4(clamp(reconstructed, 0.0, 1.0), 1.0);
+      }
+    ` : `
       precision highp float;
       varying vec2 v_texCoord;
       uniform sampler2D u_image;
@@ -180,7 +295,6 @@ class AnimeWebGL1080p {
 
       void main() {
         vec2 d = 1.0 / u_textureSize;
-        
         vec3 cc = texture2D(u_image, v_texCoord).rgb;
         vec3 tl = texture2D(u_image, v_texCoord + vec2(-d.x, -d.y)).rgb;
         vec3 tc = texture2D(u_image, v_texCoord + vec2( 0.0, -d.y)).rgb;
@@ -196,17 +310,14 @@ class AnimeWebGL1080p {
         float lML = luma(ml);                      float lMR = luma(mr);
         float lBL = luma(bl); float lBC = luma(bc); float lBR = luma(br);
         
-        // Sobel edge gradient computation
         float gx = (lTR + 2.0 * lMR + lBR) - (lTL + 2.0 * lML + lBL);
         float gy = (lBL + 2.0 * lBC + lBR) - (lTL + 2.0 * lTC + lTR);
         float edgeStrength = sqrt(gx * gx + gy * gy);
         
-        // Ringing suppression & compression halo removal
         vec3 minNeighbor = min(min(min(tl, tc), min(tr, ml)), min(min(mr, bl), min(bc, br)));
         vec3 maxNeighbor = max(max(max(tl, tc), max(tr, ml)), max(max(mr, bl), max(bc, br)));
         vec3 cleaned = clamp(cc, minNeighbor, maxNeighbor);
         
-        // Directional line reconstruction for thin anime contours
         vec2 dir = normalize(vec2(-gy, gx) + vec2(0.0001));
         vec3 sP = texture2D(u_image, v_texCoord + dir * d * 0.75).rgb;
         vec3 sN = texture2D(u_image, v_texCoord - dir * d * 0.75).rgb;
@@ -219,8 +330,53 @@ class AnimeWebGL1080p {
       }
     `;
 
-    // 3. Primary Upscale (2x) (Anime4K_Upscale_CNN_x2_M)
-    const fsUpscale2xSource = `
+    // Pass 3: Upscale 2x Vector Interpolation
+    const fsUpscale2xSource = this.isWebGL2 ? `#version 300 es
+      precision highp float;
+      in vec2 v_texCoord;
+      out vec4 fragColor;
+      uniform sampler2D u_image;
+      uniform vec2 u_srcTextureSize;
+
+      float luma(vec3 c) {
+        return dot(c, vec3(0.299, 0.587, 0.114));
+      }
+
+      void main() {
+        vec2 texel = 1.0 / u_srcTextureSize;
+        vec2 pos = v_texCoord * u_srcTextureSize - 0.5;
+        vec2 f = fract(pos);
+        vec2 baseUV = (floor(pos) + 0.5) * texel;
+        
+        vec3 c00 = texture(u_image, baseUV).rgb;
+        vec3 c10 = texture(u_image, baseUV + vec2(texel.x, 0.0)).rgb;
+        vec3 c01 = texture(u_image, baseUV + vec2(0.0, texel.y)).rgb;
+        vec3 c11 = texture(u_image, baseUV + vec2(texel.x, texel.y)).rgb;
+        
+        float l00 = luma(c00);
+        float l10 = luma(c10);
+        float l01 = luma(c01);
+        float l11 = luma(c11);
+        
+        float d1 = abs(l00 - l11);
+        float d2 = abs(l10 - l01);
+        
+        vec3 color;
+        if (d1 < d2 * 0.85) {
+          float t = (f.x + f.y) * 0.5;
+          color = mix(c00, c11, t);
+        } else if (d2 < d1 * 0.85) {
+          float t = (f.x + (1.0 - f.y)) * 0.5;
+          color = mix(c01, c10, t);
+        } else {
+          vec3 top = mix(c00, c10, f.x);
+          vec3 bot = mix(c01, c11, f.x);
+          color = mix(top, bot, f.y);
+        }
+        
+        fragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
+      }
+    ` : `
       precision highp float;
       varying vec2 v_texCoord;
       uniform sampler2D u_image;
@@ -246,7 +402,6 @@ class AnimeWebGL1080p {
         float l01 = luma(c01);
         float l11 = luma(c11);
         
-        // Edge-directed vector contour interpolation
         float d1 = abs(l00 - l11);
         float d2 = abs(l10 - l01);
         
@@ -267,60 +422,139 @@ class AnimeWebGL1080p {
       }
     `;
 
-    // 4. Target Rescale + AMD CAS (Contrast Adaptive Sharpening)
-    const fsCasRescaleSource = `
+    // Pass 4: WebGL2 Anime4K CAS + Sobel Edge + Line Thinning + Split Mode
+    const fsCasRescaleSource = this.isWebGL2 ? `#version 300 es
       precision highp float;
-      varying vec2 v_texCoord;
-      uniform sampler2D u_image;
-      uniform vec2 u_srcTextureSize;   // e.g. 2560x1440
-      uniform vec2 u_targetResolution; // e.g. 1920x1080
-      uniform float u_sharpness;       // 0.4 - 0.6 (default 0.50)
+      in vec2 v_texCoord;
+      out vec4 fragColor;
+
+      uniform sampler2D u_texture;
+      uniform vec2 u_resolution;
+      uniform float u_strength;
+      uniform float u_splitPos;
+      uniform float u_splitEnabled;
+
+      float luma(vec3 color) {
+        return dot(color, vec3(0.299, 0.587, 0.114));
+      }
 
       void main() {
-        vec2 d = 1.0 / u_srcTextureSize;
-        
-        // AMD FidelityFX CAS 3x3 cross pattern
-        vec3 a = texture2D(u_image, v_texCoord + vec2( 0.0, -d.y)).rgb; // Top
-        vec3 b = texture2D(u_image, v_texCoord + vec2(-d.x,  0.0)).rgb; // Left
-        vec3 c = texture2D(u_image, v_texCoord).rgb;                   // Center
-        vec3 dCol = texture2D(u_image, v_texCoord + vec2( d.x,  0.0)).rgb; // Right
-        vec3 e = texture2D(u_image, v_texCoord + vec2( 0.0,  d.y)).rgb; // Bottom
-        
-        // Find min and max colors around center
-        vec3 minRGB = min(min(min(a, b), min(dCol, e)), c);
-        vec3 maxRGB = max(max(max(a, b), max(dCol, e)), c);
-        
-        // Compute adaptive contrast weight for CAS (AMD FidelityFX CAS algorithm)
-        vec3 ampRGB = clamp(min(minRGB, vec3(2.0) - maxRGB) / max(maxRGB, vec3(0.0001)), 0.0, 1.0);
-        float peakSharpness = clamp(u_sharpness, 0.0, 1.0) * 0.125;
-        vec3 wRGB = -sqrt(ampRGB) * peakSharpness;
-        
-        // Filter reconstruction with safe clamped denominator (never drops below 0.5)
-        vec3 weightDenom = max(vec3(0.5), vec3(1.0) + 4.0 * wRGB);
-        vec3 finalColor = (a * wRGB + b * wRGB + c + dCol * wRGB + e * wRGB) / weightDenom;
-        
-        // Dynamic edge preservation range
-        vec3 range = maxRGB - minRGB;
-        vec3 minClamped = max(minRGB - range * 0.15, vec3(0.0));
-        vec3 maxClamped = min(maxRGB + range * 0.15, vec3(1.0));
-        finalColor = clamp(finalColor, minClamped, maxClamped);
-        
-        gl_FragColor = vec4(clamp(finalColor, 0.0, 1.0), 1.0);
+        vec3 orig = texture(u_texture, v_texCoord).rgb;
+
+        if (u_splitEnabled > 0.5 && v_texCoord.x < u_splitPos) {
+          fragColor = vec4(orig, 1.0);
+          return;
+        }
+
+        vec2 step = 1.0 / u_resolution;
+
+        vec3 c  = orig;
+        vec3 tl = texture(u_texture, v_texCoord + vec2(-step.x, -step.y)).rgb;
+        vec3 t  = texture(u_texture, v_texCoord + vec2(0.0, -step.y)).rgb;
+        vec3 tr = texture(u_texture, v_texCoord + vec2(step.x, -step.y)).rgb;
+        vec3 l  = texture(u_texture, v_texCoord + vec2(-step.x, 0.0)).rgb;
+        vec3 r  = texture(u_texture, v_texCoord + vec2(step.x, 0.0)).rgb;
+        vec3 bl = texture(u_texture, v_texCoord + vec2(-step.x, step.y)).rgb;
+        vec3 b  = texture(u_texture, v_texCoord + vec2(0.0, step.y)).rgb;
+        vec3 br = texture(u_texture, v_texCoord + vec2(step.x, step.y)).rgb;
+
+        float l_c  = luma(c);
+        float l_tl = luma(tl); float l_t = luma(t); float l_tr = luma(tr);
+        float l_l  = luma(l);                       float l_r  = luma(r);
+        float l_bl = luma(bl); float l_b = luma(b); float l_br = luma(br);
+
+        float dx = (l_tr + 2.0 * l_r + l_br) - (l_tl + 2.0 * l_l + l_bl);
+        float dy = (l_bl + 2.0 * l_b + l_br) - (l_tl + 2.0 * l_t + l_tr);
+        float edge = clamp(sqrt(dx * dx + dy * dy) * 2.0, 0.0, 1.0);
+
+        vec3 min_c = min(min(min(t, b), l), r);
+        vec3 max_c = max(max(max(t, b), l), r);
+        vec3 sharp = c + (c - (t + b + l + r) * 0.25) * (u_strength * 1.6);
+        sharp = clamp(sharp, min_c, max_c);
+
+        vec3 result = mix(c, sharp, u_strength);
+        if (edge > 0.15) {
+          result = mix(result, result * 0.82, edge * 0.45);
+        }
+
+        fragColor = vec4(result, 1.0);
+      }
+    ` : `
+      precision highp float;
+      varying vec2 v_texCoord;
+      uniform sampler2D u_texture;
+      uniform vec2 u_resolution;
+      uniform float u_strength;
+      uniform float u_splitPos;
+      uniform float u_splitEnabled;
+
+      float luma(vec3 color) {
+        return dot(color, vec3(0.299, 0.587, 0.114));
+      }
+
+      void main() {
+        vec3 orig = texture2D(u_texture, v_texCoord).rgb;
+
+        if (u_splitEnabled > 0.5 && v_texCoord.x < u_splitPos) {
+          gl_FragColor = vec4(orig, 1.0);
+          return;
+        }
+
+        vec2 step = 1.0 / u_resolution;
+
+        vec3 c  = orig;
+        vec3 tl = texture2D(u_texture, v_texCoord + vec2(-step.x, -step.y)).rgb;
+        vec3 t  = texture2D(u_texture, v_texCoord + vec2(0.0, -step.y)).rgb;
+        vec3 tr = texture2D(u_texture, v_texCoord + vec2(step.x, -step.y)).rgb;
+        vec3 l  = texture2D(u_texture, v_texCoord + vec2(-step.x, 0.0)).rgb;
+        vec3 r  = texture2D(u_texture, v_texCoord + vec2(step.x, 0.0)).rgb;
+        vec3 bl = texture2D(u_texture, v_texCoord + vec2(-step.x, step.y)).rgb;
+        vec3 b  = texture2D(u_texture, v_texCoord + vec2(0.0, step.y)).rgb;
+        vec3 br = texture2D(u_texture, v_texCoord + vec2(step.x, step.y)).rgb;
+
+        float l_c  = luma(c);
+        float l_tl = luma(tl); float l_t = luma(t); float l_tr = luma(tr);
+        float l_l  = luma(l);                       float l_r  = luma(r);
+        float l_bl = luma(bl); float l_b = luma(b); float l_br = luma(br);
+
+        float dx = (l_tr + 2.0 * l_r + l_br) - (l_tl + 2.0 * l_l + l_bl);
+        float dy = (l_bl + 2.0 * l_b + l_br) - (l_tl + 2.0 * l_t + l_tr);
+        float edge = clamp(sqrt(dx * dx + dy * dy) * 2.0, 0.0, 1.0);
+
+        vec3 min_c = min(min(min(t, b), l), r);
+        vec3 max_c = max(max(max(t, b), l), r);
+        vec3 sharp = c + (c - (t + b + l + r) * 0.25) * (u_strength * 1.6);
+        sharp = clamp(sharp, min_c, max_c);
+
+        vec3 result = mix(c, sharp, u_strength);
+        if (edge > 0.15) {
+          result = mix(result, result * 0.82, edge * 0.45);
+        }
+
+        gl_FragColor = vec4(result, 1.0);
       }
     `;
 
     const createShader = (type: number, src: string) => {
+      const gl = this.gl;
       const s = gl.createShader(type)!;
       gl.shaderSource(s, src);
       gl.compileShader(s);
+      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+        console.error("Shader Compile Error:", gl.getShaderInfoLog(s));
+      }
       return s;
     };
 
     const createProg = (vs: string, fs: string) => {
+      const gl = this.gl;
       const p = gl.createProgram()!;
       gl.attachShader(p, createShader(gl.VERTEX_SHADER, vs));
       gl.attachShader(p, createShader(gl.FRAGMENT_SHADER, fs));
       gl.linkProgram(p);
+      if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+        console.error("Program Link Error:", gl.getProgramInfoLog(p));
+      }
       return p;
     };
 
@@ -329,6 +563,7 @@ class AnimeWebGL1080p {
     this.upscale2xProgram = createProg(vsSource, fsUpscale2xSource);
     this.casRescaleProgram = createProg(vsSource, fsCasRescaleSource);
 
+    const gl = this.gl;
     this.texture = gl.createTexture()!;
     gl.bindTexture(gl.TEXTURE_2D, this.texture);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -343,6 +578,15 @@ class AnimeWebGL1080p {
       new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]),
       gl.STATIC_DRAW,
     );
+  }
+
+  public setSplitMode(enabled: boolean, pos: number = 0.5) {
+    this.splitEnabled = enabled;
+    this.splitPos = Math.max(0.0, Math.min(1.0, pos));
+  }
+
+  public setStrength(val: number) {
+    this.strength = Math.max(0.5, Math.min(3.0, val));
   }
 
   private createFBO(width: number, height: number): [WebGLFramebuffer, WebGLTexture] {
@@ -512,9 +756,13 @@ class AnimeWebGL1080p {
     const upW = vW * 2;
     const upH = vH * 2;
 
-    if (this.canvas.width !== targetW || this.canvas.height !== targetH) {
-      this.canvas.width = targetW;
-      this.canvas.height = targetH;
+    const dpr = Math.min(2.0, window.devicePixelRatio || 1);
+    const renderW = Math.floor(targetW * dpr);
+    const renderH = Math.floor(targetH * dpr);
+
+    if (this.canvas.width !== renderW || this.canvas.height !== renderH) {
+      this.canvas.width = renderW;
+      this.canvas.height = renderH;
     }
 
     if (
@@ -568,17 +816,18 @@ class AnimeWebGL1080p {
     this.drawQuad(this.upscale2xProgram);
 
     // -------------------------------------------------------------
-    // PASS 4: Target Rescale (to 1080p or 4K 2160p) + AMD CAS (Contrast Adaptive Sharpening)
+    // PASS 4: WebGL2 Anime4K CAS, Sobel Edge, Line Thinning & Split Screen
     // -------------------------------------------------------------
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    gl.viewport(0, 0, targetW, targetH);
+    gl.viewport(0, 0, renderW, renderH);
     gl.useProgram(this.casRescaleProgram);
 
     gl.bindTexture(gl.TEXTURE_2D, this.fboUpscale2xTexture);
-    gl.uniform1i(gl.getUniformLocation(this.casRescaleProgram, "u_image"), 0);
-    gl.uniform2f(gl.getUniformLocation(this.casRescaleProgram, "u_srcTextureSize"), upW, upH);
-    gl.uniform2f(gl.getUniformLocation(this.casRescaleProgram, "u_targetResolution"), targetW, targetH);
-    gl.uniform1f(gl.getUniformLocation(this.casRescaleProgram, "u_sharpness"), this.sharpness);
+    gl.uniform1i(gl.getUniformLocation(this.casRescaleProgram, "u_texture"), 0);
+    gl.uniform2f(gl.getUniformLocation(this.casRescaleProgram, "u_resolution"), renderW, renderH);
+    gl.uniform1f(gl.getUniformLocation(this.casRescaleProgram, "u_strength"), this.strength || 1.25);
+    gl.uniform1f(gl.getUniformLocation(this.casRescaleProgram, "u_splitPos"), this.splitPos || 0.5);
+    gl.uniform1f(gl.getUniformLocation(this.casRescaleProgram, "u_splitEnabled"), this.splitEnabled ? 1.0 : 0.0);
     this.drawQuad(this.casRescaleProgram);
   }
 
@@ -655,6 +904,44 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [activeSubmenu, setActiveSubmenu] = useState<"main" | "quality" | "speed">("main");
     const [isFullscreen, setIsFullscreen] = useState(false);
+
+    // Split-screen comparison state for Anime4K WebGL2
+    const [isSplitScreenActive, setIsSplitScreenActive] = useState(false);
+    const [splitPos, setSplitPos] = useState(0.5);
+    const isDraggingSplitRef = useRef(false);
+
+    const handleSplitPointerDown = (e: React.PointerEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      isDraggingSplitRef.current = true;
+      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    };
+
+    const handleSplitPointerMove = (e: React.PointerEvent) => {
+      if (!isDraggingSplitRef.current || !containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const x = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
+      const newPos = x / rect.width;
+      setSplitPos(newPos);
+      if (webglInstanceRef.current) {
+        webglInstanceRef.current.setSplitMode(true, newPos);
+      }
+    };
+
+    const handleSplitPointerUp = (e: React.PointerEvent) => {
+      isDraggingSplitRef.current = false;
+      try {
+        (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+      } catch (_) {}
+    };
+
+    const toggleSplitScreen = () => {
+      const next = !isSplitScreenActive;
+      setIsSplitScreenActive(next);
+      if (webglInstanceRef.current) {
+        webglInstanceRef.current.setSplitMode(next, splitPos);
+      }
+    };
 
     useEffect(() => {
       const handleFullscreenChange = () => {
@@ -1856,8 +2143,21 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
             )}
           </div>
 
-          {/* Top Right: Player Settings Button */}
+          {/* Top Right: Player Settings & Split Screen Button */}
           <div className="flex items-center gap-2 pointer-events-auto">
+            <button
+              onClick={toggleSplitScreen}
+              className={`px-3 py-1.5 rounded-xl border flex items-center gap-1.5 backdrop-blur-md text-xs font-bold transition-all cursor-pointer shadow-lg active:scale-95 ${
+                isSplitScreenActive
+                  ? "bg-[#8B5CF6] text-white border-[#8B5CF6] shadow-[0_0_15px_rgba(139,92,246,0.6)]"
+                  : "bg-black/70 hover:bg-black/90 text-white/80 hover:text-white border-white/15 hover:border-[#8B5CF6]/50"
+              }`}
+              title="Режим сравнения «До / После» (Anime4K)"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-[#A78BFA]" />
+              <span className="hidden sm:inline">До / После</span>
+            </button>
+
             <button
               onClick={() => {
                 setActiveSubmenu("main");
@@ -1870,6 +2170,38 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
             </button>
           </div>
         </div>
+
+        {/* Interactive Split-Screen Slider Overlay */}
+        {isSplitScreenActive && (
+          <div
+            className="absolute inset-0 z-30 pointer-events-auto cursor-col-resize select-none touch-none"
+            onPointerDown={handleSplitPointerDown}
+            onPointerMove={handleSplitPointerMove}
+            onPointerUp={handleSplitPointerUp}
+            onPointerCancel={handleSplitPointerUp}
+          >
+            {/* Left Label: Original */}
+            <div className="absolute top-16 left-6 z-40 px-3 py-1.5 rounded-xl bg-black/80 border border-white/20 backdrop-blur-md text-[11px] font-mono font-bold text-slate-300 shadow-xl pointer-events-none">
+              Оригинал (1080p)
+            </div>
+
+            {/* Right Label: Anime4K AI */}
+            <div className="absolute top-16 right-6 z-40 px-3 py-1.5 rounded-xl bg-[#8B5CF6] border border-white/20 backdrop-blur-md text-[11px] font-mono font-bold text-white shadow-xl pointer-events-none flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5" />
+              Anime4K AI (2160p)
+            </div>
+
+            {/* Split Divider Handle */}
+            <div
+              className="absolute top-0 bottom-0 w-1 bg-[#8B5CF6] shadow-[0_0_20px_rgba(139,92,246,0.9)] pointer-events-none flex items-center justify-center"
+              style={{ left: `${splitPos * 100}%` }}
+            >
+              <div className="w-9 h-9 rounded-full bg-[#8B5CF6] border-2 border-white text-white shadow-2xl flex items-center justify-center font-bold text-xs pointer-events-none transform -translate-x-1/2">
+                ↔
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* REFERENCE-PERFECT POPUP SETTINGS MODAL */}
         {isSettingsOpen && createPortal(
