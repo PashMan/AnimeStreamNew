@@ -22,7 +22,9 @@ import {
   Users,
   Film,
   Sparkles,
+  Crown,
 } from "lucide-react";
+import { useAuth } from "../context/AuthContext";
 import { isTvDevice } from "../utils/tvDetection";
 import { MobileAnime4KRenderer } from "../utils/anime4kCanvas";
 
@@ -847,6 +849,8 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const artInstanceRef = useRef<Artplayer | null>(null);
     const webglInstanceRef = useRef<AnimeWebGL1080p | null>(null);
+
+    const { isVip, openPremiumModal } = useAuth();
 
     // Determine active stream provider for logging
     const activeProvider = (
@@ -1852,6 +1856,20 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
 
     // Quality Selection Handler
     const handleSelectQuality = (item: { html: string; level: number; targetH?: number; isAi?: boolean }) => {
+      const is4K = item.html.includes("4K") || item.targetH === 2160;
+
+      // 4K Upscale is VIP only! 1080p is free for everyone
+      if (is4K && !isVip) {
+        const art = artInstanceRef.current;
+        if (art && art.notice) {
+          art.notice.show = "4K Апскейл доступен с подпиской Kami VIP (1-й месяц бесплатно)";
+        }
+        openPremiumModal("4K Апскейл нейросетью (AMD CAS)");
+        setIsSettingsOpen(false);
+        setActiveSubmenu("main");
+        return;
+      }
+
       setSelectedQuality(item.html);
       localStorage.setItem("kami_player_selected_quality", item.html);
 
@@ -2345,6 +2363,10 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                   <button
                     onClick={() => {
                       setIsSettingsOpen(false);
+                      if (!isVip) {
+                        openPremiumModal("Скачивание серий для оффлайн-просмотра");
+                        return;
+                      }
                       if (onOpenDownload) {
                         onOpenDownload();
                       } else {
@@ -2357,9 +2379,16 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                       <div className="w-8 h-8 rounded-lg bg-cyan-500/10 flex items-center justify-center text-cyan-400 group-hover:text-cyan-300 transition-colors">
                         <Download className="w-4 h-4" />
                       </div>
-                      <span className="text-sm font-bold text-white">
-                        Скачать серию (.MP4)
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold text-white">
+                          Скачать серию (.MP4)
+                        </span>
+                        {!isVip && (
+                          <span className="px-1.5 py-0.5 text-[8px] font-black uppercase rounded-full bg-gradient-to-r from-amber-500/20 to-yellow-500/20 text-yellow-300 border border-amber-500/30 flex items-center gap-0.5">
+                            <Crown className="w-2.5 h-2.5 fill-current text-yellow-400" /> VIP
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-white transition-colors" />
                   </button>
@@ -2391,6 +2420,7 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                   <div className="space-y-1">
                     {availableQualities.map((q) => {
                       const isSelected = selectedQuality === q.html;
+                      const is4K = q.html.includes("4K") || q.targetH === 2160;
                       return (
                         <button
                           key={q.html}
@@ -2403,9 +2433,15 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                         >
                           <div className="flex items-center gap-2">
                             <span>{q.html}</span>
-                            {(q.isAi || q.html.includes("AI") || q.html.includes("4K")) && (
+                            {is4K && (
+                              <span className="flex items-center gap-1 text-[9px] uppercase font-black tracking-wider px-2 py-0.5 rounded-full bg-gradient-to-r from-amber-500/25 to-yellow-500/25 text-yellow-300 border border-amber-500/40 shadow-sm">
+                                <Crown className="w-3 h-3 fill-current text-yellow-400" />
+                                {!isVip ? 'VIP 4K' : '4K Ultra HD'}
+                              </span>
+                            )}
+                            {!is4K && (q.isAi || q.html.includes("CAS") || q.html.includes("Anime4K")) && (
                               <span className="text-[10px] uppercase font-black tracking-wider px-1.5 py-0.5 rounded bg-[#8B5CF6]/20 text-[#A78BFA] border border-[#8B5CF6]/30">
-                                AI Шейдер
+                                AMD CAS
                               </span>
                             )}
                           </div>

@@ -58,7 +58,7 @@ const Home: React.FC = () => {
   const latestRef = useRef<HTMLDivElement>(null);
   const trendingRef = useRef<HTMLDivElement>(null);
   const favoritesRef = useRef<HTMLDivElement>(null);
-  const { user, openAuthModal } = useAuth();
+  const { user, openAuthModal, isVip, openPremiumModal } = useAuth();
   const { slugBlocks } = useSlugBlocks();
   const { dmcaBlocks } = useDmcaBlocks();
   
@@ -568,37 +568,49 @@ const Home: React.FC = () => {
           </div>
         </section>
 
-        {/* 4K Anime Section (Hidden temporarily - to enable, set SHOW_4K_SECTION to true or remove false condition) */}
-        {false && (
-          <section>
-            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6">
-              <div>
-                <h2 className="text-xl md:text-2xl font-display font-extrabold text-white tracking-tight flex items-center gap-3 border-l-4 border-primary pl-3">
-                  <span>Аниме в 4K</span>
-                </h2>
-              </div>
-              <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
-                 <div className="flex gap-2">
-                   <button aria-label="Scroll left" onClick={() => scrollContainer(anime4kRef, 'left')} className="p-2.5 rounded-xl bg-[#1c1d21] border border-white/5 hover:border-white/10 hover:bg-white/5 text-white/40 hover:text-[#8B5CF6] transition-all"><ChevronLeft className="w-4 h-4" /></button>
-                   <button aria-label="Scroll right" onClick={() => scrollContainer(anime4kRef, 'right')} className="p-2.5 rounded-xl bg-[#1c1d21] border border-white/5 hover:border-white/10 hover:bg-white/5 text-white/40 hover:text-[#8B5CF6] transition-all"><ChevronRight className="w-4 h-4" /></button>
-                 </div>
-              </div>
+        {/* 4K Anime Section (VIP Exclusive) */}
+        <section>
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6">
+            <div>
+              <h2 className="text-xl md:text-2xl font-display font-extrabold text-white tracking-tight flex items-center gap-3 border-l-4 border-amber-500 pl-3">
+                <span className="flex items-center gap-2">
+                  Эксклюзив в 4K Ultra HD
+                  <span className="px-2 py-0.5 rounded-full bg-gradient-to-r from-amber-500/20 to-yellow-500/20 text-yellow-300 border border-amber-500/40 text-[10px] font-black uppercase flex items-center gap-1">
+                    <Crown className="w-3 h-3 fill-current text-yellow-400" /> VIP
+                  </span>
+                </span>
+              </h2>
             </div>
-            <div ref={anime4kRef} className="flex gap-6 overflow-x-auto hide-scrollbar scroll-smooth pb-4 px-1 snap-x min-h-[360px]">
-              {animes4k.length > 0 ? animes4k.map((anime, idx) => (
-                <div key={`4k-${anime.id}-${idx}`} className="w-[180px] sm:w-[220px] 3xl:w-[260px] 4xl:w-[300px] flex-none snap-start">
-                  <AnimeCard anime={anime} />
-                </div>
-              )) : Array.from({length: 6}).map((_, i) => (
-                <div key={i} className="w-[180px] sm:w-[220px] 3xl:w-[260px] 4xl:w-[300px] flex-none snap-start animate-pulse">
-                    <div className="w-full aspect-[2/3] bg-white/5 rounded-xl mb-3"></div>
-                    <div className="h-4 bg-white/5 rounded w-3/4 mb-2"></div>
-                    <div className="h-3 bg-white/5 rounded w-1/2"></div>
-                </div>
-              ))}
+            <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
+               <Link to="/premium" className="text-[10px] font-black uppercase tracking-widest text-amber-400 hover:text-yellow-300 transition-colors flex items-center gap-1.5 mr-3">
+                 {isVip ? 'Доступно с VIP' : 'Открыть доступ в 4K'} <ChevronRight className="w-4 h-4" />
+               </Link>
+               <div className="hidden sm:block w-px h-6 bg-white/10" />
+               <div className="flex gap-2">
+                 <button aria-label="Scroll left" onClick={() => scrollContainer(anime4kRef, 'left')} className="p-2.5 rounded-xl bg-[#1c1d21] border border-white/5 hover:border-white/10 hover:bg-white/5 text-white/40 hover:text-amber-400 transition-all"><ChevronLeft className="w-4 h-4" /></button>
+                 <button aria-label="Scroll right" onClick={() => scrollContainer(anime4kRef, 'right')} className="p-2.5 rounded-xl bg-[#1c1d21] border border-white/5 hover:border-white/10 hover:bg-white/5 text-white/40 hover:text-amber-400 transition-all"><ChevronRight className="w-4 h-4" /></button>
+               </div>
             </div>
-          </section>
-        )}
+          </div>
+          <div ref={anime4kRef} className="flex gap-6 overflow-x-auto hide-scrollbar scroll-smooth pb-4 px-1 snap-x min-h-[360px]">
+            {animes4k.length > 0 ? animes4k.map((anime, idx) => (
+              <div key={`4k-${anime.id}-${idx}`} className="w-[180px] sm:w-[220px] 3xl:w-[260px] 4xl:w-[300px] flex-none snap-start relative group">
+                <AnimeCard anime={anime} />
+                <div className="absolute top-3 right-3 z-20 pointer-events-none">
+                  <span className="px-2 py-0.5 rounded-md bg-black/80 backdrop-blur-md border border-amber-500/50 text-amber-300 text-[10px] font-black tracking-wider flex items-center gap-1 shadow-lg">
+                    <Crown className="w-2.5 h-2.5 fill-current text-yellow-400" /> 4K VIP
+                  </span>
+                </div>
+              </div>
+            )) : Array.from({length: 6}).map((_, i) => (
+              <div key={i} className="w-[180px] sm:w-[220px] 3xl:w-[260px] 4xl:w-[300px] flex-none snap-start animate-pulse">
+                  <div className="w-full aspect-[2/3] bg-white/5 rounded-xl mb-3"></div>
+                  <div className="h-4 bg-white/5 rounded w-3/4 mb-2"></div>
+                  <div className="h-3 bg-white/5 rounded w-1/2"></div>
+              </div>
+            ))}
+          </div>
+        </section>
 
         {/* Trending Section */}
         <section>

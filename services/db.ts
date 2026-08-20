@@ -302,12 +302,17 @@ class DatabaseService {
 
       if (!authData.user) return { user: null, message: 'Registration failed' };
 
-      // Create profile in D1 explicitly
+      // Create profile in D1 explicitly with 1 month of FREE VIP for registration
+      const oneMonthLater = new Date();
+      oneMonthLater.setMonth(oneMonthLater.getMonth() + 1);
+
       const newProfile: any = {
         id: authData.user.id,
         email: data.email,
         name: data.name,
-        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${data.name}`
+        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${data.name}`,
+        is_premium: 1,
+        premium_until: oneMonthLater.toISOString()
       };
       
       await supabaseClient.from('profiles').insert([newProfile]);
@@ -396,12 +401,21 @@ class DatabaseService {
       }
     }
 
+    // Calculate if user is currently premium based on is_premium flag and premium_until date
+    let isPremiumActive = Boolean(p.is_premium);
+    if (p.premium_until) {
+      const expires = new Date(p.premium_until).getTime();
+      if (!isNaN(expires)) {
+        isPremiumActive = expires > Date.now();
+      }
+    }
+
     return {
       id: p.id,
       name: name,
       email: p.email,
       avatar: p.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${p.email || p.id}`,
-      isPremium: p.is_premium,
+      isPremium: isPremiumActive,
       premiumUntil: p.premium_until,
       bio: p.bio,
       watchedTime: p.watched_time,
@@ -464,6 +478,7 @@ class DatabaseService {
       if (updates.avatar) mapped.avatar = updates.avatar;
       if (updates.bio !== undefined) mapped.bio = updates.bio;
       if (updates.isPremium !== undefined) mapped.is_premium = updates.isPremium;
+      if (updates.premiumUntil !== undefined) mapped.premium_until = updates.premiumUntil;
       if (updates.episodesWatched !== undefined) mapped.episodes_watched = updates.episodesWatched;
       if (updates.watchedTime !== undefined) mapped.watched_time = updates.watchedTime;
       if (updates.watchedAnimeIds) mapped.watched_anime_ids = JSON.stringify(updates.watchedAnimeIds);
@@ -532,6 +547,28 @@ class DatabaseService {
       if (e instanceof Error && e.message === 'Username already taken') {
           throw e;
       }
+      return null;
+    }
+  }
+
+  async activateVip(email: string, days: number): Promise<User | null> {
+    if (!this.isSupabaseAvailable()) return null;
+    try {
+      const user = await this.getProfile(email);
+      let baseDate = new Date();
+      if (user?.premiumUntil) {
+        const existingExpires = new Date(user.premiumUntil);
+        if (!isNaN(existingExpires.getTime()) && existingExpires.getTime() > Date.now()) {
+          baseDate = existingExpires;
+        }
+      }
+      const newExpires = new Date(baseDate.getTime() + days * 24 * 60 * 60 * 1000);
+      return await this.updateProfile(email, {
+        isPremium: true,
+        premiumUntil: newExpires.toISOString()
+      });
+    } catch (e) {
+      console.error('activateVip error:', e);
       return null;
     }
   }

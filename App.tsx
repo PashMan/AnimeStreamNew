@@ -225,7 +225,7 @@ const App: React.FC = () => {
               <Route path="community" element={<Navigate to="/social" replace />} />
               <Route path="forum" element={<Forum />} />
               <Route path="forum/:topicId" element={<Forum />} />
-              <Route path="premium" element={<Navigate to="/" replace />} />
+              <Route path="premium" element={<Premium />} />
               <Route path="admin" element={<AdminPanel />} />
               <Route path="debug" element={<Navigate to="/debug-logs" replace />} />
               

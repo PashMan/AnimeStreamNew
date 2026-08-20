@@ -1,162 +1,542 @@
 import React, { useState } from 'react';
-import { Crown, Sparkles, CheckCircle, Send, Shield, Zap, Star, Loader2 } from 'lucide-react';
+import { 
+  Crown, 
+  Sparkles, 
+  Check, 
+  X, 
+  Shield, 
+  Zap, 
+  Download, 
+  Tv, 
+  BookOpen, 
+  Volume2, 
+  Send, 
+  CreditCard, 
+  QrCode, 
+  Wallet, 
+  Gift, 
+  ArrowRight, 
+  Loader2, 
+  CheckCircle2, 
+  Clock, 
+  Layers, 
+  HelpCircle 
+} from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../services/db';
 
+interface Plan {
+  id: 'day' | 'month' | 'year';
+  title: string;
+  durationDays: number;
+  price: number;
+  period: string;
+  badge?: string;
+  subBadge?: string;
+  discount?: string;
+  description: string;
+  features: string[];
+}
+
+const PLANS: Plan[] = [
+  {
+    id: 'day',
+    title: '1 День (Пробный)',
+    durationDays: 1,
+    price: 49,
+    period: '24 часа',
+    description: 'Идеально для просмотра аниме-марафона в 4K Ultra HD на выходных',
+    features: [
+      'Безлимитный 4K апскейл (AMD CAS)',
+      'Скачивание серий на высокой скорости',
+      'Доступ к разделу 4K Аниме',
+      'Без рекламы'
+    ]
+  },
+  {
+    id: 'month',
+    title: '1 Месяц (Стандарт)',
+    durationDays: 30,
+    price: 199,
+    period: 'в месяц',
+    badge: '1-й месяц бесплатно',
+    subBadge: 'Популярный',
+    description: 'Самый гибкий план со всеми привилегиями Kami VIP',
+    features: [
+      'Все преимущества тарифа 1 День',
+      'Синхронизация: Читать мангу с момента конца серии',
+      'Приоритетный заказ апскейла тайтлов',
+      'Ultra Audio Hi-Fi битрейт & Dolby Sound',
+      'Золотая корона VIP в профиле и чатах'
+    ]
+  },
+  {
+    id: 'year',
+    title: '1 Год (Максимальный)',
+    durationDays: 365,
+    price: 1490,
+    period: 'в год',
+    badge: 'Выгода 40%',
+    discount: '≈ 124 ₽ / мес',
+    description: 'Максимальная экономия для настоящих отаку и фанатов качества',
+    features: [
+      'Все возможности на 365 дней',
+      'Приоритет в очереди нейросетей обработки',
+      'Эксклюзивные значки и темы профиля',
+      'Поддержка разработки проекта'
+    ]
+  }
+];
+
 const Premium: React.FC = () => {
-  const { user, openAuthModal, updateProfile } = useAuth();
+  const { user, isVip, openAuthModal, activateVip } = useAuth();
+  const [selectedPlan, setSelectedPlan] = useState<Plan>(PLANS[1]);
+  const [paymentMethod, setPaymentMethod] = useState<'sbp' | 'card' | 'yoomoney' | 'crypto'>('sbp');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
+
   const [upscaleAnime, setUpscaleAnime] = useState('');
   const [isUpscaleSent, setIsUpscaleSent] = useState(false);
-  const [isBuying, setIsBuying] = useState(false);
 
-  const handleBuyPremium = async () => {
+  const handleBuy = async () => {
     if (!user) {
       openAuthModal();
       return;
     }
-    setIsBuying(true);
-    // Simulate payment process
+
+    setIsProcessing(true);
     setTimeout(async () => {
-      const success = await updateProfile({ isPremium: true });
-      setIsBuying(false);
-      if (success) {
-          // Success feedback could be a toast, but for now we rely on the UI update
-          // The component will re-render with the "You are Premium" view
+      const ok = await activateVip(selectedPlan.durationDays);
+      setIsProcessing(false);
+      if (ok) {
+        setIsSuccess(true);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
       } else {
-          alert('Не удалось оформить подписку. Возможно, произошла ошибка соединения.');
+        alert('Не удалось активировать VIP. Пожалуйста, попробуйте снова.');
       }
-    }, 1500);
+    }, 1200);
   };
 
   const handleUpscaleRequest = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user?.isPremium) return;
+    if (!isVip) {
+      alert('Заказ апскейла доступен только с активной подпиской Kami VIP.');
+      return;
+    }
     if (!upscaleAnime.trim()) return;
-    
-    await db.requestUpscale(user.id || user.email, upscaleAnime);
+
+    await db.requestUpscale(user?.id || user?.email || 'user', upscaleAnime);
     setIsUpscaleSent(true);
     setUpscaleAnime('');
   };
 
+  // Calculate days remaining if active
+  const daysLeft = user?.premiumUntil
+    ? Math.max(0, Math.ceil((new Date(user.premiumUntil).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
+    : 0;
+
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-      <div className="text-center mb-16 space-y-4">
-        <div className="inline-flex items-center justify-center p-4 bg-yellow-500/10 rounded-full mb-4">
-          <Crown className="w-12 h-12 text-yellow-500" />
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-10 text-white">
+      {/* Hero Header */}
+      <div className="text-center mb-12 space-y-4">
+        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-gradient-to-r from-amber-500/20 via-yellow-500/20 to-amber-500/20 border border-amber-500/30 text-amber-300 text-xs font-black uppercase tracking-widest shadow-lg shadow-amber-500/10">
+          <Crown className="w-4 h-4 fill-current text-yellow-400" />
+          <span>KamiAnime VIP Премиум</span>
         </div>
-        <h1 className="text-4xl md:text-6xl font-display font-black text-white uppercase tracking-tighter">
-          KamiAnime <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-yellow-600">Premium</span>
+
+        <h1 className="text-3xl sm:text-5xl md:text-6xl font-display font-black tracking-tight uppercase">
+          Максимум качества. <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 via-amber-300 to-yellow-500">Без ограничений.</span>
         </h1>
-        <p className="text-slate-400 max-w-2xl mx-auto font-medium text-lg">
-          Откройте новые возможности и поддержите проект. Получите доступ к эксклюзивным функциям и максимальному качеству.
+        
+        <p className="text-slate-400 max-w-2xl mx-auto font-medium text-sm sm:text-base leading-relaxed">
+          Наслаждайтесь любимым аниме в 4K с аппаратным WebGL2 апскейлером, скачивайте серии для оффлайн-просмотра и моментально переходите к чтению манги с момента конца серии.
         </p>
+
+        {/* Free Registration Gift Banner */}
+        <div className="max-w-xl mx-auto mt-6 p-4 rounded-2xl bg-gradient-to-r from-amber-500/15 via-[#8B5CF6]/20 to-amber-500/15 border border-amber-500/30 flex items-center justify-center gap-3 text-xs sm:text-sm font-bold text-amber-200 shadow-xl">
+          <Gift className="w-5 h-5 text-yellow-400 shrink-0 animate-bounce" />
+          <span>
+            🎁 Всем новым пользователям дарим <strong className="text-white underline decoration-amber-400 underline-offset-4">1 месяц VIP бесплатно</strong> при регистрации!
+          </span>
+        </div>
       </div>
 
-      {!user?.isPremium ? (
-        <div className="max-w-4xl mx-auto grid md:grid-cols-2 gap-8 mb-20">
-          <div className="bg-surface/30 border border-white/5 rounded-[2rem] p-10 shadow-2xl backdrop-blur-sm">
-            <h3 className="text-2xl font-black text-white uppercase mb-4">Фан</h3>
-            <p className="text-xs text-slate-400 mb-8 font-medium">Для тех, кто хочет наслаждаться аниме без рекламы на одном экране.</p>
-            <ul className="space-y-6 mb-10">
-              <li className="flex items-center gap-4 text-slate-300"><CheckCircle className="w-6 h-6 text-[#8B5CF6]" /> Просмотр без рекламы</li>
-              <li className="flex items-center gap-4 text-slate-300"><CheckCircle className="w-6 h-6 text-[#8B5CF6]" /> Безграничный доступ к библиотеке KamiAnime</li>
-              <li className="flex items-center gap-4 text-slate-300"><CheckCircle className="w-6 h-6 text-[#8B5CF6]" /> Доступ сразу после трансляции в Японии (Simulcast)</li>
-              <li className="flex items-center gap-4 text-slate-300"><CheckCircle className="w-6 h-6 text-[#8B5CF6]" /> Качество Full HD (1080p)</li>
-              <li className="flex items-center gap-4 text-slate-500"><XCircle className="w-6 h-6" /> Оффлайн-просмотр (скачивание серий)</li>
-              <li className="flex items-center gap-4 text-slate-500"><XCircle className="w-6 h-6" /> Одновременный просмотр на 4 устройствах</li>
-            </ul>
-            <div className="text-3xl font-black text-white mb-6">299 ₽ <span className="text-xs text-slate-400 font-medium">/ мес</span></div>
-            <button 
-              onClick={handleBuyPremium}
-              disabled={isBuying}
-              className="w-full py-4 bg-white/5 hover:bg-white/10 text-white border border-white/10 font-black rounded-xl uppercase tracking-widest text-[10px] transition-all"
-            >
-              Выбрать тариф Фан
-            </button>
-          </div>
-
-          <div className="bg-gradient-to-br from-[#8B5CF6]/15 to-violet-500/10 border border-[#8B5CF6]/30 rounded-[2rem] p-10 shadow-2xl backdrop-blur-sm relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-64 h-64 bg-[#8B5CF6]/10 rounded-full blur-3xl -mr-32 -mt-32"></div>
-            <div className="absolute top-6 right-6 px-4 py-1 bg-[#8B5CF6] text-white font-black text-[9px] uppercase tracking-widest rounded-full">Рекомендуем</div>
-            <h3 className="text-2xl font-black text-[#8B5CF6] uppercase mb-4 font-display">Мега Фан</h3>
-            <p className="text-xs text-slate-300 mb-8 font-medium">Максимальный доступ для истинных ценителей аниме. Скачивайте серии и смотрите на любых устройствах.</p>
-            <ul className="space-y-6 mb-10 relative z-10">
-              <li className="flex items-center gap-4 text-white"><CheckCircle className="w-6 h-6 text-[#8B5CF6]" /> Просмотр без рекламы</li>
-              <li className="flex items-center gap-4 text-white"><CheckCircle className="w-6 h-6 text-[#8B5CF6]" /> Оффлайн-просмотр (скачать серию в приложении)</li>
-              <li className="flex items-center gap-4 text-white"><CheckCircle className="w-6 h-6 text-[#8B5CF6]" /> Одновременный просмотр на 4 устройствах</li>
-              <li className="flex items-center gap-4 text-white"><CheckCircle className="w-6 h-6 text-[#8B5CF6]" /> Доступ к качеству Ultra HD (4K)</li>
-              <li className="flex items-center gap-4 text-white"><CheckCircle className="w-6 h-6 text-[#8B5CF6]" /> Интегрированный заказ апскейла тайтлов</li>
-              <li className="flex items-center gap-4 text-white"><CheckCircle className="w-6 h-6 text-[#8B5CF6]" /> Скидки на мерч в магазине и значок профиля</li>
-            </ul>
-            <div className="text-3xl font-black text-white mb-6">399 ₽ <span className="text-xs text-slate-300 font-medium font-sans">/ мес</span></div>
-            <button 
-              onClick={handleBuyPremium}
-              disabled={isBuying}
-              className="w-full py-4 bg-gradient-to-r from-[#8B5CF6] to-[#7C3AED] hover:from-[#9D71FD] hover:to-[#8B5CF6] text-black font-black rounded-xl uppercase tracking-widest text-[10px] shadow-xl shadow-[#8B5CF6]/20 transition-all active:scale-95 flex items-center justify-center gap-2"
-            >
-              {isBuying ? <Loader2 className="w-5 h-5 animate-spin" /> : <><Crown className="w-4 h-4 fill-current" /> Выбрать Мега Фан</>}
-            </button>
-          </div>
+      {/* Success Notification */}
+      {isSuccess && (
+        <div className="max-w-3xl mx-auto mb-12 p-6 rounded-3xl bg-emerald-950/60 border border-emerald-500/40 text-center animate-in zoom-in-95 duration-300">
+          <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto mb-3" />
+          <h2 className="text-2xl font-black uppercase text-white">VIP Подписка успешно активирована!</h2>
+          <p className="text-slate-300 text-sm mt-1">
+            Теперь вам открыты 4K апскейлер AMD CAS, скачивание любых серий в MP4, каталог 4K и моментальный переход к манге.
+          </p>
         </div>
-      ) : (
-        <div className="max-w-4xl mx-auto mb-20 animate-in fade-in zoom-in-95 duration-300">
-          <div className="bg-gradient-to-br from-[#8B5CF6]/20 to-violet-500/20 border border-[#8B5CF6]/30 rounded-[2rem] p-10 shadow-2xl backdrop-blur-sm text-center">
-            <Crown className="w-16 h-16 text-[#8B5CF6] mx-auto mb-6 fill-current animate-bounce" />
-            <h2 className="text-3xl font-black text-white uppercase mb-4 font-display">Вы Мега Фан пользователь!</h2>
-            <p className="text-slate-300 mb-8 max-w-sm mx-auto text-xs">Спасибо за то, что вы являетесь подписчиком KamiAnime Premium. Наслаждайтесь просмотром серий без рекламы на любых девайсах!</p>
-            
-            <div className="grid md:grid-cols-3 gap-6 text-left">
-              <div className="bg-black/20 p-6 rounded-xl border border-white/5">
-                <Sparkles className="w-8 h-8 text-[#8B5CF6] mb-4" />
-                <h4 className="text-white font-bold mb-2 text-sm uppercase">Апскейл 4K</h4>
-                <p className="text-[11px] text-slate-400">Улучшайте качество любимых серий мгновенно с помощью натренированных нейросетей.</p>
+      )}
+
+      {/* Active VIP Status Card */}
+      {isVip && (
+        <div className="max-w-4xl mx-auto mb-14 p-6 sm:p-8 rounded-3xl bg-gradient-to-r from-[#1A1829] via-[#1E1934] to-[#1A1829] border border-amber-500/40 shadow-2xl relative overflow-hidden">
+          <div className="absolute -top-24 -right-24 w-64 h-64 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-6 relative z-10">
+            <div className="flex items-center gap-4 text-center sm:text-left">
+              <div className="w-14 h-14 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-yellow-400 shrink-0 shadow-lg shadow-amber-500/20">
+                <Crown className="w-8 h-8 fill-current animate-pulse" />
               </div>
-              <div className="bg-black/20 p-6 rounded-xl border border-white/5">
-                <Star className="w-8 h-8 text-[#8B5CF6] mb-4" />
-                <h4 className="text-white font-bold mb-2 text-sm uppercase">4 устройства</h4>
-                <p className="text-[11px] text-slate-400">Делитесь просмотром с друзьями на любых экранах и смартфонах одновременно.</p>
-              </div>
-              <div className="bg-black/20 p-6 rounded-xl border border-white/5">
-                <Shield className="w-8 h-8 text-[#8B5CF6] mb-4" />
-                <h4 className="text-white font-bold mb-2 text-sm uppercase">Оффлайн Режим</h4>
-                <p className="text-[11px] text-slate-400">Закачивайте серии на мобильные девайсы и продолжайте просмотр в дороге.</p>
+              <div>
+                <div className="flex items-center justify-center sm:justify-start gap-2">
+                  <h3 className="text-xl font-display font-black uppercase text-white">
+                    Ваш статус: <span className="text-yellow-400">Kami VIP Активен</span>
+                  </h3>
+                </div>
+                <p className="text-xs text-slate-300 font-medium mt-1">
+                  {user?.premiumUntil ? (
+                    <>
+                      Осталось: <strong className="text-yellow-300">{daysLeft} дн.</strong> (до {new Date(user.premiumUntil).toLocaleDateString('ru-RU')})
+                    </>
+                  ) : (
+                    'Бессрочный VIP доступ'
+                  )}
+                </p>
               </div>
             </div>
+
+            <button
+              onClick={() => {
+                const el = document.getElementById('pricing-plans');
+                el?.scrollIntoView({ behavior: 'smooth' });
+              }}
+              className="px-6 py-3 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-black font-black text-xs uppercase tracking-widest rounded-xl transition-all shadow-lg shadow-amber-500/20 cursor-pointer"
+            >
+              Продлить подписку
+            </button>
           </div>
         </div>
       )}
 
-      {user?.isPremium && (
-        <section className="max-w-4xl mx-auto bg-gradient-to-br from-primary/20 to-accent/20 rounded-[3rem] border border-primary/20 p-10 shadow-2xl backdrop-blur-md relative overflow-hidden group">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-primary/10 rounded-full blur-3xl -mr-32 -mt-32 group-hover:bg-primary/20 transition-all duration-1000"></div>
-          <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-10">
-            <div className="space-y-4 max-w-xl">
-              <div className="flex items-center gap-3 text-primary">
-                <Zap className="w-8 h-8 fill-current" />
-                <span className="text-[10px] font-black uppercase tracking-[0.3em]">Premium Privilege</span>
+      {/* Pricing Cards Grid */}
+      <div id="pricing-plans" className="max-w-5xl mx-auto mb-16">
+        <div className="text-center mb-8">
+          <h2 className="text-2xl sm:text-3xl font-display font-black uppercase tracking-tight text-white">
+            Тарифные планы
+          </h2>
+          <p className="text-xs sm:text-sm text-slate-400 mt-1">
+            Выберите удобный период. Без скрытых платежей, отмена в один клик.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {PLANS.map((plan) => {
+            const isSelected = selectedPlan.id === plan.id;
+            const isPopular = plan.id === 'month';
+
+            return (
+              <div
+                key={plan.id}
+                onClick={() => setSelectedPlan(plan)}
+                className={`relative rounded-3xl p-6 sm:p-8 flex flex-col justify-between transition-all duration-300 cursor-pointer border ${
+                  isSelected
+                    ? 'bg-[#181628] border-[#8B5CF6] ring-2 ring-[#8B5CF6]/50 shadow-2xl shadow-[#8B5CF6]/20 scale-100 md:scale-105 z-10'
+                    : 'bg-white/[0.03] border-white/10 hover:border-white/20 hover:bg-white/[0.05]'
+                }`}
+              >
+                {/* Badges */}
+                {plan.badge && (
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 bg-gradient-to-r from-amber-500 to-yellow-500 text-black font-black text-[9px] uppercase tracking-widest rounded-full shadow-lg">
+                    {plan.badge}
+                  </div>
+                )}
+
+                <div>
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <h3 className="text-lg font-black uppercase text-white font-display">
+                      {plan.title}
+                    </h3>
+                    {isPopular && (
+                      <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-[#8B5CF6]/20 text-[#A78BFA] border border-[#8B5CF6]/40">
+                        Хит
+                      </span>
+                    )}
+                  </div>
+
+                  <p className="text-xs text-slate-400 mb-6 leading-relaxed">
+                    {plan.description}
+                  </p>
+
+                  <div className="mb-6 p-4 rounded-2xl bg-black/40 border border-white/5">
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-4xl font-display font-black text-white">
+                        {plan.price} ₽
+                      </span>
+                      <span className="text-xs font-bold text-slate-400">
+                        / {plan.period}
+                      </span>
+                    </div>
+                    {plan.discount && (
+                      <div className="text-xs font-bold text-emerald-400 mt-1">
+                        {plan.discount}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Feature Bullets */}
+                  <ul className="space-y-3 mb-8">
+                    {plan.features.map((feat, idx) => (
+                      <li key={idx} className="flex items-start gap-2.5 text-xs text-slate-300">
+                        <Check className="w-4 h-4 text-[#8B5CF6] shrink-0 mt-0.5 stroke-[2.5]" />
+                        <span>{feat}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedPlan(plan);
+                      handleBuy();
+                    }}
+                    className={`w-full py-3.5 px-4 rounded-xl font-black text-xs uppercase tracking-widest transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                      isSelected
+                        ? 'bg-gradient-to-r from-[#8B5CF6] to-[#7C3AED] hover:from-[#9D71FD] hover:to-[#8B5CF6] text-white shadow-lg shadow-[#8B5CF6]/30'
+                        : 'bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10'
+                    }`}
+                  >
+                    <Crown className="w-3.5 h-3.5 fill-current text-yellow-400" />
+                    <span>Выбрать {plan.title.split(' ')[0]}</span>
+                  </button>
+                </div>
               </div>
-              <h3 className="text-3xl md:text-4xl font-display font-black text-white uppercase tracking-tighter leading-none">Заказать апскейл до 4K</h3>
-              <p className="text-slate-400 font-medium leading-relaxed">
-                Как премиум-пользователь, вы можете выбрать одно аниме, которое мы обработаем с помощью ИИ и добавим в качестве 4K.
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Checkout Section */}
+      <div className="max-w-3xl mx-auto mb-20 p-6 sm:p-8 rounded-3xl bg-[#13141C] border border-white/10 shadow-2xl">
+        <h3 className="text-xl font-display font-black uppercase text-white mb-2 flex items-center gap-2">
+          <CreditCard className="w-5 h-5 text-[#8B5CF6]" />
+          <span>Быстрое оформление</span>
+        </h3>
+        <p className="text-xs text-slate-400 mb-6">
+          Выбранный тариф: <strong className="text-white">{selectedPlan.title}</strong> за <strong className="text-yellow-400">{selectedPlan.price} ₽</strong>
+        </p>
+
+        {/* Payment Methods */}
+        <div className="mb-6">
+          <div className="text-xs font-black uppercase tracking-wider text-slate-400 mb-3">
+            Выберите способ оплаты
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <button
+              type="button"
+              onClick={() => setPaymentMethod('sbp')}
+              className={`p-3 rounded-2xl border flex flex-col items-center gap-2 text-xs font-bold transition-all cursor-pointer ${
+                paymentMethod === 'sbp'
+                  ? 'bg-[#8B5CF6]/20 border-[#8B5CF6] text-white'
+                  : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'
+              }`}
+            >
+              <QrCode className="w-5 h-5 text-emerald-400" />
+              <span>СБП 0%</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setPaymentMethod('card')}
+              className={`p-3 rounded-2xl border flex flex-col items-center gap-2 text-xs font-bold transition-all cursor-pointer ${
+                paymentMethod === 'card'
+                  ? 'bg-[#8B5CF6]/20 border-[#8B5CF6] text-white'
+                  : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'
+              }`}
+            >
+              <CreditCard className="w-5 h-5 text-blue-400" />
+              <span>Карта МИР</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setPaymentMethod('yoomoney')}
+              className={`p-3 rounded-2xl border flex flex-col items-center gap-2 text-xs font-bold transition-all cursor-pointer ${
+                paymentMethod === 'yoomoney'
+                  ? 'bg-[#8B5CF6]/20 border-[#8B5CF6] text-white'
+                  : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'
+              }`}
+            >
+              <Wallet className="w-5 h-5 text-violet-400" />
+              <span>ЮMoney</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setPaymentMethod('crypto')}
+              className={`p-3 rounded-2xl border flex flex-col items-center gap-2 text-xs font-bold transition-all cursor-pointer ${
+                paymentMethod === 'crypto'
+                  ? 'bg-[#8B5CF6]/20 border-[#8B5CF6] text-white'
+                  : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'
+              }`}
+            >
+              <Zap className="w-5 h-5 text-amber-400" />
+              <span>USDT / TON</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Action Button */}
+        {user ? (
+          <button
+            type="button"
+            onClick={handleBuy}
+            disabled={isProcessing}
+            className="w-full py-4 px-6 bg-gradient-to-r from-[#8B5CF6] to-[#7C3AED] hover:from-[#9D71FD] hover:to-[#8B5CF6] text-white font-black text-sm uppercase tracking-widest rounded-2xl shadow-xl shadow-[#8B5CF6]/30 transition-all flex items-center justify-center gap-2 cursor-pointer"
+          >
+            {isProcessing ? (
+              <>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                <span>Обработка платежа...</span>
+              </>
+            ) : (
+              <>
+                <Crown className="w-4 h-4 fill-current text-yellow-400" />
+                <span>Оплатить {selectedPlan.price} ₽ и активировать VIP</span>
+                <ArrowRight className="w-4 h-4 ml-1" />
+              </>
+            )}
+          </button>
+        ) : (
+          <div className="space-y-3">
+            <button
+              type="button"
+              onClick={openAuthModal}
+              className="w-full py-4 px-6 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-black font-black text-sm uppercase tracking-widest rounded-2xl shadow-xl shadow-amber-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <Gift className="w-5 h-5 fill-current" />
+              <span>Зарегистрироваться и получить 1 месяц бесплатно</span>
+              <ArrowRight className="w-4 h-4 ml-1" />
+            </button>
+            <p className="text-center text-xs text-slate-400">
+              Покупка и активация VIP доступна только после входа в аккаунт.
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Feature Comparison Table */}
+      <div className="max-w-4xl mx-auto mb-20">
+        <h2 className="text-2xl sm:text-3xl font-display font-black uppercase text-center mb-8">
+          Сравнение тарифов
+        </h2>
+
+        <div className="bg-[#12131A] border border-white/10 rounded-3xl overflow-hidden shadow-2xl">
+          <div className="grid grid-cols-3 p-4 sm:p-6 bg-white/[0.02] border-b border-white/10 text-xs font-black uppercase tracking-wider text-slate-400">
+            <div>Возможности</div>
+            <div className="text-center">Бесплатно</div>
+            <div className="text-center text-yellow-400 flex items-center justify-center gap-1">
+              <Crown className="w-3.5 h-3.5 fill-current" /> Kami VIP
+            </div>
+          </div>
+
+          <div className="divide-y divide-white/5 text-xs sm:text-sm">
+            <div className="grid grid-cols-3 p-4 sm:p-5 items-center">
+              <div className="font-bold text-white flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-[#8B5CF6] shrink-0" />
+                <span>4K WebGL2 Апскейлер (AMD CAS)</span>
+              </div>
+              <div className="text-center text-slate-500 font-bold">1080p Full HD</div>
+              <div className="text-center text-emerald-400 font-black">4K Ultra HD (2160p)</div>
+            </div>
+
+            <div className="grid grid-cols-3 p-4 sm:p-5 items-center">
+              <div className="font-bold text-white flex items-center gap-2">
+                <Download className="w-4 h-4 text-cyan-400 shrink-0" />
+                <span>Скачивание серий MP4</span>
+              </div>
+              <div className="text-center text-red-400/80 flex justify-center">
+                <X className="w-4 h-4" />
+              </div>
+              <div className="text-center text-emerald-400 font-black">Без ограничений</div>
+            </div>
+
+            <div className="grid grid-cols-3 p-4 sm:p-5 items-center">
+              <div className="font-bold text-white flex items-center gap-2">
+                <Tv className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>Раздел 4K Аниме</span>
+              </div>
+              <div className="text-center text-red-400/80 flex justify-center">
+                <X className="w-4 h-4" />
+              </div>
+              <div className="text-center text-emerald-400 font-black">Полный доступ</div>
+            </div>
+
+            <div className="grid grid-cols-3 p-4 sm:p-5 items-center">
+              <div className="font-bold text-white flex items-center gap-2">
+                <BookOpen className="w-4 h-4 text-pink-400 shrink-0" />
+                <span>Манга с конца серии</span>
+              </div>
+              <div className="text-center text-red-400/80 flex justify-center">
+                <X className="w-4 h-4" />
+              </div>
+              <div className="text-center text-emerald-400 font-black">Синхронизация в 1 клик</div>
+            </div>
+
+            <div className="grid grid-cols-3 p-4 sm:p-5 items-center">
+              <div className="font-bold text-white flex items-center gap-2">
+                <Shield className="w-4 h-4 text-blue-400 shrink-0" />
+                <span>Реклама и баннеры</span>
+              </div>
+              <div className="text-center text-slate-400">Стандартная</div>
+              <div className="text-center text-emerald-400 font-black">0% Рекламы</div>
+            </div>
+
+            <div className="grid grid-cols-3 p-4 sm:p-5 items-center">
+              <div className="font-bold text-white flex items-center gap-2">
+                <Volume2 className="w-4 h-4 text-amber-400 shrink-0" />
+                <span>Качество звука</span>
+              </div>
+              <div className="text-center text-slate-400">128-192 kbps</div>
+              <div className="text-center text-emerald-400 font-black">Ultra 320 kbps & Hi-Fi</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* AI Upscale Request Form for VIP */}
+      {isVip && (
+        <section className="max-w-4xl mx-auto bg-gradient-to-br from-[#8B5CF6]/15 via-primary/10 to-transparent rounded-3xl border border-[#8B5CF6]/30 p-8 shadow-2xl backdrop-blur-md relative overflow-hidden mb-16">
+          <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-8">
+            <div className="space-y-3 max-w-xl">
+              <div className="flex items-center gap-2 text-[#A78BFA]">
+                <Zap className="w-5 h-5 fill-current" />
+                <span className="text-xs font-black uppercase tracking-widest">VIP Привилегия</span>
+              </div>
+              <h3 className="text-2xl sm:text-3xl font-display font-black text-white uppercase tracking-tight">
+                Заказать 4K обработку тайтла
+              </h3>
+              <p className="text-slate-300 text-xs sm:text-sm leading-relaxed">
+                Как VIP подписчик вы можете предложить любое аниме, и наша нейросетевая ферма обработает его в 4K Ultra HD.
               </p>
             </div>
-            
+
             {isUpscaleSent ? (
-              <div className="bg-white/5 border border-white/10 p-8 rounded-3xl flex flex-col items-center gap-4 animate-in zoom-in-95 duration-500">
-                <Sparkles className="w-12 h-12 text-yellow-400" />
-                <p className="font-black uppercase tracking-widest text-xs text-white">Заявка принята!</p>
+              <div className="bg-emerald-500/20 border border-emerald-500/40 p-6 rounded-2xl flex flex-col items-center gap-2 animate-in zoom-in-95">
+                <Sparkles className="w-8 h-8 text-yellow-400" />
+                <p className="font-black uppercase tracking-wider text-xs text-white">Заявка принята!</p>
               </div>
             ) : (
-              <form onSubmit={handleUpscaleRequest} className="w-full md:w-auto flex flex-col sm:flex-row gap-4">
-                <input 
-                  type="text" 
+              <form onSubmit={handleUpscaleRequest} className="w-full md:w-auto flex flex-col sm:flex-row gap-3">
+                <input
+                  type="text"
                   value={upscaleAnime}
-                  onChange={e => setUpscaleAnime(e.target.value)}
+                  onChange={(e) => setUpscaleAnime(e.target.value)}
                   placeholder="Название аниме..."
-                  className="h-16 px-8 bg-black/40 border border-white/10 rounded-2xl text-white placeholder-slate-600 focus:border-primary outline-none min-w-[300px] transition-all"
+                  className="h-12 px-5 bg-black/50 border border-white/15 rounded-xl text-white placeholder-slate-500 focus:border-[#8B5CF6] outline-none min-w-[240px] text-xs font-bold transition-all"
                 />
-                <button type="submit" className="h-16 px-10 bg-primary hover:bg-violet-600 text-white font-black rounded-2xl flex items-center justify-center gap-3 transition-all active:scale-95 shadow-xl shadow-primary/20 uppercase text-[10px] tracking-widest">
-                  Отправить <Send className="w-4 h-4" />
+                <button
+                  type="submit"
+                  className="h-12 px-6 bg-[#8B5CF6] hover:bg-[#7C3AED] text-white font-black rounded-xl flex items-center justify-center gap-2 transition-all active:scale-95 shadow-lg shadow-[#8B5CF6]/20 uppercase text-xs tracking-wider cursor-pointer"
+                >
+                  <span>Отправить</span>
+                  <Send className="w-3.5 h-3.5" />
                 </button>
               </form>
             )}
@@ -166,14 +546,5 @@ const Premium: React.FC = () => {
     </div>
   );
 };
-
-// Simple XCircle component since we didn't import it
-const XCircle = ({ className }: { className?: string }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-    <circle cx="12" cy="12" r="10"></circle>
-    <line x1="15" y1="9" x2="9" y2="15"></line>
-    <line x1="9" y1="9" x2="15" y2="15"></line>
-  </svg>
-);
 
 export default Premium;

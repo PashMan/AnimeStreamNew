@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
-import { Download, Loader2, Film, CheckCircle, AlertTriangle, RefreshCw } from "lucide-react";
+import { Download, Loader2, Film, CheckCircle, AlertTriangle, RefreshCw, Crown } from "lucide-react";
 import { getCleanPlaylistUrl } from "../utils/media";
+import { useAuth } from "../context/AuthContext";
 
 interface BrowserDownloadWidgetProps {
   episodeUrl: string;
@@ -38,6 +39,7 @@ export const BrowserDownloadWidget: React.FC<BrowserDownloadWidgetProps> = ({
   shikimoriId,
   translationId,
 }) => {
+  const { isVip, openPremiumModal } = useAuth();
   const [qualities, setQualities] = useState<string[]>([]);
   const [loadingQualities, setLoadingQualities] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -335,6 +337,12 @@ export const BrowserDownloadWidget: React.FC<BrowserDownloadWidgetProps> = ({
 
   const handleStartDownload = async (quality: string) => {
     if (downloading) return;
+
+    if (!isVip) {
+      openPremiumModal("Скачивание серий в MP4 без ограничений");
+      return;
+    }
+
     setError(null);
     setSelectedQuality(quality);
     setDownloading(true);
@@ -656,7 +664,10 @@ export const BrowserDownloadWidget: React.FC<BrowserDownloadWidgetProps> = ({
                   }`}
                 >
                   <Film className="w-3.5 h-3.5 shrink-0" />
-                  {qual}p (.mp4)
+                  <span>{qual}p (.mp4)</span>
+                  {!isVip && (
+                    <Crown className="w-3 h-3 fill-current text-yellow-400 shrink-0 ml-0.5" />
+                  )}
                 </button>
               ))}
             </div>

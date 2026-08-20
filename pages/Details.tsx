@@ -36,6 +36,8 @@ import {
   MicOff,
   Crown,
   Play,
+  BookOpen,
+  Sparkles,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { fetchPlayersClientSide, KodikTranslation } from "../services/balancer";
@@ -195,7 +197,7 @@ const Details: React.FC = () => {
 
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { openAuthModal, user } = useAuth();
+  const { openAuthModal, user, isVip, openPremiumModal } = useAuth();
   const relatedRef = useRef<HTMLDivElement>(null);
   const similarRef = useRef<HTMLDivElement>(null);
 
@@ -1646,6 +1648,34 @@ const Details: React.FC = () => {
               </p>
             </section>
 
+            {/* Free VIP 1 Month Special Offer Banner */}
+            <div className="bg-gradient-to-r from-amber-500/10 via-primary/15 to-amber-500/10 border border-amber-500/25 rounded-3xl p-5 md:p-6 shadow-xl backdrop-blur-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-5 transition-all">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-yellow-400 shrink-0 shadow-lg shadow-amber-500/10">
+                  <Crown className="w-6 h-6 fill-current" />
+                </div>
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-black uppercase text-amber-300 tracking-wider">Спецпредложение для зрителей</span>
+                    <span className="px-2 py-0.5 rounded-full bg-amber-400/20 text-[10px] font-black uppercase text-yellow-200 border border-amber-400/30">
+                      1 месяц VIP бесплатно
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-300 font-medium mt-1 leading-relaxed max-w-2xl">
+                    Зарегистрируйтесь прямо сейчас и получите <strong>1 месяц Kami VIP</strong> бесплатно: 4K апскейл (AMD CAS), чтение манги с момента конца серии и скачивание в .MP4 без ограничений!
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 w-full md:w-auto shrink-0">
+                <Link
+                  to="/premium"
+                  className="w-full md:w-auto text-center px-5 py-3 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-black font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-amber-500/20 cursor-pointer active:scale-95 whitespace-nowrap"
+                >
+                  {isVip ? "Статус VIP активен" : "Получить 1 месяц VIP"}
+                </Link>
+              </div>
+            </div>
+
             <section className="scroll-mt-24" id="watch">
               <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-8">
                 <h3 className="text-2xl font-black text-white uppercase tracking-tight flex items-center gap-2.5">
@@ -2222,8 +2252,29 @@ const Details: React.FC = () => {
                     </div>
 
                     <div className="space-y-3">
-                      <div className="flex items-center justify-between text-xs font-black uppercase tracking-wider text-slate-400">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-black uppercase tracking-wider text-slate-400">
                         <span>Список серий ({(selectedTranslation?.last_episode || selectedTranslation?.episodes_count) || anime.episodesAired || anime.episodes || 1})</span>
+
+                        <button
+                          onClick={() => {
+                            if (!isVip) {
+                              openPremiumModal("Продолжить читать мангу с момента конца серии");
+                              return;
+                            }
+                            const queryTitle = anime?.title || anime?.originalName || "";
+                            navigate(`/manga?search=${encodeURIComponent(queryTitle)}&episode=${paramEpisode || 1}`);
+                          }}
+                          className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-pink-500/10 hover:bg-pink-500/20 border border-pink-500/30 text-pink-300 font-black text-[11px] uppercase tracking-wider transition-all cursor-pointer shadow-sm hover:border-pink-500/50 w-fit"
+                          title="Синхронизация прогресса с мангой"
+                        >
+                          <BookOpen className="w-3.5 h-3.5 text-pink-400" />
+                          <span>Читать мангу с конца серии {paramEpisode || "1"}</span>
+                          {!isVip && (
+                            <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-yellow-300 text-[8px] font-black uppercase flex items-center gap-0.5 border border-amber-500/30">
+                              <Crown className="w-2.5 h-2.5 fill-current text-yellow-400" /> VIP
+                            </span>
+                          )}
+                        </button>
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 max-h-[420px] overflow-y-auto pr-1 custom-scrollbar">
