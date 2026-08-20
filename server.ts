@@ -2163,7 +2163,7 @@ const jikanImageCache = new Map<string, string>();
 // API Route for Image Proxy (matches Cloudflare Worker behavior)
 app.get('/api/image/*', async (c) => {
   const imagePath = c.req.path.replace('/api/image/', '');
-  const targetUrl = `https://shikimori.one/${imagePath}${c.req.url.includes('?') ? c.req.url.substring(c.req.url.indexOf('?')) : ''}`;
+  const targetUrl = `https://shikimori.io/${imagePath}${c.req.url.includes('?') ? c.req.url.substring(c.req.url.indexOf('?')) : ''}`;
   
   const headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
@@ -2172,16 +2172,19 @@ app.get('/api/image/*', async (c) => {
   };
 
   try {
-    let response = await fetch(targetUrl, { headers });
-    
-    // First fallback: desu.shikimori.one (often where images actually live now)
-    if (!response.ok) {
-      const desuUrl = `https://desu.shikimori.one/${imagePath}${c.req.url.includes('?') ? c.req.url.substring(c.req.url.indexOf('?')) : ''}`;
-      response = await fetch(desuUrl, { headers });
+    let response: Response | null = null;
+
+    if (!imagePath.includes('missing') && !imagePath.includes('none.png')) {
+      try {
+        const r = await fetch(targetUrl, { headers });
+        if (r.ok && !r.url.includes('missing')) {
+          response = r;
+        }
+      } catch (_) {}
     }
 
     // Second Fallback to AniList GraphQL, Kodik API, and Jikan
-    if (!response.ok) {
+    if (!response || !response.ok) {
       const animeIdMatch = imagePath.match(/\/(\d+)\.(jpg|png|webp|jpeg)$/) || c.req.url.match(/id=(\d+)/);
       if (animeIdMatch) {
         const animeId = parseInt(animeIdMatch[1], 10);

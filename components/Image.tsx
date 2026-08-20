@@ -44,17 +44,24 @@ export const Image = ({ src, alt, className, fallbackClassName, priority, animeI
       }
   }, [src]);
 
+  // Check if image is already loaded (from cache)
+  useEffect(() => {
+      if (imgRef.current && imgRef.current.complete && imgRef.current.naturalWidth > 0) {
+          setIsLoading(false);
+      }
+  }, [imageSrc]);
+
   // If src is missing or placeholder initially, start fallback chain immediately
   useEffect(() => {
       if ((!src || src === FALLBACK_IMAGE || src.includes('missing') || src.includes('none.png')) && fallbackLevel === 0) {
           setFallbackLevel(1);
       }
-  }, [src, fallbackLevel, animeTitle]);
+  }, [src, fallbackLevel, animeTitle, animeId]);
 
   useEffect(() => {
-      if (fallbackLevel === 1 && animeTitle && isInView) {
+      if (fallbackLevel === 1 && (animeTitle || animeId) && isInView) {
           let active = true;
-          fetchAnimeImage(animeTitle).then(url => {
+          fetchAnimeImage(animeTitle || '', animeId).then(url => {
               if (active) {
                   if (url) {
                       setImageSrc(url);
@@ -62,12 +69,12 @@ export const Image = ({ src, alt, className, fallbackClassName, priority, animeI
                       setFallbackLevel(2); // Give up
                   }
               }
-          }).catch((err) => {
+          }).catch(() => {
               active && setFallbackLevel(2);
           });
           return () => { active = false; };
       }
-  }, [fallbackLevel, animeTitle, isInView]);
+  }, [fallbackLevel, animeTitle, animeId, isInView]);
 
   const handleError = () => {
       setIsLoading(false);

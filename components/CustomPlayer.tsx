@@ -420,100 +420,96 @@ class AnimeWebGL1080p {
       }
     `;
 
-    // Pass 4: WebGL2 Anime4K CAS + Sobel Edge + Line Thinning
+    // Pass 4: GLSL 300 es Contrast Adaptive Sharpening (AMD CAS 3x3 + Anti-Halo protection)
     const fsCasRescaleSource = this.isWebGL2 ? `#version 300 es
       precision highp float;
       in vec2 v_texCoord;
       out vec4 fragColor;
 
-      uniform sampler2D u_texture;
-      uniform vec2 u_resolution;
-      uniform float u_strength;
-
-      float luma(vec3 color) {
-        return dot(color, vec3(0.299, 0.587, 0.114));
-      }
+      uniform sampler2D u_image;
+      uniform vec2 u_MAIN_size;
+      uniform float u_amount;
 
       void main() {
-        vec3 orig = texture(u_texture, v_texCoord).rgb;
-        vec2 step = 1.0 / u_resolution;
+        vec2 texel = 1.0 / u_MAIN_size;
 
-        vec3 c  = orig;
-        vec3 tl = texture(u_texture, v_texCoord + vec2(-step.x, -step.y)).rgb;
-        vec3 t  = texture(u_texture, v_texCoord + vec2(0.0, -step.y)).rgb;
-        vec3 tr = texture(u_texture, v_texCoord + vec2(step.x, -step.y)).rgb;
-        vec3 l  = texture(u_texture, v_texCoord + vec2(-step.x, 0.0)).rgb;
-        vec3 r  = texture(u_texture, v_texCoord + vec2(step.x, 0.0)).rgb;
-        vec3 bl = texture(u_texture, v_texCoord + vec2(-step.x, step.y)).rgb;
-        vec3 b  = texture(u_texture, v_texCoord + vec2(0.0, step.y)).rgb;
-        vec3 br = texture(u_texture, v_texCoord + vec2(step.x, step.y)).rgb;
+        // 3x3 sampling grid
+        vec3 a = texture(u_image, v_texCoord + vec2(-texel.x, -texel.y)).rgb;
+        vec3 b = texture(u_image, v_texCoord + vec2(0.0, -texel.y)).rgb;
+        vec3 c = texture(u_image, v_texCoord + vec2(texel.x, -texel.y)).rgb;
+        vec3 d = texture(u_image, v_texCoord + vec2(-texel.x, 0.0)).rgb;
+        vec3 e = texture(u_image, v_texCoord).rgb;
+        vec3 f = texture(u_image, v_texCoord + vec2(texel.x, 0.0)).rgb;
+        vec3 g = texture(u_image, v_texCoord + vec2(-texel.x, texel.y)).rgb;
+        vec3 h = texture(u_image, v_texCoord + vec2(0.0, texel.y)).rgb;
+        vec3 i = texture(u_image, v_texCoord + vec2(texel.x, texel.y)).rgb;
 
-        float l_c  = luma(c);
-        float l_tl = luma(tl); float l_t = luma(t); float l_tr = luma(tr);
-        float l_l  = luma(l);                       float l_r  = luma(r);
-        float l_bl = luma(bl); float l_b = luma(b); float l_br = luma(br);
+        // Soft min & soft max across 3x3 sampling grid
+        vec3 min_grid = min(min(min(a, b), min(c, d)), min(min(e, f), min(g, min(h, i))));
+        vec3 max_grid = max(max(max(a, b), max(c, d)), max(max(e, f), max(g, max(h, i))));
 
-        float dx = (l_tr + 2.0 * l_r + l_br) - (l_tl + 2.0 * l_l + l_bl);
-        float dy = (l_bl + 2.0 * l_b + l_br) - (l_tl + 2.0 * l_t + l_tr);
-        float edge = clamp(sqrt(dx * dx + dy * dy) * 2.0, 0.0, 1.0);
+        // Cross soft min/max
+        vec3 min_cross = min(min(b, d), min(f, h));
+        vec3 max_cross = max(max(b, d), max(f, h));
 
-        vec3 min_c = min(min(min(t, b), l), r);
-        vec3 max_c = max(max(max(t, b), l), r);
-        vec3 sharp = c + (c - (t + b + l + r) * 0.25) * (u_strength * 1.6);
-        sharp = clamp(sharp, min_c, max_c);
+        // Anti-Halo protection bounds
+        vec3 min_soft = min(min_grid, min_cross);
+        vec3 max_soft = max(max_grid, max_cross);
 
-        vec3 result = mix(c, sharp, u_strength);
-        if (edge > 0.15) {
-          result = mix(result, result * 0.82, edge * 0.45);
-        }
+        // Contrast Adaptive Sharpening weight calculation
+        vec3 amp = clamp(min(min_soft, vec3(1.0) - max_soft) / max(max_soft, vec3(0.0001)), 0.0, 1.0);
+        float peak = -1.0 / mix(8.0, 5.0, clamp(u_amount, 0.0, 1.0));
+        vec3 w = vec3(sqrt(amp) * peak);
 
-        fragColor = vec4(result, 1.0);
+        // Weighted filter evaluation (4-tap cross + center)
+        vec3 filter_sum = b + d + f + h;
+        vec3 cas_col = (e + filter_sum * w) / (vec3(1.0) + 4.0 * w);
+
+        // Anti-Halo clamping protection
+        vec3 final_col = clamp(cas_col, min_soft, max_soft);
+
+        fragColor = vec4(clamp(final_col, 0.0, 1.0), 1.0);
       }
     ` : `
       precision highp float;
       varying vec2 v_texCoord;
-      uniform sampler2D u_texture;
-      uniform vec2 u_resolution;
-      uniform float u_strength;
 
-      float luma(vec3 color) {
-        return dot(color, vec3(0.299, 0.587, 0.114));
-      }
+      uniform sampler2D u_image;
+      uniform vec2 u_MAIN_size;
+      uniform float u_amount;
 
       void main() {
-        vec3 orig = texture2D(u_texture, v_texCoord).rgb;
-        vec2 step = 1.0 / u_resolution;
+        vec2 texel = 1.0 / u_MAIN_size;
 
-        vec3 c  = orig;
-        vec3 tl = texture2D(u_texture, v_texCoord + vec2(-step.x, -step.y)).rgb;
-        vec3 t  = texture2D(u_texture, v_texCoord + vec2(0.0, -step.y)).rgb;
-        vec3 tr = texture2D(u_texture, v_texCoord + vec2(step.x, -step.y)).rgb;
-        vec3 l  = texture2D(u_texture, v_texCoord + vec2(-step.x, 0.0)).rgb;
-        vec3 r  = texture2D(u_texture, v_texCoord + vec2(step.x, 0.0)).rgb;
-        vec3 bl = texture2D(u_texture, v_texCoord + vec2(-step.x, step.y)).rgb;
-        vec3 b  = texture2D(u_texture, v_texCoord + vec2(0.0, step.y)).rgb;
-        vec3 br = texture2D(u_texture, v_texCoord + vec2(step.x, step.y)).rgb;
+        vec3 a = texture2D(u_image, v_texCoord + vec2(-texel.x, -texel.y)).rgb;
+        vec3 b = texture2D(u_image, v_texCoord + vec2(0.0, -texel.y)).rgb;
+        vec3 c = texture2D(u_image, v_texCoord + vec2(texel.x, -texel.y)).rgb;
+        vec3 d = texture2D(u_image, v_texCoord + vec2(-texel.x, 0.0)).rgb;
+        vec3 e = texture2D(u_image, v_texCoord).rgb;
+        vec3 f = texture2D(u_image, v_texCoord + vec2(texel.x, 0.0)).rgb;
+        vec3 g = texture2D(u_image, v_texCoord + vec2(-texel.x, texel.y)).rgb;
+        vec3 h = texture2D(u_image, v_texCoord + vec2(0.0, texel.y)).rgb;
+        vec3 i = texture2D(u_image, v_texCoord + vec2(texel.x, texel.y)).rgb;
 
-        float l_c  = luma(c);
-        float l_tl = luma(tl); float l_t = luma(t); float l_tr = luma(tr);
-        float l_l  = luma(l);                       float l_r  = luma(r);
-        float l_bl = luma(bl); float l_b = luma(b); float l_br = luma(br);
+        vec3 min_grid = min(min(min(a, b), min(c, d)), min(min(e, f), min(g, min(h, i))));
+        vec3 max_grid = max(max(max(a, b), max(c, d)), max(max(e, f), max(g, max(h, i))));
 
-        float dx = (l_tr + 2.0 * l_r + l_br) - (l_tl + 2.0 * l_l + l_bl);
-        float dy = (l_bl + 2.0 * l_b + l_br) - (l_tl + 2.0 * l_t + l_tr);
-        float edge = clamp(sqrt(dx * dx + dy * dy) * 2.0, 0.0, 1.0);
+        vec3 min_cross = min(min(b, d), min(f, h));
+        vec3 max_cross = max(max(b, d), max(f, h));
 
-        vec3 min_c = min(min(min(t, b), l), r);
-        vec3 max_c = max(max(max(t, b), l), r);
-        vec3 sharp = c + (c - (t + b + l + r) * 0.25) * (u_strength * 1.6);
-        sharp = clamp(sharp, min_c, max_c);
+        vec3 min_soft = min(min_grid, min_cross);
+        vec3 max_soft = max(max_grid, max_cross);
 
-        vec3 result = mix(c, sharp, u_strength);
-        if (edge > 0.15) {
-          result = mix(result, result * 0.82, edge * 0.45);
-        }
+        vec3 amp = clamp(min(min_soft, vec3(1.0) - max_soft) / max(max_soft, vec3(0.0001)), 0.0, 1.0);
+        float peak = -1.0 / mix(8.0, 5.0, clamp(u_amount, 0.0, 1.0));
+        vec3 w = vec3(sqrt(amp) * peak);
 
-        gl_FragColor = vec4(result, 1.0);
+        vec3 filter_sum = b + d + f + h;
+        vec3 cas_col = (e + filter_sum * w) / (vec3(1.0) + 4.0 * w);
+
+        vec3 final_col = clamp(cas_col, min_soft, max_soft);
+
+        gl_FragColor = vec4(clamp(final_col, 0.0, 1.0), 1.0);
       }
     `;
 
@@ -622,11 +618,11 @@ class AnimeWebGL1080p {
   public setTargetResolution(targetH: number) {
     this.targetMode = targetH;
     if (targetH === 2160 || targetH === 0) {
-      this.sharpness = 0.85; // 4K Super-Resolution boost
+      this.sharpness = 0.80; // 0.75-0.85 for 1080p source upscaled to 4K
     } else if (targetH === 1080) {
-      this.sharpness = 0.60;
+      this.sharpness = 1.0;  // 1.0 for 720p source upscaled to 1080p
     } else {
-      this.sharpness = 0.50;
+      this.sharpness = 0.80;
     }
     if (targetH === -1) {
       this.canvas.style.opacity = "0";
@@ -793,16 +789,20 @@ class AnimeWebGL1080p {
     this.drawQuad(this.upscale2xProgram);
 
     // -------------------------------------------------------------
-    // PASS 4: WebGL2 Anime4K CAS + Sobel Edge Detection + Line Thinning
+    // PASS 4: WebGL2 GLSL 300 es AMD CAS (Contrast Adaptive Sharpening)
     // -------------------------------------------------------------
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, renderW, renderH);
     gl.useProgram(this.casRescaleProgram);
 
     gl.bindTexture(gl.TEXTURE_2D, this.fboUpscale2xTexture);
-    gl.uniform1i(gl.getUniformLocation(this.casRescaleProgram, "u_texture"), 0);
-    gl.uniform2f(gl.getUniformLocation(this.casRescaleProgram, "u_resolution"), renderW, renderH);
-    gl.uniform1f(gl.getUniformLocation(this.casRescaleProgram, "u_strength"), this.strength || 1.25);
+    gl.uniform1i(gl.getUniformLocation(this.casRescaleProgram, "u_image"), 0);
+    gl.uniform2f(gl.getUniformLocation(this.casRescaleProgram, "u_MAIN_size"), upW, upH);
+
+    // u_amount: 0.80 for 1080p source (targetH 2160), 1.0 for 720p source (targetH 1080)
+    const defaultAmount = targetH >= 2160 ? 0.80 : 1.0;
+    const uAmount = this.sharpness !== undefined ? this.sharpness : defaultAmount;
+    gl.uniform1f(gl.getUniformLocation(this.casRescaleProgram, "u_amount"), uAmount);
     this.drawQuad(this.casRescaleProgram);
   }
 
@@ -927,7 +927,7 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
     >(() => {
       if (isKodikStream) {
         return [
-          { html: "1080p (Anime4K AI)", level: 0, targetH: 1080, isAi: true },
+          { html: "Апскейл 1080p (AMD CAS)", level: 0, targetH: 1080, isAi: true },
           { html: "720p", level: 0, targetH: -1 },
           { html: "480p", level: 1, targetH: -1 },
           { html: "360p", level: 2, targetH: -1 },
@@ -935,7 +935,7 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
         ];
       }
       return [
-        { html: "4K (Anime4K AI)", level: 0, targetH: 2160, isAi: true },
+        { html: "Апскейл 4K (AMD CAS)", level: 0, targetH: 2160, isAi: true },
         { html: "1080p", level: 0, targetH: -1 },
         { html: "720p", level: 1, targetH: -1 },
         { html: "480p", level: 2, targetH: -1 },
@@ -948,7 +948,7 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
     useEffect(() => {
       if (isKodikStream) {
         setAvailableQualities([
-          { html: "1080p (Anime4K AI)", level: 0, targetH: 1080, isAi: true },
+          { html: "Апскейл 1080p (AMD CAS)", level: 0, targetH: 1080, isAi: true },
           { html: "720p", level: 0, targetH: -1 },
           { html: "480p", level: 1, targetH: -1 },
           { html: "360p", level: 2, targetH: -1 },
@@ -956,7 +956,7 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
         ]);
       } else {
         setAvailableQualities([
-          { html: "4K (Anime4K AI)", level: 0, targetH: 2160, isAi: true },
+          { html: "Апскейл 4K (AMD CAS)", level: 0, targetH: 2160, isAi: true },
           { html: "1080p", level: 0, targetH: -1 },
           { html: "720p", level: 1, targetH: -1 },
           { html: "480p", level: 2, targetH: -1 },
@@ -1368,9 +1368,9 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                   // 1080p native source (e.g. Aniboom) -> upscales to 4K: "4K (Anime4K AI)"
                   // 720p native source (e.g. Kodik) -> upscales to 1080p: "1080p (Anime4K AI)"
                   if (hasNative1080) {
-                    parsedQualities.push({ html: "4K (Anime4K AI)", level: 0, targetH: 2160, isAi: true });
+                    parsedQualities.push({ html: "Апскейл 4K (AMD CAS)", level: 0, targetH: 2160, isAi: true });
                   } else {
-                    parsedQualities.push({ html: "1080p (Anime4K AI)", level: 0, targetH: 1080, isAi: true });
+                    parsedQualities.push({ html: "Апскейл 1080p (AMD CAS)", level: 0, targetH: 1080, isAi: true });
                   }
 
                   nativeList.forEach(item => {
@@ -1615,9 +1615,9 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                   // 1080p native source (e.g. Aniboom) -> upscales to 4K: "4K (Anime4K AI)"
                   // 720p native source (e.g. Kodik) -> upscales to 1080p: "1080p (Anime4K AI)"
                   if (hasNative1080) {
-                    finalQuals.push({ html: "4K (Anime4K AI)", level: maxLevelIndex, targetH: 2160, isAi: true });
+                    finalQuals.push({ html: "Апскейл 4K (AMD CAS)", level: maxLevelIndex, targetH: 2160, isAi: true });
                   } else {
-                    finalQuals.push({ html: "1080p (Anime4K AI)", level: maxLevelIndex, targetH: 1080, isAi: true });
+                    finalQuals.push({ html: "Апскейл 1080p (AMD CAS)", level: maxLevelIndex, targetH: 1080, isAi: true });
                   }
 
                   mappedLevels.forEach((item) => {
@@ -1864,14 +1864,14 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
         if (item.html.includes("4K") || item.targetH === 2160) {
           webglInstanceRef.current.setTargetResolution(2160);
           webglInstanceRef.current.start();
-        } else if (item.html.includes("1080p (Anime4K") || item.targetH === 1080) {
+        } else if ((item.html.includes("1080p") && (item.isAi || item.html.includes("CAS") || item.html.includes("Anime4K"))) || item.targetH === 1080) {
           webglInstanceRef.current.setTargetResolution(1080);
           webglInstanceRef.current.start();
         } else if (item.html === "Авто" || item.targetH === 0) {
           webglInstanceRef.current.setTargetResolution(0); // Auto mode: 1080p source -> 4K (2160p), 720p source -> 1080p
           webglInstanceRef.current.start();
         } else {
-          // Standard raw resolution selected without AI upscaling
+          // Standard raw resolution selected without WebGL upscaling
           webglInstanceRef.current.setTargetResolution(-1);
         }
       }
