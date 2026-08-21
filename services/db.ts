@@ -17,8 +17,8 @@ import {
 import { containsProfanity } from '../utils/profanity';
 
 
-// Use environment variables or fallback to the key you provided
-const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL || 'https://ulumbarwutnsodmzxpst.supabase.co';
+// Use environment variables or fallback to the active project
+const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL || 'https://wazhihhiburkucpnypzc.supabase.co';
 const supabaseKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVsdW1iYXJ3dXRuc29kbXp4cHN0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE3MDA5ODIsImV4cCI6MjA4NzI3Njk4Mn0.4HTww4JB9dcc9FcyONURPsdcu4CAdKzScsshAj3lJxs';
 
 let supabaseClient: any = null;
@@ -302,10 +302,15 @@ class DatabaseService {
   }
 
   private translateError(message: string): string {
+    if (!message) return 'Произошла непредвиденная ошибка';
+    if (message.includes('Failed to fetch') || message.includes('fetch failed') || message.includes('NetworkError') || message.includes('ERR_TUNNEL') || message.includes('AuthRetryableFetchError')) {
+      return 'Сервер авторизации Supabase недоступен. Проверьте статус проекта в Supabase Dashboard (проект на бесплатном тарифе может быть приостановлен).';
+    }
     if (message.includes('User already registered')) return 'Пользователь с таким email уже зарегистрирован';
     if (message.includes('database error saving new user')) return 'Этот email уже занят или произошла ошибка базы данных';
     if (message.includes('Invalid login credentials')) return 'Неверный email или пароль';
     if (message.includes('Email not confirmed')) return 'Email не подтвержден';
+    if (message.includes('rate limit') || message.includes('over_email_send_rate_limit')) return 'Слишком много запросов. Пожалуйста, подождите минуту перед повторной попыткой.';
     return message;
   }
 
