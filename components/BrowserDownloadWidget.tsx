@@ -606,14 +606,14 @@ export const BrowserDownloadWidget: React.FC<BrowserDownloadWidgetProps> = ({
           {!loadingQualities && qualities.length > 0 && (
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-[11px] font-bold">
               {resolvedProvider === "aniboom" && qualities.includes("1080") ? (
-                <span className="text-emerald-400 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                  AniBoom 1080p Ultra HD
+                <span className="text-[#8B5CF6] flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#8B5CF6] animate-pulse"></span>
+                  1080p Full HD
                 </span>
               ) : (
-                <span className="text-cyan-400 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
-                  {qualities[0] ? `${qualities[0]}p HD` : 'HD качество'}
+                <span className="text-slate-300 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#8B5CF6]"></span>
+                  {qualities[0] ? `${qualities[0]}p` : 'HD'}
                 </span>
               )}
             </div>
@@ -666,7 +666,7 @@ export const BrowserDownloadWidget: React.FC<BrowserDownloadWidgetProps> = ({
                   <Film className="w-3.5 h-3.5 shrink-0" />
                   <span>{qual}p (.mp4)</span>
                   {!isVip && (
-                    <Crown className="w-3 h-3 fill-current text-yellow-400 shrink-0 ml-0.5" />
+                    <Crown className="w-3 h-3 text-[#8B5CF6] shrink-0 ml-0.5" />
                   )}
                 </button>
               ))}

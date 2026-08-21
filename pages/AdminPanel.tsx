@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../services/db';
 import { Report, User } from '../types';
-import { Shield, AlertTriangle, Trash2, UserX, MessageSquareOff, CheckCircle, XCircle, FileText, Bot, Download } from 'lucide-react';
+import { Shield, AlertTriangle, Trash2, UserX, MessageSquareOff, CheckCircle, XCircle, FileText, Send, Download } from 'lucide-react';
 import { containsProfanity } from '../utils/profanity';
 import { AdminSeoPanel } from '../components/AdminSeoPanel';
 import { PYTHON_BOT_SCRIPT } from '../utils/telegramBotScript';
@@ -281,7 +281,7 @@ const AdminPanel: React.FC = () => {
                 activeTab === 'bot' ? 'bg-indigo-500 text-white' : 'text-gray-400 hover:text-white hover:bg-white/5'
               }`}
             >
-              <Bot className="w-4 h-4" />
+              <Send className="w-4 h-4" />
               Настройка ТГ-Бота
             </button>
           </>
@@ -541,7 +541,7 @@ const AdminPanel: React.FC = () => {
                 <div className="space-y-6">
                   <div className="bg-slate-800/50 border border-white/10 rounded-xl p-6">
                     <h2 className="text-2xl font-black text-white mb-2 flex items-center gap-3">
-                      <Bot className="w-6 h-6 text-indigo-400" /> Интеграция Telegram-Бота для скачивания серий
+                      <Send className="w-6 h-6 text-indigo-400" /> Интеграция Telegram-Бота для скачивания серий
                     </h2>
                     <p className="text-gray-400 text-sm">
                       Вы можете настроить вашего текущего Telegram-бота на поддержку функции скачивания серий. Бот будет автоматически получать команду при клике на вашем сайте, запрашивать качество трансляции и отправлять готовую ссылку или файл пользователю.

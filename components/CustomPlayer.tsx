@@ -21,7 +21,6 @@ import {
   Sliders,
   Users,
   Film,
-  Sparkles,
   Crown,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
@@ -931,7 +930,7 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
     >(() => {
       if (isKodikStream) {
         return [
-          { html: "Апскейл 1080p (AMD CAS)", level: 0, targetH: 1080, isAi: true },
+          { html: "1080p", level: 0, targetH: 1080, isAi: true },
           { html: "720p", level: 0, targetH: -1 },
           { html: "480p", level: 1, targetH: -1 },
           { html: "360p", level: 2, targetH: -1 },
@@ -939,7 +938,7 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
         ];
       }
       return [
-        { html: "Апскейл 4K (AMD CAS)", level: 0, targetH: 2160, isAi: true },
+        { html: "4K", level: 0, targetH: 2160, isAi: true },
         { html: "1080p", level: 0, targetH: -1 },
         { html: "720p", level: 1, targetH: -1 },
         { html: "480p", level: 2, targetH: -1 },
@@ -952,7 +951,7 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
     useEffect(() => {
       if (isKodikStream) {
         setAvailableQualities([
-          { html: "Апскейл 1080p (AMD CAS)", level: 0, targetH: 1080, isAi: true },
+          { html: "1080p", level: 0, targetH: 1080, isAi: true },
           { html: "720p", level: 0, targetH: -1 },
           { html: "480p", level: 1, targetH: -1 },
           { html: "360p", level: 2, targetH: -1 },
@@ -960,7 +959,7 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
         ]);
       } else {
         setAvailableQualities([
-          { html: "Апскейл 4K (AMD CAS)", level: 0, targetH: 2160, isAi: true },
+          { html: "4K", level: 0, targetH: 2160, isAi: true },
           { html: "1080p", level: 0, targetH: -1 },
           { html: "720p", level: 1, targetH: -1 },
           { html: "480p", level: 2, targetH: -1 },
@@ -1035,6 +1034,7 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
     const onNextEpisodeRef = useRef(onNextEpisode);
     const onPrevEpisodeRef = useRef(onPrevEpisode);
     const onPlayerErrorRef = useRef(onPlayerError);
+    const onOpenDownloadRef = useRef(onOpenDownload);
     const audioTrackNamesRef = useRef(audioTrackNames);
     const lastPlaybackPosRef = useRef<number>(0);
     const wasPlayingRef = useRef<boolean>(false);
@@ -1050,6 +1050,10 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
     useEffect(() => {
       onPlayerErrorRef.current = onPlayerError;
     }, [onPlayerError]);
+
+    useEffect(() => {
+      onOpenDownloadRef.current = onOpenDownload;
+    }, [onOpenDownload]);
 
     useEffect(() => {
       audioTrackNamesRef.current = audioTrackNames;
@@ -1254,6 +1258,29 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                   },
                 ]
               : []),
+            ...(!!onOpenDownload
+              ? [
+                  {
+                    name: "download-btn",
+                    position: "right",
+                    index: 19,
+                    html: `
+                      <span class="art-icon art-icon-download" style="cursor: pointer; display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; color: #fff;" title="Скачать серию">
+                        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                          <polyline points="7 10 12 15 17 10"></polyline>
+                          <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                      </span>
+                    `,
+                    click: function () {
+                      if (onOpenDownloadRef.current) {
+                        onOpenDownloadRef.current();
+                      }
+                    },
+                  },
+                ]
+              : []),
             {
               name: "custom-settings-btn",
               position: "right",
@@ -1369,12 +1396,12 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                   const parsedQualities: { html: string; level: number; targetH?: number; isAi?: boolean }[] = [];
 
                   // RULE:
-                  // 1080p native source (e.g. Aniboom) -> upscales to 4K: "4K (Anime4K AI)"
-                  // 720p native source (e.g. Kodik) -> upscales to 1080p: "1080p (Anime4K AI)"
+                  // 1080p native source (e.g. Aniboom) -> 4K
+                  // 720p native source (e.g. Kodik) -> 1080p
                   if (hasNative1080) {
-                    parsedQualities.push({ html: "Апскейл 4K (AMD CAS)", level: 0, targetH: 2160, isAi: true });
+                    parsedQualities.push({ html: "4K", level: 0, targetH: 2160, isAi: true });
                   } else {
-                    parsedQualities.push({ html: "Апскейл 1080p (AMD CAS)", level: 0, targetH: 1080, isAi: true });
+                    parsedQualities.push({ html: "1080p", level: 0, targetH: 1080, isAi: true });
                   }
 
                   nativeList.forEach(item => {
@@ -1616,12 +1643,12 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                   const maxLevelIndex = Math.max(0, (levels?.length || 1) - 1);
 
                   // RULE:
-                  // 1080p native source (e.g. Aniboom) -> upscales to 4K: "4K (Anime4K AI)"
-                  // 720p native source (e.g. Kodik) -> upscales to 1080p: "1080p (Anime4K AI)"
+                  // 1080p native source (e.g. Aniboom) -> 4K
+                  // 720p native source (e.g. Kodik) -> 1080p
                   if (hasNative1080) {
-                    finalQuals.push({ html: "Апскейл 4K (AMD CAS)", level: maxLevelIndex, targetH: 2160, isAi: true });
+                    finalQuals.push({ html: "4K", level: maxLevelIndex, targetH: 2160, isAi: true });
                   } else {
-                    finalQuals.push({ html: "Апскейл 1080p (AMD CAS)", level: maxLevelIndex, targetH: 1080, isAi: true });
+                    finalQuals.push({ html: "1080p", level: maxLevelIndex, targetH: 1080, isAi: true });
                   }
 
                   mappedLevels.forEach((item) => {
@@ -1762,12 +1789,9 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
           const isAutoNextActive =
             localStorage.getItem("kami_player_auto_next") !== "false";
           if (isAutoNextActive && onNextEpisodeRef.current) {
-            if (art && art.notice) {
-              art.notice.show = "Запуск следующей серии...";
-            }
             setTimeout(() => {
               onNextEpisodeRef.current?.();
-            }, 800);
+            }, 500);
           }
         });
 
@@ -1791,9 +1815,6 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
 
           if (seekTime > 0) {
             art.currentTime = seekTime;
-            if (art.notice) {
-              art.notice.show = `Продолжено с ${Math.floor(seekTime / 60)}:${Math.floor(seekTime % 60).toString().padStart(2, "0")}`;
-            }
           }
           if (wasPlayingRef.current && art.video && art.video.paused) {
             art.video.play().catch(() => {});
@@ -1858,13 +1879,13 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
     const handleSelectQuality = (item: { html: string; level: number; targetH?: number; isAi?: boolean }) => {
       const is4K = item.html.includes("4K") || item.targetH === 2160;
 
-      // 4K Upscale is VIP only! 1080p is free for everyone
+      // 4K is Premium only! 1080p and lower is free for everyone
       if (is4K && !isVip) {
         const art = artInstanceRef.current;
         if (art && art.notice) {
-          art.notice.show = "4K Апскейл доступен с подпиской Kami VIP (1-й месяц бесплатно)";
+          art.notice.show = "4K качество доступно с подпиской Premium (1-й месяц бесплатно)";
         }
-        openPremiumModal("4K Апскейл нейросетью (AMD CAS)");
+        openPremiumModal("Просмотр в 4K качестве");
         setIsSettingsOpen(false);
         setActiveSubmenu("main");
         return;
@@ -2384,8 +2405,8 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                           Скачать серию (.MP4)
                         </span>
                         {!isVip && (
-                          <span className="px-1.5 py-0.5 text-[8px] font-black uppercase rounded-full bg-gradient-to-r from-amber-500/20 to-yellow-500/20 text-yellow-300 border border-amber-500/30 flex items-center gap-0.5">
-                            <Crown className="w-2.5 h-2.5 fill-current text-yellow-400" /> VIP
+                          <span className="px-1.5 py-0.5 text-[8px] font-black uppercase rounded-full bg-[#8B5CF6]/20 text-[#A78BFA] border border-[#8B5CF6]/30 flex items-center gap-0.5">
+                            <Crown className="w-2.5 h-2.5 text-[#8B5CF6]" /> Premium
                           </span>
                         )}
                       </div>
@@ -2434,14 +2455,9 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                           <div className="flex items-center gap-2">
                             <span>{q.html}</span>
                             {is4K && (
-                              <span className="flex items-center gap-1 text-[9px] uppercase font-black tracking-wider px-2 py-0.5 rounded-full bg-gradient-to-r from-amber-500/25 to-yellow-500/25 text-yellow-300 border border-amber-500/40 shadow-sm">
-                                <Crown className="w-3 h-3 fill-current text-yellow-400" />
-                                {!isVip ? 'VIP 4K' : '4K Ultra HD'}
-                              </span>
-                            )}
-                            {!is4K && (q.isAi || q.html.includes("CAS") || q.html.includes("Anime4K")) && (
-                              <span className="text-[10px] uppercase font-black tracking-wider px-1.5 py-0.5 rounded bg-[#8B5CF6]/20 text-[#A78BFA] border border-[#8B5CF6]/30">
-                                AMD CAS
+                              <span className="flex items-center gap-1 text-[9px] uppercase font-black tracking-wider px-2 py-0.5 rounded-full bg-[#8B5CF6]/20 text-[#A78BFA] border border-[#8B5CF6]/30 shadow-sm">
+                                <Crown className="w-3 h-3 text-[#8B5CF6]" />
+                                {!isVip ? 'Premium 4K' : '4K'}
                               </span>
                             )}
                           </div>

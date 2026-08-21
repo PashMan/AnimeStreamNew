@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useSearchParams } from 'react-router-dom';
 import { 
-  BookOpen, Star, Sparkles, ArrowLeft, ChevronRight, ChevronLeft, Heart, 
+  BookOpen, Star, ArrowLeft, ChevronRight, ChevronLeft, Heart, 
   Search, Loader2, ShieldAlert, BookX, ChevronDown, Layers, Settings, 
   Sliders, Eye, MessageSquare, Clock, Filter, ThumbsUp, 
   Calendar, Flame, Compass, RefreshCw, X
@@ -1281,7 +1281,7 @@ const Manga: React.FC = () => {
             {/* SECTION 3: НИЖЕ СКРОЛЛОМ В БОК СПИСКОМ ПО 5 Новинки, Сейчас читают, Популярное */}
             <div className="space-y-4">
               <h2 className="text-sm font-black uppercase tracking-widest text-[#8B5CF6] flex items-center gap-2">
-                <Sparkles className="w-4 h-4" /> Топ Списки КамиМанга
+                <BookOpen className="w-4 h-4" /> Топ Списки КамиМанга
               </h2>
 
               {loadingLists5 ? (

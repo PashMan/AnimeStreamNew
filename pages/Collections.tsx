@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Sparkles } from 'lucide-react';
 import SEO from '../components/SEO';
 import { Image } from '../components/Image';
 import { COLLECTIONS_DATA } from '../constants';

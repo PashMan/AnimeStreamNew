@@ -7,8 +7,8 @@ import { db } from '../services/db';
 import AuthModal from './AuthModal';
 import { fetchAnimes, fetchAnimeDetails } from '../services/shikimori';
 import { FALLBACK_IMAGE } from '../constants';
-import { AIChatBot } from './AIChatBot';
 import { PremiumModal } from './PremiumModal';
+import { AIChatBot } from './AIChatBot';
 
 import { useSlugBlocks } from '../store/slugBlocks';
 import { useDmcaBlocks } from '../store/dmcaBlocks';
@@ -536,18 +536,18 @@ const Layout: React.FC = () => {
                 </div>
               )}
  
-              {/* VIP Link Button */}
+              {/* Premium Link Button */}
               <Link
                 to="/premium"
                 className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-black uppercase text-[10px] tracking-wider transition-all shadow-md ${
                   user?.isPremium
-                    ? 'bg-gradient-to-r from-amber-500/20 to-yellow-500/20 text-yellow-300 border border-yellow-500/30 hover:bg-yellow-500/30 shadow-amber-500/10'
-                    : 'bg-gradient-to-r from-[#8B5CF6]/20 to-primary/20 text-[#A78BFA] border border-[#8B5CF6]/40 hover:bg-[#8B5CF6]/30 shadow-[#8B5CF6]/15 hover:scale-105'
+                    ? 'bg-[#8B5CF6]/20 text-[#A78BFA] border border-[#8B5CF6]/40 hover:bg-[#8B5CF6]/30 shadow-[#8B5CF6]/15'
+                    : 'bg-[#8B5CF6]/10 text-slate-200 border border-[#8B5CF6]/30 hover:bg-[#8B5CF6]/20 hover:text-white shadow-[#8B5CF6]/10 hover:scale-105'
                 }`}
-                title="Премиум подписка Kami VIP"
+                title="Премиум подписка"
               >
-                <Crown className={`w-3.5 h-3.5 ${user?.isPremium ? 'text-yellow-400 fill-current' : 'text-[#8B5CF6]'}`} />
-                <span>{user?.isPremium ? 'VIP Активен' : 'VIP 1 мес 0₽'}</span>
+                <Crown className={`w-3.5 h-3.5 ${user?.isPremium ? 'text-[#8B5CF6]' : 'text-slate-400'}`} />
+                <span>{user?.isPremium ? 'Premium' : 'Premium 0 ₽'}</span>
               </Link>
 
               {user && (
@@ -693,13 +693,13 @@ const Layout: React.FC = () => {
               <Link 
                 to="/premium" 
                 onClick={() => setIsMenuOpen(false)}
-                className={`p-4 rounded-xl font-black uppercase tracking-widest text-sm transition-colors flex items-center justify-between bg-gradient-to-r from-[#8B5CF6]/20 to-amber-500/20 border border-[#8B5CF6]/30 ${isActive('/premium') ? 'text-white' : 'text-yellow-300'}`}
+                className={`p-4 rounded-xl font-black uppercase tracking-widest text-sm transition-colors flex items-center justify-between bg-[#8B5CF6]/10 border border-[#8B5CF6]/25 ${isActive('/premium') ? 'text-white bg-[#8B5CF6]/20' : 'text-slate-200 hover:text-white'}`}
               >
                 <span className="flex items-center gap-2">
-                  <Crown className="w-4 h-4 text-yellow-400 fill-current" />
-                  <span>Kami VIP</span>
+                  <Crown className="w-4 h-4 text-[#8B5CF6]" />
+                  <span>Premium</span>
                 </span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/30 text-amber-200">
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#8B5CF6]/20 border border-[#8B5CF6]/30 text-[#A78BFA]">
                   {user?.isPremium ? 'Активен' : '1 мес 0 ₽'}
                 </span>
               </Link>
@@ -739,13 +739,13 @@ const Layout: React.FC = () => {
               <Link 
                 to="/premium" 
                 onClick={() => setIsMenuOpen(false)}
-                className={`p-4 rounded-xl font-black uppercase tracking-widest text-sm transition-colors flex items-center justify-between bg-gradient-to-r from-[#8B5CF6]/20 to-amber-500/20 border border-[#8B5CF6]/30 ${isActive('/premium') ? 'text-white' : 'text-yellow-300'}`}
+                className={`p-4 rounded-xl font-black uppercase tracking-widest text-sm transition-colors flex items-center justify-between bg-[#8B5CF6]/10 border border-[#8B5CF6]/25 ${isActive('/premium') ? 'text-white bg-[#8B5CF6]/20' : 'text-slate-200 hover:text-white'}`}
               >
                 <span className="flex items-center gap-2">
-                  <Crown className="w-4 h-4 text-yellow-400 fill-current" />
-                  <span>Kami VIP</span>
+                  <Crown className="w-4 h-4 text-[#8B5CF6]" />
+                  <span>Premium</span>
                 </span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/30 text-amber-200">
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#8B5CF6]/20 border border-[#8B5CF6]/30 text-[#A78BFA]">
                   {user?.isPremium ? 'Активен' : '1 мес 0 ₽'}
                 </span>
               </Link>
