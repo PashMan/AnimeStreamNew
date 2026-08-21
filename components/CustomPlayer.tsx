@@ -22,6 +22,7 @@ import {
   Users,
   Film,
   Crown,
+  BookOpen,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { isTvDevice } from "../utils/tvDetection";
@@ -882,6 +883,19 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [activeSubmenu, setActiveSubmenu] = useState<"main" | "quality" | "speed">("main");
     const [isFullscreen, setIsFullscreen] = useState(false);
+    const [mangaBridge, setMangaBridge] = useState<{ mappedChapter?: number | string; adaptationSummary?: string } | null>(null);
+
+    useEffect(() => {
+      if (!animeTitle) return;
+      fetch(`/api/manga/anime-bridge?title=${encodeURIComponent(animeTitle)}&episode=${episodeNumber || 1}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data && data.success) {
+            setMangaBridge(data);
+          }
+        })
+        .catch(() => {});
+    }, [animeTitle, episodeNumber]);
 
     useEffect(() => {
       const handleFullscreenChange = () => {
@@ -2443,6 +2457,42 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                     </div>
                     <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-white transition-colors" />
                   </button>
+
+                  {/* 9. Перейти к манге */}
+                  {animeTitle && (
+                    <button
+                      onClick={() => {
+                        setIsSettingsOpen(false);
+                        const targetChap = mangaBridge?.mappedChapter || episodeNumber || 1;
+                        window.location.href = `/manga?search=${encodeURIComponent(animeTitle)}&episode=${episodeNumber || 1}&chapter=${targetChap}`;
+                      }}
+                      className="flex items-center justify-between py-3 px-2.5 rounded-xl hover:bg-white/5 transition-colors cursor-pointer text-left group"
+                    >
+                      <div className="flex items-center gap-3.5">
+                        <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-400 group-hover:text-emerald-300 transition-colors">
+                          <BookOpen className="w-4 h-4" />
+                        </div>
+                        <div className="flex flex-col">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-bold text-white">
+                              Читать мангу
+                            </span>
+                            {mangaBridge?.mappedChapter && (
+                              <span className="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-extrabold border border-emerald-500/30">
+                                Гл. {mangaBridge.mappedChapter}
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-[10px] text-slate-400 font-medium">
+                            {mangaBridge?.mappedChapter
+                              ? `${episodeNumber || 1} серия ➔ ${mangaBridge.mappedChapter} глава манги`
+                              : `Продолжить с ${episodeNumber || 1} серии`}
+                          </span>
+                        </div>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-white transition-colors" />
+                    </button>
+                  )}
                 </div>
               )}
 

@@ -499,103 +499,124 @@ export const enrichAnimeWithKodik = async (anime: Anime, id: string, searchTitle
   const needsGenres = !anime.genres || !Array.isArray(anime.genres) || anime.genres.length === 0;
   const needsImage = isMissingImage(anime.image);
   const needsCover = isMissingImage(anime.cover);
-
-  if (!needsDescription && !needsGenres && !needsImage && !needsCover) {
-    return anime;
-  }
+  const needsTrailer = !anime.trailerYoutubeId;
 
   try {
-    let kodikUrl = `/api/media/search?shikimori_id=${id}`;
-    let res = await fetch(kodikUrl);
-    let data = res.ok ? await res.json() : null;
+    if (needsDescription || needsGenres || needsImage || needsCover) {
+      let kodikUrl = `/api/media/search?shikimori_id=${id}`;
+      let res = await fetch(kodikUrl);
+      let data = res.ok ? await res.json() : null;
 
-    if ((!data?.results || data.results.length === 0) && (searchTitle || anime.title)) {
-      const q = (searchTitle || anime.title).split('/')[0].trim();
-      res = await fetch(`/api/media/search?title=${encodeURIComponent(q)}`);
-      data = res.ok ? await res.json() : null;
+      if ((!data?.results || data.results.length === 0) && (searchTitle || anime.title)) {
+        const q = (searchTitle || anime.title).split('/')[0].trim();
+        res = await fetch(`/api/media/search?title=${encodeURIComponent(q)}`);
+        data = res.ok ? await res.json() : null;
+      }
+
+      if (data?.results && data.results.length > 0) {
+        const best = data.results.find((r: any) => r.material_data?.description || r.material_data?.anime_description) || data.results[0];
+        const mat = best.material_data || {};
+
+        // Description fallback from Kodik
+        if (needsDescription) {
+          const desc = mat.anime_description || mat.description || '';
+          if (desc && desc.trim()) {
+            anime.description = desc.replace(/\[.*?\]/g, '').trim();
+          }
+        }
+
+        // Genres fallback from Kodik
+        if (needsGenres) {
+          const genres = mat.anime_genres || mat.genres;
+          if (Array.isArray(genres) && genres.length > 0) {
+            anime.genres = genres.map((g: any) => String(g).trim()).filter(Boolean);
+          }
+        }
+
+        // Image & Cover fallback from Kodik
+        if (needsImage && mat.poster_url) {
+          anime.image = mat.poster_url;
+        }
+        if (needsCover) {
+          const coverCandidates = mat.anime_photos || mat.screenshots || [];
+          if (Array.isArray(coverCandidates) && coverCandidates.length > 0 && coverCandidates[0]) {
+            anime.cover = coverCandidates[0];
+          } else if (mat.poster_url) {
+            anime.cover = mat.poster_url;
+          }
+        }
+
+        // Supplementary metadata
+        if (!anime.year && mat.year) {
+          anime.year = Number(mat.year);
+        }
+        if (!anime.episodes && (mat.episodes_total || best.episodes_count)) {
+          anime.episodes = Number(mat.episodes_total || best.episodes_count);
+        }
+        if (!anime.kinopoiskId && (mat.kinopoisk_id || best.kinopoisk_id)) {
+          anime.kinopoiskId = String(mat.kinopoisk_id || best.kinopoisk_id);
+        }
+        if (!anime.imdbId && (mat.imdb_id || best.imdb_id)) {
+          anime.imdbId = String(mat.imdb_id || best.imdb_id);
+        }
+      }
     }
 
-    if (data?.results && data.results.length > 0) {
-      const best = data.results.find((r: any) => r.material_data?.description || r.material_data?.anime_description) || data.results[0];
-      const mat = best.material_data || {};
-
-      // Description fallback from Kodik
-      if (needsDescription) {
-        const desc = mat.anime_description || mat.description || '';
-        if (desc && desc.trim()) {
-          anime.description = desc.replace(/\[.*?\]/g, '').trim();
+    // HD Image, Banner & Trailer retrieval from AniList GraphQL (ALWAYS attempt if trailer or banner missing)
+    if (needsTrailer || !anime.bannerImage || needsImage || needsCover) {
+      try {
+        const numId = parseInt(id, 10);
+        const anilistQuery = `query ($idMal: Int, $search: String) { Media(idMal: $idMal, search: $search, type: ANIME) { coverImage { extraLarge large medium } bannerImage trailer { id site } } }`;
+        const aRes = await fetch('https://graphql.anilist.co', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body: JSON.stringify({ query: anilistQuery, variables: isNaN(numId) ? { search: anime.originalName || searchTitle || anime.title } : { idMal: numId } }),
+          signal: AbortSignal.timeout(3500)
+        });
+        if (aRes.ok) {
+          const aData: any = await aRes.json();
+          const coverImg = aData?.data?.Media?.coverImage?.extraLarge || aData?.data?.Media?.coverImage?.large;
+          const banner = aData?.data?.Media?.bannerImage;
+          const trailer = aData?.data?.Media?.trailer;
+          if (banner) {
+            anime.bannerImage = banner;
+            if (!anime.cover || isMissingImage(anime.cover)) {
+              anime.cover = banner;
+            }
+          }
+          if (coverImg && (isMissingImage(anime.image) || !anime.image || anime.image === PLACEHOLDER_IMAGE)) {
+            anime.image = coverImg;
+          }
+          if (coverImg && (!anime.cover || isMissingImage(anime.cover))) {
+            anime.cover = coverImg;
+          }
+          if (trailer && trailer.site === 'youtube' && trailer.id) {
+            anime.trailerYoutubeId = trailer.id;
+            anime.trailerUrl = `https://www.youtube.com/watch?v=${trailer.id}`;
+          }
         }
-      }
-
-      // Genres fallback from Kodik
-      if (needsGenres) {
-        const genres = mat.anime_genres || mat.genres;
-        if (Array.isArray(genres) && genres.length > 0) {
-          anime.genres = genres.map((g: any) => String(g).trim()).filter(Boolean);
-        }
-      }
-
-      // Image & Cover fallback from Kodik
-      if (needsImage && mat.poster_url) {
-        anime.image = mat.poster_url;
-      }
-      if (needsCover) {
-        const coverCandidates = mat.anime_photos || mat.screenshots || [];
-        if (Array.isArray(coverCandidates) && coverCandidates.length > 0 && coverCandidates[0]) {
-          anime.cover = coverCandidates[0];
-        } else if (mat.poster_url) {
-          anime.cover = mat.poster_url;
-        }
-      }
-
-      // Supplementary metadata
-      if (!anime.year && mat.year) {
-        anime.year = Number(mat.year);
-      }
-      if (!anime.episodes && (mat.episodes_total || best.episodes_count)) {
-        anime.episodes = Number(mat.episodes_total || best.episodes_count);
-      }
-      if (!anime.kinopoiskId && (mat.kinopoisk_id || best.kinopoisk_id)) {
-        anime.kinopoiskId = String(mat.kinopoisk_id || best.kinopoisk_id);
-      }
-      if (!anime.imdbId && (mat.imdb_id || best.imdb_id)) {
-        anime.imdbId = String(mat.imdb_id || best.imdb_id);
-      }
+      } catch (_) {}
     }
 
-    // HD Image, Banner & Trailer retrieval from AniList GraphQL
-    try {
-      const numId = parseInt(id, 10);
-      const anilistQuery = `query ($idMal: Int, $search: String) { Media(idMal: $idMal, search: $search, type: ANIME) { coverImage { extraLarge large medium } bannerImage trailer { id site } } }`;
-      const aRes = await fetch('https://graphql.anilist.co', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-        body: JSON.stringify({ query: anilistQuery, variables: isNaN(numId) ? { search: anime.originalName || searchTitle || anime.title } : { idMal: numId } }),
-        signal: AbortSignal.timeout(3000)
-      });
-      if (aRes.ok) {
-        const aData: any = await aRes.json();
-        const coverImg = aData?.data?.Media?.coverImage?.extraLarge || aData?.data?.Media?.coverImage?.large;
-        const banner = aData?.data?.Media?.bannerImage;
-        const trailer = aData?.data?.Media?.trailer;
-        if (banner) {
-          anime.bannerImage = banner;
-          anime.cover = banner;
+    // Shikimori /videos endpoint fallback for trailer if still missing
+    if (!anime.trailerYoutubeId && id) {
+      try {
+        const videos = await fetchApi(`/animes/${id}/videos`, 1, true, LONG_CACHE_TTL, 0);
+        if (Array.isArray(videos) && videos.length > 0) {
+          const ytVideo = videos.find((v: any) => v.hosting === 'youtube' && (v.kind === 'pv' || v.kind === 'op' || v.kind === 'ed' || !v.kind)) || videos.find((v: any) => v.hosting === 'youtube');
+          if (ytVideo) {
+            const urlToCheck = ytVideo.player_url || ytVideo.url || '';
+            const match = urlToCheck.match(/(?:embed\/|v=|vi\/|youtu\.be\/|\/v\/)([^#&?]*)/);
+            if (match && match[1]) {
+              anime.trailerYoutubeId = match[1];
+              anime.trailerUrl = `https://www.youtube.com/watch?v=${match[1]}`;
+            }
+          }
         }
-        if (coverImg && (isMissingImage(anime.image) || !anime.image || anime.image === PLACEHOLDER_IMAGE)) {
-          anime.image = coverImg;
-        }
-        if (coverImg && !anime.cover) {
-          anime.cover = coverImg;
-        }
-        if (trailer && trailer.site === 'youtube' && trailer.id) {
-          anime.trailerYoutubeId = trailer.id;
-          anime.trailerUrl = `https://www.youtube.com/watch?v=${trailer.id}`;
-        }
-      }
-    } catch (_) {}
+      } catch (_) {}
+    }
   } catch (err) {
-    console.warn('[enrichAnimeWithKodik] Kodik metadata enrichment error:', err);
+    console.warn('[enrichAnimeWithKodik] Metadata enrichment error:', err);
   }
 
   return anime;

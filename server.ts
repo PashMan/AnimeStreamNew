@@ -1288,9 +1288,36 @@ app.get('/api/test-jikan/:id', async (c) => {
   }
 });
 
+import { resolveAnimeEpisodeToManga } from './server/animeBridge';
+
 // ==========================================
 // REAL-TIME RUSSIAN MANGA WEB SCRAPER/PROXY DECK (MangaDex, Shikimori, ReManga, MangaLib mock, MangaOvh mock)
 // ==========================================
+// ANIME-TO-MANGA CHAPTER ADAPTATION BRIDGE (MangaUpdates + Curated + Gemini AI)
+app.get('/api/manga/anime-bridge', async (c) => {
+  const title = c.req.query('title') || c.req.query('q') || c.req.query('search') || '';
+  const episode = Number(c.req.query('episode') || c.req.query('ep') || '1');
+
+  if (!title) {
+    return c.json({ error: 'Anime title is required' }, 400);
+  }
+
+  try {
+    const bridgeData = await resolveAnimeEpisodeToManga(title, episode);
+    return c.json(bridgeData);
+  } catch (err: any) {
+    console.error('[anime-bridge] Error resolving:', err);
+    return c.json({
+      success: false,
+      animeTitle: title,
+      episode,
+      mappedChapter: Math.max(1, Math.round(episode * 2)),
+      adaptationSummary: `${episode} серия приблизительно соответствует ${Math.max(1, Math.round(episode * 2))} главе манги.`,
+      source: 'algorithmic'
+    });
+  }
+});
+
 app.get('/api/manga/search', async (c) => {
   const query = c.req.query('q') || '';
   const limitVal = Number(c.req.query('limit') || '60');

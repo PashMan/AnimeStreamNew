@@ -234,6 +234,32 @@ const Details: React.FC = () => {
   const [isBlocked, setIsBlocked] = useState(false);
   const [epSearchVal, setEpSearchVal] = useState("");
   const [isNotifierOpen, setIsNotifierOpen] = useState(false);
+  const [mangaBridge, setMangaBridge] = useState<{
+    animeTitle?: string;
+    episode?: number;
+    season?: number;
+    mappedChapter?: number | string;
+    chapterRange?: string;
+    recommendedChapter?: number | string;
+    volume?: number | string;
+    adaptationSummary?: string;
+    source?: string;
+    mangaTitle?: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!anime) return;
+    const animeTitle = anime.title || anime.originalName || '';
+    const currentEp = paramEpisode ? parseInt(paramEpisode, 10) : 1;
+    fetch(`/api/manga/anime-bridge?title=${encodeURIComponent(animeTitle)}&episode=${currentEp}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.success) {
+          setMangaBridge(data);
+        }
+      })
+      .catch(err => console.warn('Anime-Manga bridge fetch error:', err));
+  }, [anime, paramEpisode]);
 
   const [resolvedStream, setResolvedStream] = useState<{
     url: string;
@@ -2321,22 +2347,34 @@ const Details: React.FC = () => {
 
                 {/* Separate Manga Sync Card (Placed below episodes and translations) */}
                 {anime && (
-                  <div className="bg-[#181920]/80 border border-white/10 p-4 sm:p-5 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 backdrop-blur-sm shadow-lg">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-slate-300 shrink-0">
-                        <BookOpen className="w-5 h-5" />
+                  <div className="bg-[#181920]/90 border border-white/10 p-4 sm:p-5 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 backdrop-blur-sm shadow-xl relative overflow-hidden group">
+                    <div className="flex items-center gap-3.5 z-10">
+                      <div className="w-12 h-12 rounded-2xl bg-[#8B5CF6]/15 border border-[#8B5CF6]/30 flex items-center justify-center text-[#A78BFA] shrink-0 shadow-inner">
+                        <BookOpen className="w-6 h-6" />
                       </div>
                       <div>
-                        <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                          Синхронизация с мангой
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h4 className="text-sm font-black text-white flex items-center gap-2">
+                            Синхронизация с мангой
+                          </h4>
+                          {mangaBridge?.mappedChapter && (
+                            <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[11px] font-extrabold border border-emerald-500/30">
+                              {paramEpisode || "1"} серия ➔ {mangaBridge.mappedChapter} глава
+                            </span>
+                          )}
+                          {mangaBridge?.volume && (
+                            <span className="px-2 py-0.5 rounded bg-white/10 text-slate-300 text-[10px] font-bold">
+                              Том {mangaBridge.volume}
+                            </span>
+                          )}
                           {!isVip && (
                             <span className="px-2 py-0.5 rounded bg-white/10 text-slate-300 text-[10px] font-black uppercase flex items-center gap-1 border border-white/10">
                               <Crown className="w-2.5 h-2.5 text-[#8B5CF6]" /> Premium
                             </span>
                           )}
-                        </h4>
-                        <p className="text-xs text-slate-400 mt-0.5">
-                          Продолжить чтение манги с момента окончания {paramEpisode || "1"} серии
+                        </div>
+                        <p className="text-xs text-slate-300 mt-1 font-medium leading-relaxed max-w-xl">
+                          {mangaBridge?.adaptationSummary || `Продолжить чтение манги с момента окончания ${paramEpisode || "1"} серии`}
                         </p>
                       </div>
                     </div>
@@ -2347,13 +2385,14 @@ const Details: React.FC = () => {
                           openPremiumModal("Продолжить читать мангу с момента конца серии");
                           return;
                         }
-                        const queryTitle = anime?.title || anime?.originalName || "";
-                        navigate(`/manga?search=${encodeURIComponent(queryTitle)}&episode=${paramEpisode || 1}`);
+                        const queryTitle = mangaBridge?.mangaTitle || anime?.title || anime?.originalName || "";
+                        const targetChapter = mangaBridge?.mappedChapter || paramEpisode || 1;
+                        navigate(`/manga?search=${encodeURIComponent(queryTitle)}&episode=${paramEpisode || 1}&chapter=${targetChapter}`);
                       }}
-                      className="px-4 py-2.5 bg-white/10 hover:bg-white/15 border border-white/15 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer flex items-center gap-2 shrink-0 self-stretch sm:self-auto justify-center"
+                      className="px-5 py-3 bg-[#8B5CF6] hover:bg-[#7C3AED] text-white font-black text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer flex items-center gap-2 shrink-0 self-stretch sm:self-auto justify-center shadow-lg shadow-[#8B5CF6]/30 z-10"
                     >
-                      <BookOpen className="w-4 h-4 text-slate-300" />
-                      <span>Читать мангу</span>
+                      <BookOpen className="w-4 h-4" />
+                      <span>{mangaBridge?.mappedChapter ? `Читать ${mangaBridge.mappedChapter} главу` : 'Читать мангу'}</span>
                     </button>
                   </div>
                 )}
