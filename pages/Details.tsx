@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { openMangaPage } from "../utils/mangaNav";
 import {
   useSearchParams,
   useParams,
@@ -2387,7 +2388,7 @@ const Details: React.FC = () => {
                         }
                         const queryTitle = mangaBridge?.mangaTitle || anime?.title || anime?.originalName || "";
                         const targetChapter = mangaBridge?.mappedChapter || paramEpisode || 1;
-                        navigate(`/manga?search=${encodeURIComponent(queryTitle)}&episode=${paramEpisode || 1}&chapter=${targetChapter}`);
+                        openMangaPage(queryTitle, paramEpisode || 1, targetChapter);
                       }}
                       className="px-5 py-3 bg-[#8B5CF6] hover:bg-[#7C3AED] text-white font-black text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer flex items-center gap-2 shrink-0 self-stretch sm:self-auto justify-center shadow-lg shadow-[#8B5CF6]/30 z-10"
                     >

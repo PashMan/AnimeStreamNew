@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronRight, ChevronLeft, PlayCircle, Calendar, Megaphone, Clock, Crown, ChevronDown, MessageSquare, Plus, MonitorPlay, Heart, Flame, TrendingUp, Newspaper, Layers, BookOpen, Volume2, VolumeX } from 'lucide-react';
+import { ChevronRight, ChevronLeft, PlayCircle, Calendar, Megaphone, Clock, Crown, ChevronDown, MessageSquare, Plus, MonitorPlay, Heart, Flame, TrendingUp, Newspaper, Layers, BookOpen } from 'lucide-react';
 import { Image } from '../components/Image';
 import AnimeCard from '../components/AnimeCard';
 import SEO from '../components/SEO';
@@ -78,7 +78,6 @@ const Home: React.FC = () => {
   const [heroIndex, setHeroIndex] = useState(0);
   const [loadedImages, setLoadedImages] = useState<Record<string, boolean>>({});
   const [expandedDay, setExpandedDay] = useState<string | null>(null);
-  const [isTrailerMuted, setIsTrailerMuted] = useState(true);
 
   const anime4kRef = useRef<HTMLDivElement>(null);
 
@@ -245,10 +244,10 @@ const Home: React.FC = () => {
         <section className="relative h-[75vh] min-h-[600px] md:h-[85vh] md:min-h-[720px] w-full overflow-hidden group select-none">
           {heroAnimes.map((anime, idx) => {
             const isCurrent = idx === heroIndex;
-            const hasTrailer = !!anime.trailerYoutubeId;
+
             return (
               <div key={anime.id} className={`absolute inset-0 transition-opacity duration-1000 ease-in-out ${isCurrent ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'}`}>
-                {/* Background Poster Image (always acts as backdrop / instant loader) */}
+                {/* Crisp High-Definition Backdrop Banner Image */}
                 <Image 
                   src={anime.bannerImage || anime.cover || anime.image} 
                   alt={anime.title} 
@@ -256,39 +255,15 @@ const Home: React.FC = () => {
                   animeTitle={anime.originalName || anime.title}
                   priority={idx === 0}
                   onImageLoad={() => setLoadedImages(prev => ({...prev, [anime.id]: true}))}
-                  className="w-full h-full object-cover transition-transform duration-[15s] ease-linear scale-100 group-hover:scale-105" 
+                  className="w-full h-full object-cover transition-transform duration-[12s] ease-out scale-100 group-hover:scale-105 filter contrast-[1.05] brightness-[0.98]" 
                 />
 
-                {/* High-quality Trailer Stream (if available for current hero anime) */}
-                {isCurrent && hasTrailer && (
-                  <div className="absolute inset-0 pointer-events-none overflow-hidden z-[5]">
-                    <iframe
-                      src={`https://www.youtube-nocookie.com/embed/${anime.trailerYoutubeId}?autoplay=1&mute=${isTrailerMuted ? 1 : 0}&controls=0&loop=1&playlist=${anime.trailerYoutubeId}&playsinline=1&rel=0&showinfo=0&iv_load_policy=3&modestbranding=1&enablejsapi=1`}
-                      title={`${anime.title} Трейлер`}
-                      allow="autoplay; encrypted-media"
-                      className="w-[150%] h-[150%] -top-[25%] -left-[25%] absolute object-cover pointer-events-none scale-105 opacity-90 transition-opacity duration-1000"
-                    />
-                  </div>
-                )}
-
-                {/* Premium Netflix Gradient Masks for supreme contrast and legibility */}
-                <div className="absolute inset-0 bg-gradient-to-t from-[#141519] via-[#141519]/60 to-transparent z-10" />
-                <div className="absolute inset-0 bg-gradient-to-r from-[#141519]/95 via-[#141519]/70 md:via-[#141519]/30 to-transparent z-10" />
+                {/* Premium Netflix-Style Gradient Overlay for Crisp Visual Contrast */}
+                <div className="absolute inset-0 bg-gradient-to-t from-[#141519] via-[#141519]/50 to-transparent z-20 pointer-events-none" />
+                <div className="absolute inset-0 bg-gradient-to-r from-[#141519]/90 via-[#141519]/60 md:via-[#141519]/25 to-transparent z-20 pointer-events-none" />
               </div>
             );
           })}
-
-          {/* Sound toggle button if current hero has a trailer */}
-          {currentHero?.trailerYoutubeId && (
-            <button
-              onClick={() => setIsTrailerMuted(prev => !prev)}
-              className="absolute right-6 top-24 md:top-28 p-2.5 bg-black/60 hover:bg-black/80 border border-white/10 rounded-full text-white/90 hover:text-white transition-all z-30 flex items-center justify-center backdrop-blur-md shadow-xl hover:scale-105 active:scale-95 cursor-pointer"
-              title={isTrailerMuted ? "Включить звук трейлера" : "Выключить звук"}
-              aria-label={isTrailerMuted ? "Включить звук трейлера" : "Выключить звук"}
-            >
-              {isTrailerMuted ? <VolumeX className="w-5 h-5 text-slate-300" /> : <Volume2 className="w-5 h-5 text-primary animate-pulse" />}
-            </button>
-          )}
 
           {/* Side navigation arrows */}
           <button 
