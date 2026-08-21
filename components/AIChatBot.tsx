@@ -12,6 +12,14 @@ interface ChatMessage {
 const CHAR_LIMIT = 150;
 const COOLDOWN_SEC = 8;
 const AI_AVATAR_SRC = "/ai-chat.jpg";
+const AI_FALLBACK_AVATAR = "https://api.dicebear.com/7.x/bottts/svg?seed=KamiAI&backgroundColor=8B5CF6";
+
+const handleImgError = (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
+  const target = e.currentTarget;
+  if (target.src !== AI_FALLBACK_AVATAR) {
+    target.src = AI_FALLBACK_AVATAR;
+  }
+};
 
 export const AIChatBot: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -148,8 +156,9 @@ export const AIChatBot: React.FC = () => {
           title="KamiAI Помощница"
         >
           <img
-            src="/ai-chat.jpg"
+            src={AI_AVATAR_SRC}
             alt="KamiAI"
+            onError={handleImgError}
             className="w-full h-full object-cover rounded-full"
           />
           {/* Online green indicator badge */}
@@ -172,8 +181,9 @@ export const AIChatBot: React.FC = () => {
             <div className="flex items-center gap-3">
               <div className="relative">
                 <img
-                  src="/ai-chat.jpg"
+                  src={AI_AVATAR_SRC}
                   alt="KamiAI"
+                  onError={handleImgError}
                   className="w-10 h-10 rounded-full border-2 border-[#8B5CF6]/60 object-cover shadow-md"
                 />
                 <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-[#18132B]"></span>
@@ -212,8 +222,9 @@ export const AIChatBot: React.FC = () => {
               >
                 {m.role === 'assistant' && (
                   <img
-                    src="/ai-chat.jpg"
+                    src={AI_AVATAR_SRC}
                     alt="KamiAI"
+                    onError={handleImgError}
                     className="w-8 h-8 rounded-full border border-[#8B5CF6]/50 object-cover shadow-sm shrink-0 self-start mt-0.5"
                   />
                 )}
@@ -267,8 +278,9 @@ export const AIChatBot: React.FC = () => {
             {isLoading && (
               <div className="flex gap-2.5 justify-start items-center">
                 <img
-                  src="/ai-chat.jpg"
+                  src={AI_AVATAR_SRC}
                   alt="KamiAI"
+                  onError={handleImgError}
                   className="w-8 h-8 rounded-full border border-[#8B5CF6]/50 object-cover shadow-sm shrink-0 self-start animate-bounce mt-0.5"
                 />
                 <div className="bg-white/5 border border-white/10 rounded-2xl rounded-tl-sm px-4 py-3 text-slate-300 text-sm flex items-center gap-2">

@@ -8,7 +8,7 @@ interface AuthContextType {
   user: User | null;
   isVip: boolean;
   login: (credentials: { email: string; password: string }) => Promise<boolean>;
-  loginWithGoogle: () => Promise<void>;
+  loginWithGoogle: () => Promise<{ success: boolean; message?: string }>;
   register: (data: { name: string; email: string; password: string }) => Promise<{ success: boolean; message?: string }>;
   resetPassword: (email: string) => Promise<{ success: boolean; message?: string }>;
   logout: () => void;
@@ -130,9 +130,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const loginWithGoogle = async () => {
     try {
-      await db.loginWithGoogle();
-    } catch (e) {
+      return await db.loginWithGoogle();
+    } catch (e: any) {
       console.error(e);
+      return { success: false, message: e?.message || 'Ошибка входа через Google' };
     }
   };
 

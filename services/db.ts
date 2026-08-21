@@ -377,19 +377,27 @@ class DatabaseService {
   }
 
   async loginWithGoogle(): Promise<{ success: boolean; message?: string }> {
-    if (!this.isSupabaseAvailable()) return { success: false, message: 'Database unavailable' };
+    if (!this.isSupabaseAvailable()) return { success: false, message: 'База данных недоступна' };
     try {
+      const redirectUrl = typeof window !== 'undefined' ? window.location.origin : undefined;
       const { error } = await supabaseClient.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: window.location.origin,
+          redirectTo: redirectUrl,
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent',
+          },
         },
       });
-      if (error) return { success: false, message: error.message };
+      if (error) {
+        console.error('Google OAuth sign-in error:', error);
+        return { success: false, message: this.translateError(error.message) };
+      }
       return { success: true };
-    } catch (e) {
+    } catch (e: any) {
       console.error('Google login exception:', e);
-      return { success: false, message: 'Exception occurred' };
+      return { success: false, message: e?.message || 'Не удалось выполнить вход через Google' };
     }
   }
 

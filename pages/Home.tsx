@@ -112,7 +112,7 @@ const Home: React.FC = () => {
             
             await Promise.all(filteredData.map(async (anime) => {
                 try {
-                    const details = await fetchAnimeDetails(anime.id);
+                    const details = await fetchAnimeDetails(anime.id, true);
                     if (details && isMounted) {
                         setHeroAnimes(prev => {
                             const next = [...prev];
@@ -251,7 +251,7 @@ const Home: React.FC = () => {
           {heroAnimes.map((anime, idx) => (
             <div key={anime.id} className={`absolute inset-0 transition-opacity duration-1000 ease-in-out ${idx === heroIndex && loadedImages[anime.id] ? 'opacity-100 z-10' : 'opacity-0 z-0'}`}>
               <Image 
-                src={anime.cover || anime.image} 
+                src={anime.bannerImage || anime.cover || anime.image} 
                 alt={anime.title} 
                 animeId={anime.id}
                 animeTitle={anime.originalName || anime.title}

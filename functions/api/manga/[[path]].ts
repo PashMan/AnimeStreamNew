@@ -736,7 +736,8 @@ export const onRequest = async (context: any) => {
       } catch(e) {}
     }
 
-    const allChapters = [...zazaChapters, ...mdChapters];
+    // Exclusively return ReadManga (Zaza) chapters if found
+    const allChapters = zazaChapters.length > 0 ? zazaChapters : mdChapters;
 
     if (allChapters.length === 0) {
       const fallbackChapters = Array.from({ length: 15 }).map((_, idx) => {

@@ -156,7 +156,7 @@ const Manga: React.FC = () => {
   const [catalogHasMore, setCatalogHasMore] = useState<boolean>(true);
   const [catalogLimit] = useState<number>(24);
   const [catalogSort, setCatalogSort] = useState<string>('followedCount'); // followedCount, createdAt, rating
-  const [catalogSource, setCatalogSource] = useState<string>('all'); // all, mangadex, shikimori, remanga, mangalib, readmanga
+  const [catalogSource, setCatalogSource] = useState<string>('readmanga'); // strictly readmanga
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   // Catalog Filters

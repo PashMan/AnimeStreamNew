@@ -7,6 +7,7 @@ export interface Anime {
   image: string;
   image_preview?: string;
   cover?: string;
+  bannerImage?: string;
   rating: number;
   ageRating?: string;
   score?: number;
