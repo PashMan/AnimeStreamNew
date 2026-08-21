@@ -2171,7 +2171,8 @@ const jikanImageCache = new Map<string, string>();
 // API Route for Image Proxy (matches Cloudflare Worker behavior)
 app.get('/api/image/*', async (c) => {
   const imagePath = c.req.path.replace('/api/image/', '');
-  const targetUrl = `https://shikimori.io/${imagePath}${c.req.url.includes('?') ? c.req.url.substring(c.req.url.indexOf('?')) : ''}`;
+  const urlSearch = c.req.url.includes('?') ? c.req.url.substring(c.req.url.indexOf('?')) : '';
+  const isExplicitlyMissing = imagePath.includes('missing') || imagePath.includes('none.png');
   
   const headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
@@ -2182,127 +2183,150 @@ app.get('/api/image/*', async (c) => {
   try {
     let response: Response | null = null;
 
-    if (!imagePath.includes('missing') && !imagePath.includes('none.png')) {
-      try {
-        const r = await fetch(targetUrl, { headers });
-        if (r.ok && !r.url.includes('missing')) {
-          response = r;
-        }
-      } catch (_) {}
-    }
+    if (!isExplicitlyMissing) {
+      const mirrors = [
+        `https://shikimori.one/${imagePath}${urlSearch}`,
+        `https://shikimori.io/${imagePath}${urlSearch}`,
+        `https://desu.shikimori.one/${imagePath}${urlSearch}`
+      ];
 
-    // Second Fallback to AniList GraphQL, Kodik API, and Jikan
-    if (!response || !response.ok) {
-      const animeIdMatch = imagePath.match(/\/(\d+)\.(jpg|png|webp|jpeg)$/) || c.req.url.match(/id=(\d+)/);
-      if (animeIdMatch) {
-        const animeId = parseInt(animeIdMatch[1], 10);
-
-        // 2a. Try AniList GraphQL first
+      for (const mirrorUrl of mirrors) {
         try {
-          const anilistQuery = `query ($idMal: Int) { Media(idMal: $idMal, type: ANIME) { coverImage { extraLarge large medium } } }`;
-          const aniRes = await fetch('https://graphql.anilist.co', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-            body: JSON.stringify({ query: anilistQuery, variables: { idMal: animeId } })
-          });
-          if (aniRes.ok) {
-            const aniData = await aniRes.json() as any;
-            const imgUrl = aniData?.data?.Media?.coverImage?.extraLarge || aniData?.data?.Media?.coverImage?.large || aniData?.data?.Media?.coverImage?.medium;
-            if (imgUrl) {
-              const aniImgRes = await fetch(imgUrl);
-              if (aniImgRes.ok) {
-                return new Response(aniImgRes.body, {
-                  status: 200,
-                  headers: {
-                    'Content-Type': aniImgRes.headers.get('content-type') || 'image/jpeg',
-                    'Cache-Control': 'public, max-age=2592000',
-                    'X-Image-Source': 'AniList-Fallback'
-                  }
-                });
-              }
-            }
+          const r = await fetch(mirrorUrl, { headers, signal: AbortSignal.timeout(1800) });
+          if (r.ok && !r.url.includes('missing') && !r.url.includes('none.png')) {
+            response = r;
+            break;
+          }
+          if (r.status === 404) {
+            break;
           }
         } catch (_) {}
-
-        // 2b. Try Kodik API
-        try {
-          const kodikRes = await fetch(`https://kodikapi.com/search?token=e3189966144beaa4a54c600125c1109a&shikimori_id=${animeId}&with_material_data=true`);
-          if (kodikRes.ok) {
-            const kData = await kodikRes.json() as any;
-            const poster = kData?.results?.[0]?.material_data?.poster_url || kData?.results?.[0]?.material_data?.anime_photos?.[0];
-            if (poster) {
-              const pUrl = poster.startsWith('//') ? `https:${poster}` : poster;
-              const pRes = await fetch(pUrl);
-              if (pRes.ok) {
-                return new Response(pRes.body, {
-                  status: 200,
-                  headers: {
-                    'Content-Type': pRes.headers.get('content-type') || 'image/jpeg',
-                    'Cache-Control': 'public, max-age=2592000',
-                    'X-Image-Source': 'Kodik-Fallback'
-                  }
-                });
-              }
-            }
-          }
-        } catch (_) {}
-
-        // 2c. Try Jikan API
-        try {
-          let imageUrl = jikanImageCache.get(animeId.toString());
-          
-          if (!imageUrl) {
-            const jikanRes = await fetch(`https://api.jikan.moe/v4/anime/${animeId}`);
-            if (jikanRes.ok) {
-              const jikanData = await jikanRes.json() as any;
-              imageUrl = jikanData.data?.images?.jpg?.large_image_url || jikanData.data?.images?.jpg?.image_url;
-              if (imageUrl) {
-                jikanImageCache.set(animeId.toString(), imageUrl);
-              }
-            }
-          }
-
-          if (imageUrl) {
-            const fallbackRes = await fetch(imageUrl);
-            if (fallbackRes.ok) {
-              return new Response(fallbackRes.body, {
-                status: 200,
-                headers: {
-                  'Content-Type': fallbackRes.headers.get('content-type') || 'image/jpeg',
-                  'Cache-Control': 'public, max-age=2592000',
-                  'X-Image-Source': 'Jikan-Fallback'
-                }
-              });
-            }
-          }
-        } catch (e) {
-          console.error('[DEBUG] Jikan fallback failed', e);
-        }
       }
     }
-    
-    if (!response.ok) {
-      const fallbackSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="900" viewBox="0 0 600 900"><rect width="600" height="900" fill="#0f172a"/><path d="M250 400 L350 400 L300 330 Z" fill="#334155"/><circle cx="300" cy="450" r="30" fill="#334155"/><text x="300" y="530" font-family="sans-serif" font-size="24" font-weight="600" fill="#64748b" text-anchor="middle">KamiAnime</text><text x="300" y="565" font-family="sans-serif" font-size="16" fill="#475569" text-anchor="middle">Обложка скоро появится</text></svg>`;
-      return new Response(fallbackSvg, {
+
+    if (response && response.ok) {
+      return new Response(response.body, {
         status: 200,
         headers: {
-          'Content-Type': 'image/svg+xml',
-          'Access-Control-Allow-Origin': '*',
-          'Cache-Control': 'public, max-age=86400'
+          'Content-Type': response.headers.get('content-type') || 'image/jpeg',
+          'Cache-Control': 'public, max-age=2592000',
+          'Access-Control-Allow-Origin': '*'
         }
       });
     }
 
-    return new Response(response.body, {
-      status: response.status,
+    // Fallback to AniList GraphQL, Kodik API, and Jikan
+    const animeIdMatch = imagePath.match(/(?:animes|original|preview|x96|x48)\/(\d+)\.(?:jpg|png|webp|jpeg)/i) || 
+                         imagePath.match(/\/(\d+)\.(?:jpg|png|webp|jpeg)$/) || 
+                         c.req.url.match(/id=(\d+)/);
+    if (animeIdMatch) {
+      const animeId = parseInt(animeIdMatch[1], 10);
+
+      // 2a. Try AniList GraphQL first
+      try {
+        const anilistQuery = `query ($idMal: Int) { Media(idMal: $idMal, type: ANIME) { coverImage { extraLarge large medium } bannerImage } }`;
+        const aniRes = await fetch('https://graphql.anilist.co', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body: JSON.stringify({ query: anilistQuery, variables: { idMal: animeId } }),
+          signal: AbortSignal.timeout(3000)
+        });
+        if (aniRes.ok) {
+          const aniData = await aniRes.json() as any;
+          const media = aniData?.data?.Media;
+          const isCoverOrBanner = imagePath.includes('cover') || imagePath.includes('original') || c.req.url.includes('type=cover');
+          const imgUrl = (isCoverOrBanner && media?.bannerImage) ? media.bannerImage : (media?.coverImage?.extraLarge || media?.coverImage?.large || media?.coverImage?.medium || media?.bannerImage);
+          if (imgUrl) {
+            const aniImgRes = await fetch(imgUrl, {
+              headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+              signal: AbortSignal.timeout(3000)
+            });
+            if (aniImgRes.ok) {
+              return new Response(aniImgRes.body, {
+                status: 200,
+                headers: {
+                  'Content-Type': aniImgRes.headers.get('content-type') || 'image/jpeg',
+                  'Cache-Control': 'public, max-age=2592000',
+                  'Access-Control-Allow-Origin': '*',
+                  'X-Image-Source': 'AniList-Fallback'
+                }
+              });
+            }
+          }
+        }
+      } catch (_) {}
+
+      // 2b. Try Kodik API
+      try {
+        const kodikRes = await fetch(`https://kodikapi.com/search?token=e3189966144beaa4a54c600125c1109a&shikimori_id=${animeId}&with_material_data=true`, {
+          signal: AbortSignal.timeout(2500)
+        });
+        if (kodikRes.ok) {
+          const kData = await kodikRes.json() as any;
+          const poster = kData?.results?.[0]?.material_data?.poster_url || kData?.results?.[0]?.material_data?.anime_photos?.[0];
+          if (poster) {
+            const pUrl = poster.startsWith('//') ? `https:${poster}` : poster;
+            const pRes = await fetch(pUrl, { signal: AbortSignal.timeout(2500) });
+            if (pRes.ok) {
+              return new Response(pRes.body, {
+                status: 200,
+                headers: {
+                  'Content-Type': pRes.headers.get('content-type') || 'image/jpeg',
+                  'Cache-Control': 'public, max-age=2592000',
+                  'Access-Control-Allow-Origin': '*',
+                  'X-Image-Source': 'Kodik-Fallback'
+                }
+              });
+            }
+          }
+        }
+      } catch (_) {}
+
+      // 2c. Try Jikan API
+      try {
+        let imageUrl = jikanImageCache.get(animeId.toString());
+        
+        if (!imageUrl) {
+          const jikanRes = await fetch(`https://api.jikan.moe/v4/anime/${animeId}`, { signal: AbortSignal.timeout(2500) });
+          if (jikanRes.ok) {
+            const jikanData = await jikanRes.json() as any;
+            imageUrl = jikanData.data?.images?.jpg?.large_image_url || jikanData.data?.images?.jpg?.image_url;
+            if (imageUrl) {
+              jikanImageCache.set(animeId.toString(), imageUrl);
+            }
+          }
+        }
+
+        if (imageUrl) {
+          const fallbackRes = await fetch(imageUrl, { signal: AbortSignal.timeout(2500) });
+          if (fallbackRes.ok) {
+            return new Response(fallbackRes.body, {
+              status: 200,
+              headers: {
+                'Content-Type': fallbackRes.headers.get('content-type') || 'image/jpeg',
+                'Cache-Control': 'public, max-age=2592000',
+                'Access-Control-Allow-Origin': '*',
+                'X-Image-Source': 'Jikan-Fallback'
+              }
+            });
+          }
+        }
+      } catch (e) {
+        console.error('[DEBUG] Jikan fallback failed', e);
+      }
+    }
+    
+    const fallbackSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="900" viewBox="0 0 600 900"><rect width="600" height="900" fill="#141519"/><circle cx="300" cy="400" r="45" fill="#252438"/><polygon points="285,380 285,420 325,400" fill="#8B5CF6"/><text x="300" y="490" font-family="sans-serif" font-size="22" font-weight="700" fill="#e2e8f0" text-anchor="middle">KamiAnime</text><text x="300" y="525" font-family="sans-serif" font-size="14" fill="#64748b" text-anchor="middle">Обложка</text></svg>`;
+    return new Response(fallbackSvg, {
+      status: 200,
       headers: {
-        'Content-Type': response.headers.get('content-type') || 'image/jpeg',
-        'Cache-Control': 'public, max-age=2592000',
-        'X-Image-Source': 'Shikimori'
+        'Content-Type': 'image/svg+xml',
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'public, max-age=86400'
       }
     });
-  } catch (e: any) {
-    return c.json({ error: e.message }, 500);
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500);
   }
 });
 

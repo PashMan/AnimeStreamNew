@@ -147,7 +147,7 @@ export const AIChatBot: React.FC = () => {
           title="KamiAI Помощница"
         >
           <img
-            src="/ai-avatar.png"
+            src="/ai-chat.jpg"
             alt="KamiAI"
             className="w-full h-full object-cover rounded-full"
           />
@@ -171,7 +171,7 @@ export const AIChatBot: React.FC = () => {
             <div className="flex items-center gap-3">
               <div className="relative">
                 <img
-                  src="/ai-avatar.png"
+                  src="/ai-chat.jpg"
                   alt="KamiAI"
                   className="w-10 h-10 rounded-full border-2 border-[#8B5CF6]/60 object-cover shadow-md"
                 />
@@ -211,7 +211,7 @@ export const AIChatBot: React.FC = () => {
               >
                 {m.role === 'assistant' && (
                   <img
-                    src="/ai-avatar.png"
+                    src="/ai-chat.jpg"
                     alt="KamiAI"
                     className="w-8 h-8 rounded-full border border-[#8B5CF6]/50 object-cover shadow-sm shrink-0 self-start mt-0.5"
                   />
@@ -266,7 +266,7 @@ export const AIChatBot: React.FC = () => {
             {isLoading && (
               <div className="flex gap-2.5 justify-start items-center">
                 <img
-                  src="/ai-avatar.png"
+                  src="/ai-chat.jpg"
                   alt="KamiAI"
                   className="w-8 h-8 rounded-full border border-[#8B5CF6]/50 object-cover shadow-sm shrink-0 self-start animate-bounce mt-0.5"
                 />

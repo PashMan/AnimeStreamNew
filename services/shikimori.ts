@@ -347,10 +347,9 @@ export const mapAnime = async (data: any): Promise<Anime> => {
       }
   }
 
-  // Try to construct a high-res cover URL if we have an ID and it's from Shikimori
+  // Prefer existing valid image for cover, fallback to original proxy path if missing
   let cover = image;
-  if (data.id && (image.includes('shikimori') || (data.image && typeof data.image === 'object'))) {
-      // Shikimori original images are often at /system/animes/original/{id}.jpg
+  if ((!cover || cover === PLACEHOLDER_IMAGE || cover.includes('missing') || cover.includes('none.png')) && data.id) {
       cover = proxyImage(`/system/animes/original/${data.id}.jpg`);
   }
 
