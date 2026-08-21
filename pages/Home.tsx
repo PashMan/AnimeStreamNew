@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronRight, ChevronLeft, PlayCircle, Calendar, Megaphone, Clock, Crown, Sparkles, ChevronDown, MessageSquare, Plus, MonitorPlay, Heart, Flame, TrendingUp, Newspaper, Layers, BookOpen } from 'lucide-react';
+import { ChevronRight, ChevronLeft, PlayCircle, Calendar, Megaphone, Clock, Crown, ChevronDown, MessageSquare, Plus, MonitorPlay, Heart, Flame, TrendingUp, Newspaper, Layers, BookOpen } from 'lucide-react';
 import { Image } from '../components/Image';
 import AnimeCard from '../components/AnimeCard';
 import SEO from '../components/SEO';
@@ -58,7 +58,7 @@ const Home: React.FC = () => {
   const latestRef = useRef<HTMLDivElement>(null);
   const trendingRef = useRef<HTMLDivElement>(null);
   const favoritesRef = useRef<HTMLDivElement>(null);
-  const { user, openAuthModal } = useAuth();
+  const { user, openAuthModal, isVip, openPremiumModal } = useAuth();
   const { slugBlocks } = useSlugBlocks();
   const { dmcaBlocks } = useDmcaBlocks();
   
@@ -568,37 +568,49 @@ const Home: React.FC = () => {
           </div>
         </section>
 
-        {/* 4K Anime Section (Hidden temporarily - to enable, set SHOW_4K_SECTION to true or remove false condition) */}
-        {false && (
-          <section>
-            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6">
-              <div>
-                <h2 className="text-xl md:text-2xl font-display font-extrabold text-white tracking-tight flex items-center gap-3 border-l-4 border-primary pl-3">
-                  <span>Аниме в 4K</span>
-                </h2>
-              </div>
-              <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
-                 <div className="flex gap-2">
-                   <button aria-label="Scroll left" onClick={() => scrollContainer(anime4kRef, 'left')} className="p-2.5 rounded-xl bg-[#1c1d21] border border-white/5 hover:border-white/10 hover:bg-white/5 text-white/40 hover:text-[#8B5CF6] transition-all"><ChevronLeft className="w-4 h-4" /></button>
-                   <button aria-label="Scroll right" onClick={() => scrollContainer(anime4kRef, 'right')} className="p-2.5 rounded-xl bg-[#1c1d21] border border-white/5 hover:border-white/10 hover:bg-white/5 text-white/40 hover:text-[#8B5CF6] transition-all"><ChevronRight className="w-4 h-4" /></button>
-                 </div>
-              </div>
+        {/* 4K Anime Section (Premium Exclusive) */}
+        <section>
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6">
+            <div>
+              <h2 className="text-xl md:text-2xl font-display font-extrabold text-white tracking-tight flex items-center gap-3 border-l-4 border-primary pl-3">
+                <span className="flex items-center gap-2">
+                  4K Аниме
+                  <span className="px-2 py-0.5 rounded-full bg-[#8B5CF6]/20 text-[#A78BFA] border border-[#8B5CF6]/40 text-[10px] font-black uppercase flex items-center gap-1">
+                    <Crown className="w-3 h-3 text-[#8B5CF6]" /> Premium
+                  </span>
+                </span>
+              </h2>
             </div>
-            <div ref={anime4kRef} className="flex gap-6 overflow-x-auto hide-scrollbar scroll-smooth pb-4 px-1 snap-x min-h-[360px]">
-              {animes4k.length > 0 ? animes4k.map((anime, idx) => (
-                <div key={`4k-${anime.id}-${idx}`} className="w-[180px] sm:w-[220px] 3xl:w-[260px] 4xl:w-[300px] flex-none snap-start">
-                  <AnimeCard anime={anime} />
-                </div>
-              )) : Array.from({length: 6}).map((_, i) => (
-                <div key={i} className="w-[180px] sm:w-[220px] 3xl:w-[260px] 4xl:w-[300px] flex-none snap-start animate-pulse">
-                    <div className="w-full aspect-[2/3] bg-white/5 rounded-xl mb-3"></div>
-                    <div className="h-4 bg-white/5 rounded w-3/4 mb-2"></div>
-                    <div className="h-3 bg-white/5 rounded w-1/2"></div>
-                </div>
-              ))}
+            <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
+               <Link to="/premium" className="text-[10px] font-black uppercase tracking-widest text-[#8B5CF6] hover:text-white transition-colors flex items-center gap-1.5 mr-3">
+                 {isVip ? 'Доступно с Premium' : 'Смотреть в 4K'} <ChevronRight className="w-4 h-4" />
+               </Link>
+               <div className="hidden sm:block w-px h-6 bg-white/10" />
+               <div className="flex gap-2">
+                 <button aria-label="Scroll left" onClick={() => scrollContainer(anime4kRef, 'left')} className="p-2.5 rounded-xl bg-[#1c1d21] border border-white/5 hover:border-white/10 hover:bg-white/5 text-white/40 hover:text-white transition-all"><ChevronLeft className="w-4 h-4" /></button>
+                 <button aria-label="Scroll right" onClick={() => scrollContainer(anime4kRef, 'right')} className="p-2.5 rounded-xl bg-[#1c1d21] border border-white/5 hover:border-white/10 hover:bg-white/5 text-white/40 hover:text-white transition-all"><ChevronRight className="w-4 h-4" /></button>
+               </div>
             </div>
-          </section>
-        )}
+          </div>
+          <div ref={anime4kRef} className="flex gap-6 overflow-x-auto hide-scrollbar scroll-smooth pb-4 px-1 snap-x min-h-[360px]">
+            {animes4k.length > 0 ? animes4k.map((anime, idx) => (
+              <div key={`4k-${anime.id}-${idx}`} className="w-[180px] sm:w-[220px] 3xl:w-[260px] 4xl:w-[300px] flex-none snap-start relative group">
+                <AnimeCard anime={anime} />
+                <div className="absolute top-3 right-3 z-20 pointer-events-none">
+                  <span className="px-2 py-0.5 rounded-md bg-black/80 backdrop-blur-md border border-[#8B5CF6]/40 text-[#A78BFA] text-[10px] font-black tracking-wider flex items-center gap-1 shadow-lg">
+                    <Crown className="w-2.5 h-2.5 text-[#8B5CF6]" /> 4K
+                  </span>
+                </div>
+              </div>
+            )) : Array.from({length: 6}).map((_, i) => (
+              <div key={i} className="w-[180px] sm:w-[220px] 3xl:w-[260px] 4xl:w-[300px] flex-none snap-start animate-pulse">
+                  <div className="w-full aspect-[2/3] bg-white/5 rounded-xl mb-3"></div>
+                  <div className="h-4 bg-white/5 rounded w-3/4 mb-2"></div>
+                  <div className="h-3 bg-white/5 rounded w-1/2"></div>
+              </div>
+            ))}
+          </div>
+        </section>
 
         {/* Trending Section */}
         <section>
@@ -876,7 +888,7 @@ const Home: React.FC = () => {
                   ))
                 ) : communityCollections.length === 0 ? (
                   <div className="col-span-full text-center py-12 flex flex-col items-center justify-center border border-dashed border-white/5 bg-surface/10 rounded-2xl">
-                    <Sparkles className="w-8 h-8 text-slate-600 mb-2.5" />
+                    <Layers className="w-8 h-8 text-slate-600 mb-2.5" />
                     <p className="text-[11px] text-slate-500 font-bold uppercase tracking-wider">Подборок от сообщества пока нет</p>
                   </div>
                 ) : (

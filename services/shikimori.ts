@@ -7,8 +7,8 @@ import { db } from './db';
 const BASE_API = '/api/shikimori';
 const IMG_BASE_URL = 'https://shikimori.one';
 const PLACEHOLDER_IMAGE = FALLBACK_IMAGE;
-const CACHE_TTL = 60 * 60 * 1000; // 60 minutes default cache
-const LONG_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours for static data
+const CACHE_TTL = 30 * 24 * 60 * 60 * 1000; // 30 days default cache
+const LONG_CACHE_TTL = 180 * 24 * 60 * 60 * 1000; // 180 days for static data (genres, descriptions, screenshots)
 
 // Debug: Log the base API URL being used
 console.log('[Shikimori Service] Initialized with BASE_API:', BASE_API);
@@ -347,10 +347,9 @@ export const mapAnime = async (data: any): Promise<Anime> => {
       }
   }
 
-  // Try to construct a high-res cover URL if we have an ID and it's from Shikimori
+  // Prefer existing valid image for cover, fallback to original proxy path if missing
   let cover = image;
-  if (data.id && (image.includes('shikimori') || (data.image && typeof data.image === 'object'))) {
-      // Shikimori original images are often at /system/animes/original/{id}.jpg
+  if ((!cover || cover === PLACEHOLDER_IMAGE || cover.includes('missing') || cover.includes('none.png')) && data.id) {
       cover = proxyImage(`/system/animes/original/${data.id}.jpg`);
   }
 
@@ -458,13 +457,127 @@ export const getAnimeById = async (id: string | number) => {
   }
 };
 
-export const fetchAnimeDetails = async (id: string, includeScreenshots = true): Promise<Anime | null> => {
+export const enrichAnimeWithKodik = async (anime: Anime, id: string, searchTitle?: string): Promise<Anime> => {
+  const isMissingImage = (img: any): boolean => {
+    if (!img) return true;
+    if (typeof img === 'string') {
+      return img === PLACEHOLDER_IMAGE || img.includes('missing') || img.includes('none.png');
+    }
+    if (typeof img === 'object') {
+      const src = img.original || img.preview || '';
+      return !src || (typeof src === 'string' && (src.includes('missing') || src.includes('none.png')));
+    }
+    return false;
+  };
+
+  const needsDescription = !anime.description || anime.description === 'Описание отсутствует' || anime.description.trim().length === 0;
+  const needsGenres = !anime.genres || !Array.isArray(anime.genres) || anime.genres.length === 0;
+  const needsImage = isMissingImage(anime.image);
+  const needsCover = isMissingImage(anime.cover);
+
+  if (!needsDescription && !needsGenres && !needsImage && !needsCover) {
+    return anime;
+  }
+
+  try {
+    let kodikUrl = `/api/media/search?shikimori_id=${id}`;
+    let res = await fetch(kodikUrl);
+    let data = res.ok ? await res.json() : null;
+
+    if ((!data?.results || data.results.length === 0) && (searchTitle || anime.title)) {
+      const q = (searchTitle || anime.title).split('/')[0].trim();
+      res = await fetch(`/api/media/search?title=${encodeURIComponent(q)}`);
+      data = res.ok ? await res.json() : null;
+    }
+
+    if (data?.results && data.results.length > 0) {
+      const best = data.results.find((r: any) => r.material_data?.description || r.material_data?.anime_description) || data.results[0];
+      const mat = best.material_data || {};
+
+      // Description fallback from Kodik
+      if (needsDescription) {
+        const desc = mat.anime_description || mat.description || '';
+        if (desc && desc.trim()) {
+          anime.description = desc.replace(/\[.*?\]/g, '').trim();
+        }
+      }
+
+      // Genres fallback from Kodik
+      if (needsGenres) {
+        const genres = mat.anime_genres || mat.genres;
+        if (Array.isArray(genres) && genres.length > 0) {
+          anime.genres = genres.map((g: any) => String(g).trim()).filter(Boolean);
+        }
+      }
+
+      // Image & Cover fallback from Kodik
+      if (needsImage && mat.poster_url) {
+        anime.image = mat.poster_url;
+      }
+      if (needsCover) {
+        const coverCandidates = mat.anime_photos || mat.screenshots || [];
+        if (Array.isArray(coverCandidates) && coverCandidates.length > 0 && coverCandidates[0]) {
+          anime.cover = coverCandidates[0];
+        } else if (mat.poster_url) {
+          anime.cover = mat.poster_url;
+        }
+      }
+
+      // Supplementary metadata
+      if (!anime.year && mat.year) {
+        anime.year = Number(mat.year);
+      }
+      if (!anime.episodes && (mat.episodes_total || best.episodes_count)) {
+        anime.episodes = Number(mat.episodes_total || best.episodes_count);
+      }
+      if (!anime.kinopoiskId && (mat.kinopoisk_id || best.kinopoisk_id)) {
+        anime.kinopoiskId = String(mat.kinopoisk_id || best.kinopoisk_id);
+      }
+      if (!anime.imdbId && (mat.imdb_id || best.imdb_id)) {
+        anime.imdbId = String(mat.imdb_id || best.imdb_id);
+      }
+    }
+
+    // Secondary Image & Cover fallback from AniList GraphQL if still missing
+    if (isMissingImage(anime.image) || isMissingImage(anime.cover)) {
+      try {
+        const numId = parseInt(id, 10);
+        const anilistQuery = `query ($idMal: Int, $search: String) { Media(idMal: $idMal, search: $search, type: ANIME) { coverImage { extraLarge large medium } bannerImage } }`;
+        const aRes = await fetch('https://graphql.anilist.co', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body: JSON.stringify({ query: anilistQuery, variables: isNaN(numId) ? { search: anime.originalName || searchTitle || anime.title } : { idMal: numId } })
+        });
+        if (aRes.ok) {
+          const aData: any = await aRes.json();
+          const coverImg = aData?.data?.Media?.coverImage?.extraLarge || aData?.data?.Media?.coverImage?.large;
+          const banner = aData?.data?.Media?.bannerImage;
+          if (coverImg && isMissingImage(anime.image)) {
+            anime.image = coverImg;
+          }
+          if (banner && isMissingImage(anime.cover)) {
+            anime.cover = banner;
+          } else if (coverImg && isMissingImage(anime.cover)) {
+            anime.cover = coverImg;
+          }
+        }
+      } catch (_) {}
+    }
+  } catch (err) {
+    console.warn('[enrichAnimeWithKodik] Kodik metadata enrichment error:', err);
+  }
+
+  return anime;
+};
+
+export const fetchAnimeDetails = async (id: string, includeScreenshots = false): Promise<Anime | null> => {
   if (!id) return null;
-  const cacheKey = `anime_details_v3_${id}`;
+  const cacheKey = `anime_details_v4_${id}`;
   const cached = getFromStorage(cacheKey);
   if (cached) {
     const isCompleted = cached.data?.status === 'Completed';
-    const ttl = isCompleted ? 30 * 24 * 60 * 60 * 1000 : 3 * 60 * 60 * 1000;
+    // Very long cache: 1 year (365 days) for completed, 30 days for ongoing
+    const ttl = isCompleted ? 365 * 24 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000;
     if (Date.now() - cached.timestamp < ttl) {
       return cached.data;
     }
@@ -478,12 +591,14 @@ export const fetchAnimeDetails = async (id: string, includeScreenshots = true): 
     
     let anime = await mapAnime(data);
 
+    // If description, genres or images are missing from Shikimori, pull them from Kodik
+    anime = await enrichAnimeWithKodik(anime, id, anime.title);
+
     // Fetch custom SEO description from our database
     try {
       const seoData = await db.getAnimeSeo(id);
       if (seoData && seoData.seo_description) {
         anime.description = seoData.seo_description;
-        // Optionally, you can add a flag to the Anime type if you need to know it's generated
         (anime as any).is_seo_generated = seoData.is_seo_generated;
       }
     } catch (e) {
@@ -493,16 +608,11 @@ export const fetchAnimeDetails = async (id: string, includeScreenshots = true): 
     // Fetch screenshots to find a better cover (landscape) for hero banners
     if (includeScreenshots) {
         try {
-            // Use LONG_CACHE_TTL for screenshots as they are static
-            // Priority 0 for secondary data
             const screenshots = await fetchApi(`/animes/${id}/screenshots`, 1, false, LONG_CACHE_TTL, 0);
             if (Array.isArray(screenshots) && screenshots.length > 0) {
                  const validScreen = screenshots.find((s: any) => s.original && !s.original.includes('missing'));
                  if (validScreen) {
-                     // If we found a valid screenshot, use it as the cover since it's landscape and high quality
                      anime.cover = proxyImage(validScreen.original);
-                     
-                     // If the main image was missing, also use this as the main image
                      if (anime.image === PLACEHOLDER_IMAGE) {
                          anime.image = anime.cover;
                      }
@@ -528,18 +638,35 @@ export const fetchAnimeDetails = async (id: string, includeScreenshots = true): 
 export const fetchAnimeScreenshots = async (id: string): Promise<string[]> => {
   if (!id) return [];
   
-  const cacheKey = `anime_screenshots_v3_${id}`;
+  const cacheKey = `anime_screenshots_v4_${id}`;
   const cached = getFromStorage(cacheKey);
   
-  const ttl = 30 * 24 * 60 * 60 * 1000; // 30 days
+  const ttl = 180 * 24 * 60 * 60 * 1000; // 180 days long-term cache
   if (cached && (Date.now() - cached.timestamp < ttl)) {
     return cached.data;
   }
 
   try {
-    // Priority 0 for secondary data
-    const data = await fetchApi(`/animes/${id}/screenshots`, 1, false, CACHE_TTL, 0);
-    const results = Array.isArray(data) ? data.map((s: any) => proxyImage(s.original)) : [];
+    const data = await fetchApi(`/animes/${id}/screenshots`, 1, false, LONG_CACHE_TTL, 0);
+    let results = Array.isArray(data) ? data.map((s: any) => proxyImage(s.original)).filter(Boolean) : [];
+    
+    // If Shikimori has no screenshots, fall back to Kodik material_data screenshots
+    if (results.length === 0) {
+      try {
+        const kodikRes = await fetch(`/api/media/search?shikimori_id=${id}`);
+        if (kodikRes.ok) {
+          const kData = await kodikRes.json();
+          if (kData?.results && kData.results.length > 0) {
+            const mat = kData.results[0].material_data || {};
+            const kScreens = mat.screenshots || mat.anime_photos || [];
+            if (Array.isArray(kScreens) && kScreens.length > 0) {
+              results = kScreens.filter(Boolean);
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
     if (results.length > 0) {
       saveToStorage(cacheKey, results);
     }
@@ -553,23 +680,23 @@ export const fetchAnimeScreenshots = async (id: string): Promise<string[]> => {
 export const fetchAnimeVideos = async (id: string): Promise<{ name: string; url: string; image: string }[]> => {
   if (!id) return [];
   
-  const cacheKey = `anime_videos_v3_${id}`;
+  const cacheKey = `anime_videos_v4_${id}`;
   const cached = getFromStorage(cacheKey);
   
-  const ttl = 15 * 24 * 60 * 60 * 1000; // 15 days
+  const ttl = 180 * 24 * 60 * 60 * 1000; // 180 days long-term cache
   if (cached && (Date.now() - cached.timestamp < ttl)) {
     return cached.data;
   }
 
   try {
-    // Priority 0 for secondary data
-    const data = await fetchApi(`/animes/${id}/videos`, 2, false, CACHE_TTL, 0);
+    const data = await fetchApi(`/animes/${id}/videos`, 2, false, LONG_CACHE_TTL, 0);
     if (Array.isArray(data)) {
       const results = data.map((v: any) => ({
         name: v.name || 'Трейлер',
         url: v.url,
         image: v.image_url
-      }));
+      })).filter((v: any) => v.url);
+      
       if (results.length > 0) {
         saveToStorage(cacheKey, results);
       }

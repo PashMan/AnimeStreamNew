@@ -11,13 +11,16 @@ const ResetPassword: React.FC = () => {
 
   useEffect(() => {
     // Check if we have a session (Supabase handles the hash fragment automatically)
-    supabase.auth.getSession().then(({ data }: any) => {
-      const session = data?.session;
-      if (!session) {
-        // If no session, maybe the link is invalid or expired
-        setMessage({ type: 'error', text: 'Invalid or expired password reset link.' });
-      }
-    });
+    if (supabase && supabase.auth) {
+      supabase.auth.getSession().then(({ data }: any) => {
+        const session = data?.session;
+        if (!session && !window.location.hash.includes('access_token')) {
+          setMessage({ type: 'error', text: 'Ссылка для сброса пароля недействительна или срок её действия истёк.' });
+        }
+      }).catch(() => {
+        setMessage({ type: 'error', text: 'Не удалось проверить сессию восстановления.' });
+      });
+    }
   }, []);
 
   const handleReset = async (e: React.FormEvent) => {
@@ -25,17 +28,23 @@ const ResetPassword: React.FC = () => {
     setLoading(true);
     setMessage(null);
 
+    if (password.length < 6) {
+      setMessage({ type: 'error', text: 'Пароль должен содержать не менее 6 символов' });
+      setLoading(false);
+      return;
+    }
+
     try {
       const { error } = await supabase.auth.updateUser({ password });
 
       if (error) throw error;
 
-      setMessage({ type: 'success', text: 'Password updated successfully! Redirecting...' });
+      setMessage({ type: 'success', text: 'Пароль успешно обновлён! Перенаправление...' });
       setTimeout(() => {
         navigate('/');
       }, 2000);
     } catch (error: any) {
-      setMessage({ type: 'error', text: error.message || 'Error updating password' });
+      setMessage({ type: 'error', text: error?.message || 'Ошибка обновления пароля' });
     } finally {
       setLoading(false);
     }

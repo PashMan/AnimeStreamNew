@@ -302,12 +302,10 @@ a, button, .group {
 }
 
 .art-video-player .art-notice {
-  background: rgba(18, 19, 24, 0.9) !important;
-  border: 1px solid rgba(139, 92, 246, 0.3) !important;
-  border-radius: 12px !important;
-  color: #fff !important;
-  font-weight: 700 !important;
-  backdrop-filter: blur(12px) !important;
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
 }
 
 .art-video-player .art-contextmenus {

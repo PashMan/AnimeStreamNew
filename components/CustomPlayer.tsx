@@ -21,8 +21,9 @@ import {
   Sliders,
   Users,
   Film,
-  Sparkles,
+  Crown,
 } from "lucide-react";
+import { useAuth } from "../context/AuthContext";
 import { isTvDevice } from "../utils/tvDetection";
 import { MobileAnime4KRenderer } from "../utils/anime4kCanvas";
 
@@ -420,100 +421,96 @@ class AnimeWebGL1080p {
       }
     `;
 
-    // Pass 4: WebGL2 Anime4K CAS + Sobel Edge + Line Thinning
+    // Pass 4: GLSL 300 es Contrast Adaptive Sharpening (AMD CAS 3x3 + Anti-Halo protection)
     const fsCasRescaleSource = this.isWebGL2 ? `#version 300 es
       precision highp float;
       in vec2 v_texCoord;
       out vec4 fragColor;
 
-      uniform sampler2D u_texture;
-      uniform vec2 u_resolution;
-      uniform float u_strength;
-
-      float luma(vec3 color) {
-        return dot(color, vec3(0.299, 0.587, 0.114));
-      }
+      uniform sampler2D u_image;
+      uniform vec2 u_MAIN_size;
+      uniform float u_amount;
 
       void main() {
-        vec3 orig = texture(u_texture, v_texCoord).rgb;
-        vec2 step = 1.0 / u_resolution;
+        vec2 texel = 1.0 / u_MAIN_size;
 
-        vec3 c  = orig;
-        vec3 tl = texture(u_texture, v_texCoord + vec2(-step.x, -step.y)).rgb;
-        vec3 t  = texture(u_texture, v_texCoord + vec2(0.0, -step.y)).rgb;
-        vec3 tr = texture(u_texture, v_texCoord + vec2(step.x, -step.y)).rgb;
-        vec3 l  = texture(u_texture, v_texCoord + vec2(-step.x, 0.0)).rgb;
-        vec3 r  = texture(u_texture, v_texCoord + vec2(step.x, 0.0)).rgb;
-        vec3 bl = texture(u_texture, v_texCoord + vec2(-step.x, step.y)).rgb;
-        vec3 b  = texture(u_texture, v_texCoord + vec2(0.0, step.y)).rgb;
-        vec3 br = texture(u_texture, v_texCoord + vec2(step.x, step.y)).rgb;
+        // 3x3 sampling grid
+        vec3 a = texture(u_image, v_texCoord + vec2(-texel.x, -texel.y)).rgb;
+        vec3 b = texture(u_image, v_texCoord + vec2(0.0, -texel.y)).rgb;
+        vec3 c = texture(u_image, v_texCoord + vec2(texel.x, -texel.y)).rgb;
+        vec3 d = texture(u_image, v_texCoord + vec2(-texel.x, 0.0)).rgb;
+        vec3 e = texture(u_image, v_texCoord).rgb;
+        vec3 f = texture(u_image, v_texCoord + vec2(texel.x, 0.0)).rgb;
+        vec3 g = texture(u_image, v_texCoord + vec2(-texel.x, texel.y)).rgb;
+        vec3 h = texture(u_image, v_texCoord + vec2(0.0, texel.y)).rgb;
+        vec3 i = texture(u_image, v_texCoord + vec2(texel.x, texel.y)).rgb;
 
-        float l_c  = luma(c);
-        float l_tl = luma(tl); float l_t = luma(t); float l_tr = luma(tr);
-        float l_l  = luma(l);                       float l_r  = luma(r);
-        float l_bl = luma(bl); float l_b = luma(b); float l_br = luma(br);
+        // Soft min & soft max across 3x3 sampling grid
+        vec3 min_grid = min(min(min(a, b), min(c, d)), min(min(e, f), min(g, min(h, i))));
+        vec3 max_grid = max(max(max(a, b), max(c, d)), max(max(e, f), max(g, max(h, i))));
 
-        float dx = (l_tr + 2.0 * l_r + l_br) - (l_tl + 2.0 * l_l + l_bl);
-        float dy = (l_bl + 2.0 * l_b + l_br) - (l_tl + 2.0 * l_t + l_tr);
-        float edge = clamp(sqrt(dx * dx + dy * dy) * 2.0, 0.0, 1.0);
+        // Cross soft min/max
+        vec3 min_cross = min(min(b, d), min(f, h));
+        vec3 max_cross = max(max(b, d), max(f, h));
 
-        vec3 min_c = min(min(min(t, b), l), r);
-        vec3 max_c = max(max(max(t, b), l), r);
-        vec3 sharp = c + (c - (t + b + l + r) * 0.25) * (u_strength * 1.6);
-        sharp = clamp(sharp, min_c, max_c);
+        // Anti-Halo protection bounds
+        vec3 min_soft = min(min_grid, min_cross);
+        vec3 max_soft = max(max_grid, max_cross);
 
-        vec3 result = mix(c, sharp, u_strength);
-        if (edge > 0.15) {
-          result = mix(result, result * 0.82, edge * 0.45);
-        }
+        // Contrast Adaptive Sharpening weight calculation
+        vec3 amp = clamp(min(min_soft, vec3(1.0) - max_soft) / max(max_soft, vec3(0.0001)), 0.0, 1.0);
+        float peak = -1.0 / mix(8.0, 5.0, clamp(u_amount, 0.0, 1.0));
+        vec3 w = vec3(sqrt(amp) * peak);
 
-        fragColor = vec4(result, 1.0);
+        // Weighted filter evaluation (4-tap cross + center)
+        vec3 filter_sum = b + d + f + h;
+        vec3 cas_col = (e + filter_sum * w) / (vec3(1.0) + 4.0 * w);
+
+        // Anti-Halo clamping protection
+        vec3 final_col = clamp(cas_col, min_soft, max_soft);
+
+        fragColor = vec4(clamp(final_col, 0.0, 1.0), 1.0);
       }
     ` : `
       precision highp float;
       varying vec2 v_texCoord;
-      uniform sampler2D u_texture;
-      uniform vec2 u_resolution;
-      uniform float u_strength;
 
-      float luma(vec3 color) {
-        return dot(color, vec3(0.299, 0.587, 0.114));
-      }
+      uniform sampler2D u_image;
+      uniform vec2 u_MAIN_size;
+      uniform float u_amount;
 
       void main() {
-        vec3 orig = texture2D(u_texture, v_texCoord).rgb;
-        vec2 step = 1.0 / u_resolution;
+        vec2 texel = 1.0 / u_MAIN_size;
 
-        vec3 c  = orig;
-        vec3 tl = texture2D(u_texture, v_texCoord + vec2(-step.x, -step.y)).rgb;
-        vec3 t  = texture2D(u_texture, v_texCoord + vec2(0.0, -step.y)).rgb;
-        vec3 tr = texture2D(u_texture, v_texCoord + vec2(step.x, -step.y)).rgb;
-        vec3 l  = texture2D(u_texture, v_texCoord + vec2(-step.x, 0.0)).rgb;
-        vec3 r  = texture2D(u_texture, v_texCoord + vec2(step.x, 0.0)).rgb;
-        vec3 bl = texture2D(u_texture, v_texCoord + vec2(-step.x, step.y)).rgb;
-        vec3 b  = texture2D(u_texture, v_texCoord + vec2(0.0, step.y)).rgb;
-        vec3 br = texture2D(u_texture, v_texCoord + vec2(step.x, step.y)).rgb;
+        vec3 a = texture2D(u_image, v_texCoord + vec2(-texel.x, -texel.y)).rgb;
+        vec3 b = texture2D(u_image, v_texCoord + vec2(0.0, -texel.y)).rgb;
+        vec3 c = texture2D(u_image, v_texCoord + vec2(texel.x, -texel.y)).rgb;
+        vec3 d = texture2D(u_image, v_texCoord + vec2(-texel.x, 0.0)).rgb;
+        vec3 e = texture2D(u_image, v_texCoord).rgb;
+        vec3 f = texture2D(u_image, v_texCoord + vec2(texel.x, 0.0)).rgb;
+        vec3 g = texture2D(u_image, v_texCoord + vec2(-texel.x, texel.y)).rgb;
+        vec3 h = texture2D(u_image, v_texCoord + vec2(0.0, texel.y)).rgb;
+        vec3 i = texture2D(u_image, v_texCoord + vec2(texel.x, texel.y)).rgb;
 
-        float l_c  = luma(c);
-        float l_tl = luma(tl); float l_t = luma(t); float l_tr = luma(tr);
-        float l_l  = luma(l);                       float l_r  = luma(r);
-        float l_bl = luma(bl); float l_b = luma(b); float l_br = luma(br);
+        vec3 min_grid = min(min(min(a, b), min(c, d)), min(min(e, f), min(g, min(h, i))));
+        vec3 max_grid = max(max(max(a, b), max(c, d)), max(max(e, f), max(g, max(h, i))));
 
-        float dx = (l_tr + 2.0 * l_r + l_br) - (l_tl + 2.0 * l_l + l_bl);
-        float dy = (l_bl + 2.0 * l_b + l_br) - (l_tl + 2.0 * l_t + l_tr);
-        float edge = clamp(sqrt(dx * dx + dy * dy) * 2.0, 0.0, 1.0);
+        vec3 min_cross = min(min(b, d), min(f, h));
+        vec3 max_cross = max(max(b, d), max(f, h));
 
-        vec3 min_c = min(min(min(t, b), l), r);
-        vec3 max_c = max(max(max(t, b), l), r);
-        vec3 sharp = c + (c - (t + b + l + r) * 0.25) * (u_strength * 1.6);
-        sharp = clamp(sharp, min_c, max_c);
+        vec3 min_soft = min(min_grid, min_cross);
+        vec3 max_soft = max(max_grid, max_cross);
 
-        vec3 result = mix(c, sharp, u_strength);
-        if (edge > 0.15) {
-          result = mix(result, result * 0.82, edge * 0.45);
-        }
+        vec3 amp = clamp(min(min_soft, vec3(1.0) - max_soft) / max(max_soft, vec3(0.0001)), 0.0, 1.0);
+        float peak = -1.0 / mix(8.0, 5.0, clamp(u_amount, 0.0, 1.0));
+        vec3 w = vec3(sqrt(amp) * peak);
 
-        gl_FragColor = vec4(result, 1.0);
+        vec3 filter_sum = b + d + f + h;
+        vec3 cas_col = (e + filter_sum * w) / (vec3(1.0) + 4.0 * w);
+
+        vec3 final_col = clamp(cas_col, min_soft, max_soft);
+
+        gl_FragColor = vec4(clamp(final_col, 0.0, 1.0), 1.0);
       }
     `;
 
@@ -622,11 +619,11 @@ class AnimeWebGL1080p {
   public setTargetResolution(targetH: number) {
     this.targetMode = targetH;
     if (targetH === 2160 || targetH === 0) {
-      this.sharpness = 0.85; // 4K Super-Resolution boost
+      this.sharpness = 0.80; // 0.75-0.85 for 1080p source upscaled to 4K
     } else if (targetH === 1080) {
-      this.sharpness = 0.60;
+      this.sharpness = 1.0;  // 1.0 for 720p source upscaled to 1080p
     } else {
-      this.sharpness = 0.50;
+      this.sharpness = 0.80;
     }
     if (targetH === -1) {
       this.canvas.style.opacity = "0";
@@ -793,16 +790,20 @@ class AnimeWebGL1080p {
     this.drawQuad(this.upscale2xProgram);
 
     // -------------------------------------------------------------
-    // PASS 4: WebGL2 Anime4K CAS + Sobel Edge Detection + Line Thinning
+    // PASS 4: WebGL2 GLSL 300 es AMD CAS (Contrast Adaptive Sharpening)
     // -------------------------------------------------------------
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, renderW, renderH);
     gl.useProgram(this.casRescaleProgram);
 
     gl.bindTexture(gl.TEXTURE_2D, this.fboUpscale2xTexture);
-    gl.uniform1i(gl.getUniformLocation(this.casRescaleProgram, "u_texture"), 0);
-    gl.uniform2f(gl.getUniformLocation(this.casRescaleProgram, "u_resolution"), renderW, renderH);
-    gl.uniform1f(gl.getUniformLocation(this.casRescaleProgram, "u_strength"), this.strength || 1.25);
+    gl.uniform1i(gl.getUniformLocation(this.casRescaleProgram, "u_image"), 0);
+    gl.uniform2f(gl.getUniformLocation(this.casRescaleProgram, "u_MAIN_size"), upW, upH);
+
+    // u_amount: 0.80 for 1080p source (targetH 2160), 1.0 for 720p source (targetH 1080)
+    const defaultAmount = targetH >= 2160 ? 0.80 : 1.0;
+    const uAmount = this.sharpness !== undefined ? this.sharpness : defaultAmount;
+    gl.uniform1f(gl.getUniformLocation(this.casRescaleProgram, "u_amount"), uAmount);
     this.drawQuad(this.casRescaleProgram);
   }
 
@@ -847,6 +848,8 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const artInstanceRef = useRef<Artplayer | null>(null);
     const webglInstanceRef = useRef<AnimeWebGL1080p | null>(null);
+
+    const { isVip, openPremiumModal } = useAuth();
 
     // Determine active stream provider for logging
     const activeProvider = (
@@ -927,7 +930,7 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
     >(() => {
       if (isKodikStream) {
         return [
-          { html: "1080p (Anime4K AI)", level: 0, targetH: 1080, isAi: true },
+          { html: "1080p", level: 0, targetH: 1080, isAi: true },
           { html: "720p", level: 0, targetH: -1 },
           { html: "480p", level: 1, targetH: -1 },
           { html: "360p", level: 2, targetH: -1 },
@@ -935,7 +938,7 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
         ];
       }
       return [
-        { html: "4K (Anime4K AI)", level: 0, targetH: 2160, isAi: true },
+        { html: "4K", level: 0, targetH: 2160, isAi: true },
         { html: "1080p", level: 0, targetH: -1 },
         { html: "720p", level: 1, targetH: -1 },
         { html: "480p", level: 2, targetH: -1 },
@@ -948,7 +951,7 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
     useEffect(() => {
       if (isKodikStream) {
         setAvailableQualities([
-          { html: "1080p (Anime4K AI)", level: 0, targetH: 1080, isAi: true },
+          { html: "1080p", level: 0, targetH: 1080, isAi: true },
           { html: "720p", level: 0, targetH: -1 },
           { html: "480p", level: 1, targetH: -1 },
           { html: "360p", level: 2, targetH: -1 },
@@ -956,7 +959,7 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
         ]);
       } else {
         setAvailableQualities([
-          { html: "4K (Anime4K AI)", level: 0, targetH: 2160, isAi: true },
+          { html: "4K", level: 0, targetH: 2160, isAi: true },
           { html: "1080p", level: 0, targetH: -1 },
           { html: "720p", level: 1, targetH: -1 },
           { html: "480p", level: 2, targetH: -1 },
@@ -969,22 +972,50 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
     // Keep selected quality valid across provider/quality list changes
     useEffect(() => {
       if (availableQualities.length > 0) {
-        const isValid = availableQualities.some((q) => q.html === selectedQuality);
-        if (!isValid) {
-          if (selectedQuality.includes("4K")) {
-            const ai1080 = availableQualities.find((q) => q.html.includes("1080p (Anime4K"));
-            if (ai1080) {
-              setSelectedQuality(ai1080.html);
-              return;
-            }
-          } else if (selectedQuality.includes("1080p (Anime4K")) {
-            const ai4k = availableQualities.find((q) => q.html.includes("4K"));
-            if (ai4k) {
-              setSelectedQuality(ai4k.html);
-              return;
-            }
+        const savedQ = localStorage.getItem("kami_player_selected_quality") || selectedQuality;
+        const exactMatch = availableQualities.find((q) => q.html === savedQ);
+        if (exactMatch) {
+          setSelectedQuality(exactMatch.html);
+          selectedQualityRef.current = exactMatch.html;
+          return;
+        }
+        // Match closest quality category if exact label differs
+        if (savedQ.includes("4K")) {
+          const match4k = availableQualities.find((q) => q.html.includes("4K") || q.targetH === 2160);
+          if (match4k) {
+            setSelectedQuality(match4k.html);
+            selectedQualityRef.current = match4k.html;
+            return;
           }
-          setSelectedQuality("Авто");
+        }
+        if (savedQ.includes("1080")) {
+          const match1080 = availableQualities.find((q) => q.html.includes("1080") || q.targetH === 1080);
+          if (match1080) {
+            setSelectedQuality(match1080.html);
+            selectedQualityRef.current = match1080.html;
+            return;
+          }
+        }
+        if (savedQ.includes("720")) {
+          const match720 = availableQualities.find((q) => q.html.includes("720"));
+          if (match720) {
+            setSelectedQuality(match720.html);
+            selectedQualityRef.current = match720.html;
+            return;
+          }
+        }
+        if (savedQ.includes("480")) {
+          const match480 = availableQualities.find((q) => q.html.includes("480"));
+          if (match480) {
+            setSelectedQuality(match480.html);
+            selectedQualityRef.current = match480.html;
+            return;
+          }
+        }
+        const auto = availableQualities.find((q) => q.html === "Авто") || availableQualities[0];
+        if (auto) {
+          setSelectedQuality(auto.html);
+          selectedQualityRef.current = auto.html;
         }
       }
     }, [availableQualities]);
@@ -1031,6 +1062,7 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
     const onNextEpisodeRef = useRef(onNextEpisode);
     const onPrevEpisodeRef = useRef(onPrevEpisode);
     const onPlayerErrorRef = useRef(onPlayerError);
+    const onOpenDownloadRef = useRef(onOpenDownload);
     const audioTrackNamesRef = useRef(audioTrackNames);
     const lastPlaybackPosRef = useRef<number>(0);
     const wasPlayingRef = useRef<boolean>(false);
@@ -1046,6 +1078,10 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
     useEffect(() => {
       onPlayerErrorRef.current = onPlayerError;
     }, [onPlayerError]);
+
+    useEffect(() => {
+      onOpenDownloadRef.current = onOpenDownload;
+    }, [onOpenDownload]);
 
     useEffect(() => {
       audioTrackNamesRef.current = audioTrackNames;
@@ -1250,6 +1286,29 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                   },
                 ]
               : []),
+            ...(!!onOpenDownload
+              ? [
+                  {
+                    name: "download-btn",
+                    position: "right",
+                    index: 19,
+                    html: `
+                      <span class="art-icon art-icon-download" style="cursor: pointer; display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; color: #fff;" title="Скачать серию">
+                        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                          <polyline points="7 10 12 15 17 10"></polyline>
+                          <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                      </span>
+                    `,
+                    click: function () {
+                      if (onOpenDownloadRef.current) {
+                        onOpenDownloadRef.current();
+                      }
+                    },
+                  },
+                ]
+              : []),
             {
               name: "custom-settings-btn",
               position: "right",
@@ -1365,12 +1424,12 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                   const parsedQualities: { html: string; level: number; targetH?: number; isAi?: boolean }[] = [];
 
                   // RULE:
-                  // 1080p native source (e.g. Aniboom) -> upscales to 4K: "4K (Anime4K AI)"
-                  // 720p native source (e.g. Kodik) -> upscales to 1080p: "1080p (Anime4K AI)"
+                  // 1080p native source (e.g. Aniboom) -> 4K
+                  // 720p native source (e.g. Kodik) -> 1080p
                   if (hasNative1080) {
-                    parsedQualities.push({ html: "4K (Anime4K AI)", level: 0, targetH: 2160, isAi: true });
+                    parsedQualities.push({ html: "4K", level: 0, targetH: 2160, isAi: true });
                   } else {
-                    parsedQualities.push({ html: "1080p (Anime4K AI)", level: 0, targetH: 1080, isAi: true });
+                    parsedQualities.push({ html: "1080p", level: 0, targetH: 1080, isAi: true });
                   }
 
                   nativeList.forEach(item => {
@@ -1612,12 +1671,12 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                   const maxLevelIndex = Math.max(0, (levels?.length || 1) - 1);
 
                   // RULE:
-                  // 1080p native source (e.g. Aniboom) -> upscales to 4K: "4K (Anime4K AI)"
-                  // 720p native source (e.g. Kodik) -> upscales to 1080p: "1080p (Anime4K AI)"
+                  // 1080p native source (e.g. Aniboom) -> 4K
+                  // 720p native source (e.g. Kodik) -> 1080p
                   if (hasNative1080) {
-                    finalQuals.push({ html: "4K (Anime4K AI)", level: maxLevelIndex, targetH: 2160, isAi: true });
+                    finalQuals.push({ html: "4K", level: maxLevelIndex, targetH: 2160, isAi: true });
                   } else {
-                    finalQuals.push({ html: "1080p (Anime4K AI)", level: maxLevelIndex, targetH: 1080, isAi: true });
+                    finalQuals.push({ html: "1080p", level: maxLevelIndex, targetH: 1080, isAi: true });
                   }
 
                   mappedLevels.forEach((item) => {
@@ -1639,10 +1698,21 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                   updateQualitiesFromLevels(parsedLevels);
 
                   const curQ = selectedQualityRef.current;
-                  const maxLvl = Math.max(0, parsedLevels.length - 1);
-                  if (curQ.includes("4K") || curQ.includes("1080p (Anime4K")) {
-                    hls.currentLevel = maxLvl;
-                    hls.loadLevel = maxLvl;
+                  if (curQ && curQ !== "Авто") {
+                    if (curQ.includes("4K") || curQ.includes("1080p (Anime4K")) {
+                      const maxLvl = Math.max(0, parsedLevels.length - 1);
+                      hls.nextLevel = maxLvl;
+                      if (hls.loadLevel !== undefined) hls.loadLevel = maxLvl;
+                    } else {
+                      const numericH = parseInt(curQ.replace(/\D/g, ""), 10);
+                      if (!isNaN(numericH) && numericH > 0) {
+                        const matchedIdx = parsedLevels.findIndex((l: any) => l.height === numericH);
+                        if (matchedIdx !== -1) {
+                          hls.nextLevel = matchedIdx;
+                          if (hls.loadLevel !== undefined) hls.loadLevel = matchedIdx;
+                        }
+                      }
+                    }
                   }
                 });
 
@@ -1736,21 +1806,10 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
           if (!art) return;
           const curr = art.currentTime;
           const dur = art.duration;
+          if (curr > 0) {
+            lastPlaybackPosRef.current = curr;
+          }
           saveProgress(curr, dur);
-
-          // Opening badge: between 10s and 110s
-          if (curr >= 10 && curr <= 110) {
-            setShowSkipOpBtn(true);
-          } else {
-            setShowSkipOpBtn(false);
-          }
-
-          // Ending badge: in last 85 seconds of the episode (when dur > 180s)
-          if (dur > 180 && curr >= dur - 85) {
-            setShowSkipEdBtn(true);
-          } else {
-            setShowSkipEdBtn(false);
-          }
         });
 
         // Auto-switch to next episode when current video ends
@@ -1758,12 +1817,9 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
           const isAutoNextActive =
             localStorage.getItem("kami_player_auto_next") !== "false";
           if (isAutoNextActive && onNextEpisodeRef.current) {
-            if (art && art.notice) {
-              art.notice.show = "Запуск следующей серии...";
-            }
             setTimeout(() => {
               onNextEpisodeRef.current?.();
-            }, 800);
+            }, 500);
           }
         });
 
@@ -1787,9 +1843,6 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
 
           if (seekTime > 0) {
             art.currentTime = seekTime;
-            if (art.notice) {
-              art.notice.show = `Продолжено с ${Math.floor(seekTime / 60)}:${Math.floor(seekTime % 60).toString().padStart(2, "0")}`;
-            }
           }
           if (wasPlayingRef.current && art.video && art.video.paused) {
             art.video.play().catch(() => {});
@@ -1852,6 +1905,20 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
 
     // Quality Selection Handler
     const handleSelectQuality = (item: { html: string; level: number; targetH?: number; isAi?: boolean }) => {
+      const is4K = item.html.includes("4K") || item.targetH === 2160;
+
+      // 4K is Premium only! 1080p and lower is free for everyone
+      if (is4K && !isVip) {
+        const art = artInstanceRef.current;
+        if (art && art.notice) {
+          art.notice.show = "4K качество доступно с подпиской Premium (1-й месяц бесплатно)";
+        }
+        openPremiumModal("Просмотр в 4K качестве");
+        setIsSettingsOpen(false);
+        setActiveSubmenu("main");
+        return;
+      }
+
       setSelectedQuality(item.html);
       localStorage.setItem("kami_player_selected_quality", item.html);
 
@@ -1864,14 +1931,14 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
         if (item.html.includes("4K") || item.targetH === 2160) {
           webglInstanceRef.current.setTargetResolution(2160);
           webglInstanceRef.current.start();
-        } else if (item.html.includes("1080p (Anime4K") || item.targetH === 1080) {
+        } else if ((item.html.includes("1080p") && (item.isAi || item.html.includes("CAS") || item.html.includes("Anime4K"))) || item.targetH === 1080) {
           webglInstanceRef.current.setTargetResolution(1080);
           webglInstanceRef.current.start();
         } else if (item.html === "Авто" || item.targetH === 0) {
           webglInstanceRef.current.setTargetResolution(0); // Auto mode: 1080p source -> 4K (2160p), 720p source -> 1080p
           webglInstanceRef.current.start();
         } else {
-          // Standard raw resolution selected without AI upscaling
+          // Standard raw resolution selected without WebGL upscaling
           webglInstanceRef.current.setTargetResolution(-1);
         }
       }
@@ -1891,12 +1958,14 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
           } else {
             hls.nextLevel = targetLvl;
             if (hls.loadLevel !== undefined) hls.loadLevel = targetLvl;
-            hls.currentLevel = targetLvl;
           }
 
-          if (currentPos > 0 && art.video && Math.abs(art.currentTime - currentPos) > 1.5) {
-            art.currentTime = currentPos;
-            if (wasPlaying && art.video.paused) {
+          if (currentPos > 0) {
+            lastPlaybackPosRef.current = currentPos;
+            if (art.video && Math.abs(art.currentTime - currentPos) > 2) {
+              art.currentTime = currentPos;
+            }
+            if (wasPlaying && art.video && art.video.paused) {
               art.video.play().catch(() => {});
             }
           }
@@ -2345,6 +2414,10 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                   <button
                     onClick={() => {
                       setIsSettingsOpen(false);
+                      if (!isVip) {
+                        openPremiumModal("Скачивание серий для оффлайн-просмотра");
+                        return;
+                      }
                       if (onOpenDownload) {
                         onOpenDownload();
                       } else {
@@ -2357,9 +2430,16 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                       <div className="w-8 h-8 rounded-lg bg-cyan-500/10 flex items-center justify-center text-cyan-400 group-hover:text-cyan-300 transition-colors">
                         <Download className="w-4 h-4" />
                       </div>
-                      <span className="text-sm font-bold text-white">
-                        Скачать серию (.MP4)
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold text-white">
+                          Скачать серию (.MP4)
+                        </span>
+                        {!isVip && (
+                          <span className="px-1.5 py-0.5 text-[8px] font-black uppercase rounded-full bg-[#8B5CF6]/20 text-[#A78BFA] border border-[#8B5CF6]/30 flex items-center gap-0.5">
+                            <Crown className="w-2.5 h-2.5 text-[#8B5CF6]" /> Premium
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-white transition-colors" />
                   </button>
@@ -2391,6 +2471,7 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                   <div className="space-y-1">
                     {availableQualities.map((q) => {
                       const isSelected = selectedQuality === q.html;
+                      const is4K = q.html.includes("4K") || q.targetH === 2160;
                       return (
                         <button
                           key={q.html}
@@ -2403,9 +2484,10 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                         >
                           <div className="flex items-center gap-2">
                             <span>{q.html}</span>
-                            {(q.isAi || q.html.includes("AI") || q.html.includes("4K")) && (
-                              <span className="text-[10px] uppercase font-black tracking-wider px-1.5 py-0.5 rounded bg-[#8B5CF6]/20 text-[#A78BFA] border border-[#8B5CF6]/30">
-                                AI Шейдер
+                            {is4K && (
+                              <span className="flex items-center gap-1 text-[9px] uppercase font-black tracking-wider px-2 py-0.5 rounded-full bg-[#8B5CF6]/20 text-[#A78BFA] border border-[#8B5CF6]/30 shadow-sm">
+                                <Crown className="w-3 h-3 text-[#8B5CF6]" />
+                                {!isVip ? 'Premium 4K' : '4K'}
                               </span>
                             )}
                           </div>

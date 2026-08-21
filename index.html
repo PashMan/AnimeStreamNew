@@ -33,7 +33,7 @@
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&amp;family=Outfit:wght@500;700;800;900&amp;display=swap" rel="stylesheet">
     </noscript>
 
-    <!-- Global Shim & Error Shield for 3rd-party player tracking scripts (e.g. 200.js / M_ID) -->
+    <!-- Global Shim & Error Shield for 3rd-party player tracking scripts (e.g. 200.js / M_ID / cloudflareinsights) -->
     <script>
       (function() {
         try {
@@ -45,7 +45,7 @@
           try {
             var reasonStr = String(event.reason || '');
             var stackStr = String(event.reason && event.reason.stack ? event.reason.stack : '');
-            if (reasonStr.includes('M_ID') || stackStr.includes('200.js') || reasonStr.includes('200.js')) {
+            if (reasonStr.includes('M_ID') || stackStr.includes('200.js') || reasonStr.includes('200.js') || reasonStr.includes('cloudflareinsights') || stackStr.includes('cloudflareinsights')) {
               event.preventDefault();
             }
           } catch (_) {}
@@ -54,7 +54,7 @@
           try {
             var msg = String(event.message || '');
             var filename = String(event.filename || '');
-            if (msg.includes('M_ID') || filename.includes('200.js')) {
+            if (msg.includes('M_ID') || filename.includes('200.js') || filename.includes('cloudflareinsights') || msg.includes('cloudflareinsights')) {
               event.preventDefault();
               return true;
             }

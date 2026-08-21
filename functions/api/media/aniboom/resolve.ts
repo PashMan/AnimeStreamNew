@@ -32,18 +32,31 @@ export async function onRequest(context: any) {
     let parentUrl = u.searchParams.get('parent') || 'https://animego.me/';
     if (!parentUrl.startsWith('http')) parentUrl = 'https://animego.me/';
 
-    const res = await fetch(u.toString(), {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Referer': parentUrl,
-        'Origin': new URL(parentUrl).origin,
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8',
-      }
-    });
+    let fetchUrl = u.toString();
+    const fetchHeaders = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      'Referer': parentUrl,
+      'Origin': new URL(parentUrl).origin,
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8',
+    };
 
-    const html = await res.text();
-    const match = html.match(/data-parameters=["']([^"']+)["']/i);
+    let res = await fetch(fetchUrl, { headers: fetchHeaders });
+    let html = res.ok ? await res.text() : '';
+    let match = html.match(/data-parameters=["']([^"']+)["']/i);
+
+    // Fallback: If with &translation= parsing failed (or returned empty data-parameters),
+    // retry request without translation parameter to fetch default stream
+    if (!match && u.searchParams.has('translation')) {
+      const retryUrl = new URL(u.toString());
+      retryUrl.searchParams.delete('translation');
+      fetchUrl = retryUrl.toString();
+      const retryRes = await fetch(fetchUrl, { headers: fetchHeaders });
+      if (retryRes.ok) {
+        const retryHtml = await retryRes.text();
+        match = retryHtml.match(/data-parameters=["']([^"']+)["']/i);
+      }
+    }
 
     if (!match) {
       return new Response(JSON.stringify({ success: false, error: 'data-parameters not found' }), {

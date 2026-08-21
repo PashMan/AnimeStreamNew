@@ -236,13 +236,31 @@ export async function onRequest(context: any) {
   let animego_aniboom_map: Array<{ voice: string; url: string; episodesCount?: number }> = [];
 
   if (shikimori_id) {
-    try {
-      const animegoData = await fetchAnimegoData(String(shikimori_id), resolvedTitle || title || '');
-      if (animegoData) {
-        aniboom_iframe = animegoData.defaultAniboomUrl;
-        animego_aniboom_map = animegoData.aniboomMap;
-      }
-    } catch (_) {}
+    if (context?.env?.DB) {
+      try {
+        const row: any = await context.env.DB.prepare(
+          'SELECT aniboom_id, animego_slug, title_ru, aniboom_map FROM animego_catalog WHERE shikimori_id = ?'
+        ).bind(shikimori_id).first();
+
+        if (row?.aniboom_map) {
+          const parsed = typeof row.aniboom_map === 'string' ? JSON.parse(row.aniboom_map) : row.aniboom_map;
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            animego_aniboom_map = parsed;
+            aniboom_iframe = parsed[0]?.url || (row.aniboom_id ? `https://aniboom.one/embed/${row.aniboom_id}` : null);
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (animego_aniboom_map.length === 0) {
+      try {
+        const animegoData = await fetchAnimegoData(String(shikimori_id), resolvedTitle || title || '');
+        if (animegoData) {
+          aniboom_iframe = animegoData.defaultAniboomUrl;
+          animego_aniboom_map = animegoData.aniboomMap;
+        }
+      } catch (_) {}
+    }
   }
 
   const players: any[] = [];

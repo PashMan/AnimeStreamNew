@@ -51,8 +51,18 @@ const CollectionCard: React.FC<CollectionCardProps> = ({ collection }) => {
   }, [collection.id, collection.defaultGenre]);
 
   return (
-    <Link to={`/collections/${collection.id}`} className="group relative h-56 rounded-2xl overflow-hidden block shadow-xl border border-white/5 bg-[#0a0a0f] animate-in fade-in zoom-in duration-500">
-      <img src={coverImage} alt={collection.title} className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-105" referrerPolicy="no-referrer" />
+    <Link to={`/collections/${collection.id}`} className="group relative h-56 rounded-2xl overflow-hidden block shadow-xl border border-white/5 bg-[#141519] animate-in fade-in zoom-in duration-500">
+      {coverImage ? (
+        <img 
+          src={coverImage} 
+          alt={collection.title} 
+          className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-105" 
+          referrerPolicy="no-referrer"
+          onError={() => setCoverImage('')}
+        />
+      ) : (
+        <div className={`absolute inset-0 bg-gradient-to-br ${collection.color || 'from-violet-900/50 to-slate-950'} opacity-75`} />
+      )}
       
       {/* Cinematic gradient overlay directly on the cover, matching Netflix collection style */}
       <div className="absolute inset-0 bg-gradient-to-t from-black via-black/75 to-black/35 opacity-90 group-hover:opacity-100 transition-opacity duration-300" />

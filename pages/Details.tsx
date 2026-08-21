@@ -29,16 +29,16 @@ import {
   Bell,
   RefreshCw,
   Search,
-  Bot,
   Download,
   ArrowDownToLine,
   Mic,
   MicOff,
   Crown,
   Play,
+  BookOpen,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
-import { fetchPlayersClientSide } from "../services/balancer";
+import { fetchPlayersClientSide, KodikTranslation } from "../services/balancer";
 import {
   fetchAnimeDetails,
   fetchRelatedAnimes,
@@ -195,7 +195,7 @@ const Details: React.FC = () => {
 
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { openAuthModal, user } = useAuth();
+  const { openAuthModal, user, isVip, openPremiumModal } = useAuth();
   const relatedRef = useRef<HTMLDivElement>(null);
   const similarRef = useRef<HTMLDivElement>(null);
 
@@ -204,17 +204,8 @@ const Details: React.FC = () => {
   const [players, setPlayers] = useState<
     { name: string; iframe: string | null; isCustom?: boolean }[]
   >([{ name: "KamiPlayer (1080p)", iframe: null, isCustom: true }]);
-  const [translations, setTranslations] = useState<
-    { id: string | number; title: string; type: string; iframe: string; episodes_count?: number; last_episode?: number }[]
-  >([]);
-  const [selectedTranslation, setSelectedTranslation] = useState<{
-    id: string | number;
-    title: string;
-    type: string;
-    iframe: string;
-    episodes_count?: number;
-    last_episode?: number;
-  } | null>(null);
+  const [translations, setTranslations] = useState<KodikTranslation[]>([]);
+  const [selectedTranslation, setSelectedTranslation] = useState<KodikTranslation | null>(null);
   const [hasFetchedPlayers, setHasFetchedPlayers] = useState(false);
   const [isPlayersLoading, setIsPlayersLoading] = useState(false);
   const [playersError, setPlayersError] = useState<string | null>(null);
@@ -259,14 +250,14 @@ const Details: React.FC = () => {
   };
 
   const getTranslationQuality = (t: any) => {
-    if (!t) return "1080p";
+    if (!t) return "720p";
     if (t.quality_label) return t.quality_label;
     const baseTitle = getCleanTitle(t.title || "");
     const override = translationQualityOverrides[baseTitle];
     if (override) return override;
 
     const isNative4KFilm = id === "50594" || id === "62568" || id === "38826" || id === "16782" || id === "32281";
-    if (isNative4KFilm || t.is_native_4k) return "4K Ultra";
+    if (isNative4KFilm || t.is_native_4k) return "4K";
 
     const hasAniboom = Boolean(
       t.aniboom_iframe ||
@@ -275,7 +266,7 @@ const Details: React.FC = () => {
       (t.sources && t.sources.some((s: any) => s.provider === "aniboom" && s.embedUrl))
     );
 
-    if (hasAniboom) return "FHD 1080p";
+    if (hasAniboom) return "4K";
 
     const match = (t.title || "").match(/\b(4K|1080|720)\b/i);
     if (match) {
@@ -285,7 +276,7 @@ const Details: React.FC = () => {
       if (val === "720") return "720p";
     }
 
-    return "HD 720p";
+    return "720p";
   };
 
   const getDisplayTitle = (title: string) => {
@@ -304,7 +295,7 @@ const Details: React.FC = () => {
     }
   }, [selectedPlayer]);
 
-  // Плавное получение потока AniBoom 1080p через resolve-воркер
+  // Плавное получение потока (AniBoom 4K или Kodik 720p) при выборе озвучки
   useEffect(() => {
     const isSuzume = id === "50594" || id === "62568";
     const isWeathering = id === "38826";
@@ -321,11 +312,42 @@ const Details: React.FC = () => {
     let isCurrent = true;
     const epNum = parseInt(paramEpisode || "1") || 1;
     const defaultAniboom = players.find((p) => p.name === "Aniboom" || (p.iframe && p.iframe.includes("aniboom")))?.iframe;
-    const embedToResolve = getResolvedAniboomUrl(selectedTranslation, epNum, defaultAniboom);
+    const isAniboomTranslation = Boolean(
+      selectedTranslation?.aniboom_iframe ||
+      selectedTranslation?.provider === "AniBoom" ||
+      selectedTranslation?.provider === "aniboom" ||
+      selectedTranslation?.quality_label === "4K"
+    );
 
     const abortController = new AbortController();
 
-    // 1. Если AniBoom для этой озвучки нет — используем чистый поток Kodik в KamiPlayer
+    if (!isAniboomTranslation) {
+      // Kodik translation selected (720p)
+      const defaultKodik = players.find((p) => p.name === "Kodik")?.iframe;
+      const kodikIframeUrl = getResolvedKodikUrl(selectedTranslation, epNum, defaultKodik);
+      if (kodikIframeUrl) {
+        const streamUrl = getCleanPlaylistUrl(kodikIframeUrl, null, null, false);
+        if (isCurrent) {
+          setResolvedStream({
+            url: streamUrl,
+            streamType: "hls",
+            provider: "kodik"
+          });
+          setIsResolvingStream(false);
+          setSelectedPlayer("KamiPlayer (1080p)");
+        }
+      } else {
+        if (isCurrent) {
+          setResolvedStream(null);
+          setIsResolvingStream(false);
+        }
+      }
+      return;
+    }
+
+    // AniBoom translation selected (4K)
+    const embedToResolve = getResolvedAniboomUrl(selectedTranslation, epNum, defaultAniboom);
+
     if (!embedToResolve) {
       if (isCurrent) {
         setIsResolvingStream(false);
@@ -352,7 +374,7 @@ const Details: React.FC = () => {
             });
             setIsResolvingStream(false);
             setSelectedPlayer("KamiPlayer (1080p)");
-            console.log(`🔥 [KamiPlayer 1080p] Прямой поток AniBoom активирован:`, embedToResolve);
+            console.log(`🔥 [KamiPlayer 4K] Прямой поток AniBoom активирован:`, embedToResolve);
             return;
           }
         }
@@ -375,7 +397,7 @@ const Details: React.FC = () => {
           });
           setIsResolvingStream(false);
           setSelectedPlayer("KamiPlayer (1080p)");
-          console.log(`🔥 [KamiPlayer 1080p] AniBoom успешно активирован:`, data.url);
+          console.log(`🔥 [KamiPlayer 4K] AniBoom успешно активирован:`, data.url);
           return;
         }
 
@@ -384,7 +406,18 @@ const Details: React.FC = () => {
         if (err.name !== "AbortError") {
           if (isCurrent) {
             setIsResolvingStream(false);
-            setResolvedStream(null);
+            // Fallback to Kodik if AniBoom resolve fails
+            const defaultKodik = players.find((p) => p.name === "Kodik")?.iframe;
+            const kodikIframeUrl = getResolvedKodikUrl(selectedTranslation, epNum, defaultKodik);
+            if (kodikIframeUrl) {
+              setResolvedStream({
+                url: getCleanPlaylistUrl(kodikIframeUrl, null, null, false),
+                streamType: "hls",
+                provider: "kodik"
+              });
+            } else {
+              setResolvedStream(null);
+            }
           }
         }
       }
@@ -1613,6 +1646,34 @@ const Details: React.FC = () => {
               </p>
             </section>
 
+            {/* Free Premium 1 Month Special Offer Banner */}
+            <div className="bg-[#8B5CF6]/10 border border-[#8B5CF6]/25 rounded-3xl p-5 md:p-6 shadow-xl backdrop-blur-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-5 transition-all">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-[#8B5CF6]/20 border border-[#8B5CF6]/30 flex items-center justify-center text-[#A78BFA] shrink-0 shadow-lg shadow-[#8B5CF6]/10">
+                  <Crown className="w-6 h-6 text-[#8B5CF6]" />
+                </div>
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-black uppercase text-[#A78BFA] tracking-wider">Спецпредложение для зрителей</span>
+                    <span className="px-2 py-0.5 rounded-full bg-[#8B5CF6]/20 text-[10px] font-black uppercase text-[#A78BFA] border border-[#8B5CF6]/30">
+                      1 месяц Premium бесплатно
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-300 font-medium mt-1 leading-relaxed max-w-2xl">
+                    Зарегистрируйтесь прямо сейчас и получите <strong>1 месяц Premium</strong> бесплатно: просмотр в 4K качестве, чтение манги с момента конца серии и скачивание в .MP4 без ограничений!
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 w-full md:w-auto shrink-0">
+                <Link
+                  to="/premium"
+                  className="w-full md:w-auto text-center px-5 py-3 bg-[#8B5CF6] hover:bg-[#7C3AED] text-white font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-[#8B5CF6]/20 cursor-pointer active:scale-95 whitespace-nowrap"
+                >
+                  {isVip ? "Статус Premium активен" : "Получить 1 месяц Premium"}
+                </Link>
+              </div>
+            </div>
+
             <section className="scroll-mt-24" id="watch">
               <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-8">
                 <h3 className="text-2xl font-black text-white uppercase tracking-tight flex items-center gap-2.5">
@@ -1821,26 +1882,28 @@ const Details: React.FC = () => {
               )}
 
               <div className="flex flex-col gap-6">
-                {players.length > 0 && (
+                {players.filter((p) => p.name !== "Aniboom").length > 0 && (
                   <div className="flex items-center justify-between gap-3 flex-wrap">
                     <div className="flex items-center gap-2 overflow-x-auto pb-1 max-w-full custom-scrollbar">
-                      {players.map((p) => {
-                        const isSelected = selectedPlayer === p.name;
-                        return (
-                          <button
-                            key={p.name}
-                            id={`select-player-${p.name.replace(/\s+/g, '-').toLowerCase()}`}
-                            onClick={() => setSelectedPlayer(p.name)}
-                            className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer whitespace-nowrap border ${
-                              isSelected
-                                ? "bg-primary text-white border-primary shadow-lg shadow-primary/25"
-                                : "bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white border-white/10"
-                            }`}
-                          >
-                            {p.name}
-                          </button>
-                        );
-                      })}
+                      {players
+                        .filter((p) => p.name !== "Aniboom")
+                        .map((p) => {
+                          const isSelected = selectedPlayer === p.name;
+                          return (
+                            <button
+                              key={p.name}
+                              id={`select-player-${p.name.replace(/\s+/g, '-').toLowerCase()}`}
+                              onClick={() => setSelectedPlayer(p.name)}
+                              className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer whitespace-nowrap border ${
+                                isSelected
+                                  ? "bg-primary text-white border-primary shadow-lg shadow-primary/25"
+                                  : "bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white border-white/10"
+                              }`}
+                            >
+                              {p.name}
+                            </button>
+                          );
+                        })}
                     </div>
                   </div>
                 )}
@@ -2012,9 +2075,16 @@ const Details: React.FC = () => {
                             player.name === "Collaps"
                           );
 
+                          const isKodikIframe = finalIframeUrl && (
+                            finalIframeUrl.includes("kodik") ||
+                            player.name === "Kodik"
+                          );
+
                           const playerSrc = isCollaps && finalIframeUrl
                             ? `/api/collaps/embed?url=${encodeURIComponent(finalIframeUrl)}`
-                            : (finalIframeUrl || undefined);
+                            : isKodikIframe && finalIframeUrl
+                              ? `/api/kodik/embed?url=${encodeURIComponent(finalIframeUrl)}`
+                              : (finalIframeUrl || undefined);
 
                           console.log(
                             `%c[Player Source]%c ВЫБРАН ИСТОЧНИК: %c ${(player.name || "IFRAME").toUpperCase()} %c | Серия: ${paramEpisode || 1} | Озвучка: ${selectedTranslation?.title || "Основная"}`,
@@ -2055,10 +2125,10 @@ const Details: React.FC = () => {
                 </div>
 
                 {/* Voice Translations & Clean Episode List Widget */}
-                {anime && selectedPlayer !== "Kodik" && !selectedPlayer?.toLowerCase().includes("kodik") && (
-                  <div className="bg-[#1c1d21]/60 border border-white/5 p-5 md:p-6 rounded-[1.5rem] md:rounded-[2rem] flex flex-col gap-6 font-sans shadow-xl backdrop-blur-sm">
+                {anime && (
+                  <div className="bg-[#1c1d21]/80 border border-white/10 p-5 md:p-6 rounded-[1.5rem] md:rounded-[2rem] flex flex-col gap-6 font-sans shadow-xl backdrop-blur-sm relative z-20">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-white/5">
-                      <div className="relative flex-1 max-w-md">
+                      <div className="relative flex-1 max-w-md z-30">
                         {(() => {
                           const activeT = selectedTranslation || translations[0];
                           const activeCleanTitle = activeT ? getCleanTitle(activeT.title) : "Дубляж KamiAnime";
@@ -2080,7 +2150,11 @@ const Details: React.FC = () => {
                                     <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-white/10 text-slate-300">
                                       {activeEpTotal} сер.
                                     </span>
-                                    <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-primary/20 text-primary border border-primary/30">
+                                    <span className={`text-[10px] font-black px-2 py-0.5 rounded uppercase tracking-wider ${
+                                      activeQuality === "4K"
+                                        ? "bg-emerald-500/25 text-emerald-300 border border-emerald-400/40"
+                                        : "bg-amber-500/20 text-amber-300 border border-amber-400/30"
+                                    }`}>
                                       {activeQuality}
                                     </span>
                                   </div>
@@ -2127,10 +2201,10 @@ const Details: React.FC = () => {
                                       <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-white/10 text-slate-300">
                                         {epTotal} сер.
                                       </span>
-                                      <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${
-                                        isSelected
-                                          ? "bg-primary/20 text-primary border border-primary/30"
-                                          : "bg-white/5 text-slate-400 border border-white/10"
+                                      <span className={`text-[10px] font-black px-2 py-0.5 rounded uppercase tracking-wider ${
+                                        tQuality === "4K"
+                                          ? isSelected
+                                          : "bg-slate-700/40 text-slate-400 border border-slate-600/40"
                                       }`}>
                                         {tQuality}
                                       </span>
@@ -2179,7 +2253,7 @@ const Details: React.FC = () => {
                     </div>
 
                     <div className="space-y-3">
-                      <div className="flex items-center justify-between text-xs font-black uppercase tracking-wider text-slate-400">
+                      <div className="flex items-center justify-between gap-3 text-xs font-black uppercase tracking-wider text-slate-400">
                         <span>Список серий ({(selectedTranslation?.last_episode || selectedTranslation?.episodes_count) || anime.episodesAired || anime.episodes || 1})</span>
                       </div>
 
@@ -2244,46 +2318,47 @@ const Details: React.FC = () => {
                     </div>
                   </div>
                 )}
+
+                {/* Separate Manga Sync Card (Placed below episodes and translations) */}
+                {anime && (
+                  <div className="bg-[#181920]/80 border border-white/10 p-4 sm:p-5 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 backdrop-blur-sm shadow-lg">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-slate-300 shrink-0">
+                        <BookOpen className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                          Синхронизация с мангой
+                          {!isVip && (
+                            <span className="px-2 py-0.5 rounded bg-white/10 text-slate-300 text-[10px] font-black uppercase flex items-center gap-1 border border-white/10">
+                              <Crown className="w-2.5 h-2.5 text-[#8B5CF6]" /> Premium
+                            </span>
+                          )}
+                        </h4>
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          Продолжить чтение манги с момента окончания {paramEpisode || "1"} серии
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        if (!isVip) {
+                          openPremiumModal("Продолжить читать мангу с момента конца серии");
+                          return;
+                        }
+                        const queryTitle = anime?.title || anime?.originalName || "";
+                        navigate(`/manga?search=${encodeURIComponent(queryTitle)}&episode=${paramEpisode || 1}`);
+                      }}
+                      className="px-4 py-2.5 bg-white/10 hover:bg-white/15 border border-white/15 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer flex items-center gap-2 shrink-0 self-stretch sm:self-auto justify-center"
+                    >
+                      <BookOpen className="w-4 h-4 text-slate-300" />
+                      <span>Читать мангу</span>
+                    </button>
+                  </div>
+                )}
               </div>
             </section>
-
-            {/* Direct Browser Downloader Card */}
-            {(() => {
-              const epNum = parseInt(paramEpisode || "1") || 1;
-              const defaultAniboom = players.find((p) => p.name === "Aniboom")?.iframe;
-              const defaultKodik = players.find((p) => p.name === "Kodik")?.iframe;
-
-              let aniboomIframe = getResolvedAniboomUrl(selectedTranslation, epNum, defaultAniboom);
-              if (!aniboomIframe && resolvedStream?.provider === "aniboom" && resolvedStream?.url) {
-                aniboomIframe = resolvedStream.url;
-              }
-              if (!aniboomIframe) {
-                const trWithAniboom = translations.find((tr: any) => tr?.aniboom_iframe || (tr?.iframe && tr.iframe.includes("aniboom")));
-                if (trWithAniboom) {
-                  aniboomIframe = getResolvedAniboomUrl(trWithAniboom, epNum, defaultAniboom);
-                }
-              }
-
-              const kodikIframe = getResolvedKodikUrl(selectedTranslation, epNum, defaultKodik);
-
-              const primaryUrl = aniboomIframe || kodikIframe || "";
-              const fallbackUrl = aniboomIframe ? (kodikIframe || undefined) : undefined;
-              const preferredProvider = aniboomIframe ? "aniboom" : "kodik";
-
-              if (!primaryUrl) return null;
-
-              return (
-                <BrowserDownloadWidget
-                  episodeUrl={primaryUrl}
-                  fallbackUrl={fallbackUrl}
-                  preferredProvider={preferredProvider}
-                  animeTitle={anime?.title || "Anime"}
-                  episodeNumber={paramEpisode || "1"}
-                  shikimoriId={anime?.id || id}
-                  translationId={selectedTranslation?.id ? String(selectedTranslation.id) : undefined}
-                />
-              );
-            })()}
           </div>
         </div>
 

@@ -6,15 +6,21 @@ import { db } from '../services/db';
 
 interface AuthContextType {
   user: User | null;
+  isVip: boolean;
   login: (credentials: { email: string; password: string }) => Promise<boolean>;
   loginWithGoogle: () => Promise<void>;
   register: (data: { name: string; email: string; password: string }) => Promise<{ success: boolean; message?: string }>;
   resetPassword: (email: string) => Promise<{ success: boolean; message?: string }>;
   logout: () => void;
   updateProfile: (updates: Partial<User>) => Promise<boolean>;
+  activateVip: (days: number) => Promise<boolean>;
   isAuthModalOpen: boolean;
   openAuthModal: () => void;
   closeAuthModal: () => void;
+  isPremiumModalOpen: boolean;
+  premiumModalFeature: string | null;
+  openPremiumModal: (featureTitle?: string) => void;
+  closePremiumModal: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -29,6 +35,26 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   });
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isPremiumModalOpen, setIsPremiumModalOpen] = useState(false);
+  const [premiumModalFeature, setPremiumModalFeature] = useState<string | null>(null);
+
+  // Compute isVip reactively
+  const isVip = Boolean(
+    user?.isPremium &&
+    (!user.premiumUntil || new Date(user.premiumUntil).getTime() > Date.now())
+  );
+
+  useEffect(() => {
+    const handleOpenPremiumModal = (e: any) => {
+      const feature = e?.detail?.feature || null;
+      setPremiumModalFeature(feature);
+      setIsPremiumModalOpen(true);
+    };
+    window.addEventListener('open_premium_modal', handleOpenPremiumModal);
+    return () => {
+      window.removeEventListener('open_premium_modal', handleOpenPremiumModal);
+    };
+  }, []);
 
   useEffect(() => {
     // Function to fetch and set user profile
@@ -161,11 +187,53 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return false;
   };
 
+  const activateVip = async (days: number) => {
+    if (!user?.email) return false;
+    try {
+      const updatedUser = await db.activateVip(user.email, days);
+      if (updatedUser) {
+        setUser(updatedUser);
+        return true;
+      }
+    } catch (e) {
+      console.error("activateVip error:", e);
+    }
+    return false;
+  };
+
   const openAuthModal = () => setIsAuthModalOpen(true);
   const closeAuthModal = () => setIsAuthModalOpen(false);
 
+  const openPremiumModal = (featureTitle?: string) => {
+    setPremiumModalFeature(featureTitle || null);
+    setIsPremiumModalOpen(true);
+  };
+  const closePremiumModal = () => {
+    setIsPremiumModalOpen(false);
+    setPremiumModalFeature(null);
+  };
+
   return (
-    <AuthContext.Provider value={{ user, login, loginWithGoogle, register, resetPassword, logout, updateProfile, isAuthModalOpen, openAuthModal, closeAuthModal }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        isVip,
+        login,
+        loginWithGoogle,
+        register,
+        resetPassword,
+        logout,
+        updateProfile,
+        activateVip,
+        isAuthModalOpen,
+        openAuthModal,
+        closeAuthModal,
+        isPremiumModalOpen,
+        premiumModalFeature,
+        openPremiumModal,
+        closePremiumModal,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

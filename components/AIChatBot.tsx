@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Bot, X, Send, Trash2, Sparkles, Loader2 } from 'lucide-react';
+import { X, Send, Trash2, Loader2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import Markdown from 'react-markdown';
 
@@ -11,6 +11,7 @@ interface ChatMessage {
 
 const CHAR_LIMIT = 150;
 const COOLDOWN_SEC = 8;
+const AI_AVATAR_SRC = "/ai-chat.jpg";
 
 export const AIChatBot: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -142,13 +143,20 @@ export const AIChatBot: React.FC = () => {
       {!isOpen && (
         <button
           onClick={() => setIsOpen(true)}
-          className="w-16 h-16 rounded-full bg-gradient-to-tr from-[#8B5CF6] to-[#06B6D4] text-white flex items-center justify-center shadow-2xl cursor-pointer hover:scale-115 active:scale-90 transition-all duration-300 relative group"
+          className="w-16 h-16 rounded-full bg-[#18132B] text-white flex items-center justify-center shadow-2xl border-2 border-[#8B5CF6]/60 hover:border-[#A78BFA] cursor-pointer hover:scale-105 active:scale-95 transition-all duration-200 relative group p-0.5 shadow-[#8B5CF6]/30"
           id="ai-assistant-trigger"
-          title="Рекомендации ИИ"
+          title="KamiAI Помощница"
         >
-          <Sparkles className="w-6 h-6 animate-pulse group-hover:rotate-12 transition-transform duration-300" />
-          <span className="absolute right-full mr-4 top-1/2 -translate-y-1/2 bg-[#12111A]/95 text-[10px] text-white px-3 py-2 rounded-xl border border-white/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300 shadow-xl pointer-events-none whitespace-nowrap font-black uppercase tracking-widest">
-            ИИ подбор аниме ✨
+          <img
+            src="/ai-chat.jpg"
+            alt="KamiAI"
+            className="w-full h-full object-cover rounded-full"
+          />
+          {/* Online green indicator badge */}
+          <span className="absolute bottom-0 right-0 w-4 h-4 rounded-full bg-emerald-500 border-2 border-[#12111A] shadow-md"></span>
+          
+          <span className="absolute right-full mr-3 top-1/2 -translate-y-1/2 bg-[#12111A]/95 text-[11px] text-white px-3.5 py-2 rounded-2xl border border-white/10 opacity-0 group-hover:opacity-100 transition-opacity duration-200 shadow-2xl pointer-events-none whitespace-nowrap font-black uppercase tracking-wider flex items-center gap-1.5 backdrop-blur-md">
+            <span>KamiAI Помощница</span>
           </span>
         </button>
       )}
@@ -156,21 +164,25 @@ export const AIChatBot: React.FC = () => {
       {/* Small Chat Window */}
       {isOpen && (
         <div
-          className="w-[350px] sm:w-[380px] h-[500px] bg-[#12111A]/95 backdrop-blur-3xl border border-white/10 rounded-3xl shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+          className="w-[350px] sm:w-[380px] h-[520px] bg-[#12111A]/95 backdrop-blur-3xl border border-white/10 rounded-3xl shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200"
           id="ai-assistant-window"
         >
           {/* Header */}
-          <div className="px-5 py-4 bg-gradient-to-r from-[#18132B] to-[#0A1224] border-b border-white/5 flex items-center justify-between">
+          <div className="px-5 py-3.5 bg-[#18132B] border-b border-white/5 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#8B5CF6]/20 to-[#06B6D4]/20 border border-[#8B5CF6]/40 flex items-center justify-center text-[#8B5CF6]">
-                <Bot className="w-5 h-5 text-primary" />
+              <div className="relative">
+                <img
+                  src="/ai-chat.jpg"
+                  alt="KamiAI"
+                  className="w-10 h-10 rounded-full border-2 border-[#8B5CF6]/60 object-cover shadow-md"
+                />
+                <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-[#18132B]"></span>
               </div>
               <div>
-                <div className="text-[10px] font-black uppercase tracking-widest text-white flex items-center gap-1.5">
-                  KamiAI Помощник
-                  <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                <div className="text-xs font-black uppercase tracking-widest text-white flex items-center gap-1.5">
+                  KamiAI Помощница
                 </div>
-                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Подбор аниме 24/7</p>
+                <p className="text-[10px] text-slate-400 font-bold tracking-wide">Подбор аниме & рекомендации</p>
               </div>
             </div>
             <div className="flex items-center gap-1">
@@ -199,14 +211,16 @@ export const AIChatBot: React.FC = () => {
                 className={`flex gap-2.5 ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 {m.role === 'assistant' && (
-                  <div className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0 self-start">
-                    <Bot className="w-4 h-4" />
-                  </div>
+                  <img
+                    src="/ai-chat.jpg"
+                    alt="KamiAI"
+                    className="w-8 h-8 rounded-full border border-[#8B5CF6]/50 object-cover shadow-sm shrink-0 self-start mt-0.5"
+                  />
                 )}
                 <div
                   className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-lg ${
                     m.role === 'user'
-                      ? 'bg-primary text-white rounded-tr-sm font-medium'
+                      ? 'bg-[#8B5CF6] text-white rounded-tr-sm font-medium'
                       : 'bg-white/5 border border-white/10 text-slate-200 rounded-tl-sm'
                   }`}
                 >
@@ -251,13 +265,15 @@ export const AIChatBot: React.FC = () => {
               </div>
             ))}
             {isLoading && (
-              <div className="flex gap-2.5 justify-start">
-                <div className="w-8 h-8 rounded-lg bg-primary/10 border border-[#8B5CF6]/30 flex items-center justify-center text-[#8B5CF6] shrink-0 self-start animate-bounce">
-                  <Bot className="w-4 h-4" />
-                </div>
+              <div className="flex gap-2.5 justify-start items-center">
+                <img
+                  src="/ai-chat.jpg"
+                  alt="KamiAI"
+                  className="w-8 h-8 rounded-full border border-[#8B5CF6]/50 object-cover shadow-sm shrink-0 self-start animate-bounce mt-0.5"
+                />
                 <div className="bg-white/5 border border-white/10 rounded-2xl rounded-tl-sm px-4 py-3 text-slate-300 text-sm flex items-center gap-2">
-                  <Loader2 className="w-3.5 h-3.5 text-primary animate-spin" />
-                  <span className="font-bold text-[10px] uppercase tracking-wider text-slate-400">Ассистент думает...</span>
+                  <Loader2 className="w-3.5 h-3.5 text-[#A78BFA] animate-spin" />
+                  <span className="font-bold text-[10px] uppercase tracking-wider text-slate-400">KamiAI подбирает аниме...</span>
                 </div>
               </div>
             )}

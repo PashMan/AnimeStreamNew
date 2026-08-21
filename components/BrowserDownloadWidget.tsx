@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useRef } from "react";
-import { Download, Loader2, Film, CheckCircle, AlertTriangle } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { Download, Loader2, Film, CheckCircle, AlertTriangle, RefreshCw, Crown } from "lucide-react";
 import { getCleanPlaylistUrl } from "../utils/media";
+import { useAuth } from "../context/AuthContext";
 
 interface BrowserDownloadWidgetProps {
   episodeUrl: string;
@@ -23,6 +24,12 @@ interface DownloadProgress {
   fileName?: string;
 }
 
+interface ParsedStream {
+  quality: number;
+  bandwidth: number;
+  url: string;
+}
+
 export const BrowserDownloadWidget: React.FC<BrowserDownloadWidgetProps> = ({
   episodeUrl,
   fallbackUrl,
@@ -32,6 +39,7 @@ export const BrowserDownloadWidget: React.FC<BrowserDownloadWidgetProps> = ({
   shikimoriId,
   translationId,
 }) => {
+  const { isVip, openPremiumModal } = useAuth();
   const [qualities, setQualities] = useState<string[]>([]);
   const [loadingQualities, setLoadingQualities] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -100,7 +108,7 @@ export const BrowserDownloadWidget: React.FC<BrowserDownloadWidgetProps> = ({
           }
         }
       } catch (primaryErr) {
-        console.warn("Primary AniBoom resolution attempt handled gracefully:", primaryErr);
+        console.warn("Primary resolution attempt handled gracefully:", primaryErr);
       }
 
       // Attempt 2: If primary failed and fallbackUrl exists, try fallback (Kodik)
@@ -113,8 +121,11 @@ export const BrowserDownloadWidget: React.FC<BrowserDownloadWidgetProps> = ({
           const isFHtml = fTrimmed.startsWith("<!doctype") || fTrimmed.startsWith("<html") || fTrimmed.startsWith("<head") || fTrimmed.startsWith("<body");
 
           if (!isFHtml && fRes.ok) {
-            const fData = JSON.parse(fText);
-            if (fData.success && Array.isArray(fData.qualities) && fData.qualities.length > 0) {
+            let fData: any = null;
+            try {
+              fData = JSON.parse(fText);
+            } catch (_) {}
+            if (fData && fData.success && Array.isArray(fData.qualities) && fData.qualities.length > 0) {
               if (isMounted) {
                 const sorted = [...fData.qualities].sort((a, b) => Number(b) - Number(a));
                 setQualities(sorted.map(String));
@@ -130,8 +141,11 @@ export const BrowserDownloadWidget: React.FC<BrowserDownloadWidgetProps> = ({
         }
       }
 
+      // Default fallback qualities so download buttons always work
       if (isMounted) {
-        setError("Не удалось автоматически определить качества серии для загрузки. Попробуйте обновить страницу или скачайте серию через Telegram.");
+        const isAniboom = episodeUrl.includes("aniboom") || preferredProvider === "aniboom";
+        setQualities(isAniboom ? ["1080", "720", "480", "360"] : ["720", "480", "360"]);
+        setResolvedProvider(isAniboom ? "aniboom" : "kodik");
         setLoadingQualities(false);
       }
     };
@@ -158,7 +172,7 @@ export const BrowserDownloadWidget: React.FC<BrowserDownloadWidgetProps> = ({
     };
   }, [localDownloadBlobUrl]);
 
-  // Function to dynamically load mux.js from CDN
+  // Function to dynamically load mux.js from CDN for TS transmuxing
   const loadMuxJs = (): Promise<void> => {
     return new Promise((resolve, reject) => {
       if ((window as any).muxjs) {
@@ -175,13 +189,160 @@ export const BrowserDownloadWidget: React.FC<BrowserDownloadWidgetProps> = ({
           reject(new Error("Не удалось инициализировать библиотеку mux.js"));
         }
       };
-      script.onerror = () => reject(new Error("Ошибка загрузки конвертера видео (mux.js). Пожалуйста, отключите блокировщик скриптов или обновите страницу."));
+      script.onerror = () => reject(new Error("Ошибка загрузки конвертера видео (mux.js)."));
       document.head.appendChild(script);
     });
   };
 
+  /**
+   * Helper to resolve relative URL against base URL
+   */
+  const resolveAbsoluteUrl = (relativeOrAbsolute: string, baseUrl: string): string => {
+    const trimmed = relativeOrAbsolute.trim();
+    if (!trimmed) return "";
+    if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+      return trimmed;
+    }
+    if (trimmed.startsWith("/")) {
+      return window.location.origin + trimmed;
+    }
+    try {
+      const parsedBase = new URL(baseUrl, window.location.origin);
+      // If baseUrl is a proxy endpoint like /api/proxy-4k?url=https://...
+      if (parsedBase.pathname.includes("proxy-4k") && parsedBase.searchParams.get("url")) {
+        const originalUrl = parsedBase.searchParams.get("url")!;
+        const resolvedOriginal = new URL(trimmed, originalUrl).toString();
+        return `${window.location.origin}/api/proxy-4k?url=${encodeURIComponent(resolvedOriginal)}`;
+      }
+      return new URL(trimmed, parsedBase).toString();
+    } catch (_) {
+      return `${window.location.origin}/api/media/${trimmed}`;
+    }
+  };
+
+  /**
+   * Recursively parse and resolve media segments and optional init segment
+   */
+  const fetchAndResolveMediaPlaylist = async (
+    targetUrl: string,
+    targetQuality: string,
+    depth = 0
+  ): Promise<{ isFmp4: boolean; initSegmentUrl: string | null; segmentUrls: string[] }> => {
+    if (depth > 4) {
+      throw new Error("Слишком много перенаправлений в плейлисте");
+    }
+
+    const res = await fetch(targetUrl);
+    if (!res.ok) {
+      throw new Error(`Ошибка загрузки плейлиста (${res.status})`);
+    }
+
+    const playlistText = await res.text();
+    const trimmedText = playlistText.trim();
+    const isHtmlResponse = trimmedText.toLowerCase().startsWith("<!doctype") || trimmedText.toLowerCase().startsWith("<html");
+    if (isHtmlResponse) {
+      throw new Error("Неверный формат ответа видеосервера (HTML вместо HLS)");
+    }
+
+    // Case 1: Master Playlist (contains #EXT-X-STREAM-INF)
+    if (playlistText.includes("#EXT-X-STREAM-INF")) {
+      const lines = playlistText.split("\n");
+      const streams: ParsedStream[] = [];
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (line.startsWith("#EXT-X-STREAM-INF")) {
+          let qual = 720;
+          let bandwidth = 0;
+
+          const resMatch = line.match(/RESOLUTION=(\d+)x(\d+)/i);
+          if (resMatch) {
+            qual = parseInt(resMatch[2], 10);
+          }
+          const bwMatch = line.match(/BANDWIDTH=(\d+)/i);
+          if (bwMatch) {
+            bandwidth = parseInt(bwMatch[1], 10);
+          }
+
+          // Find the next non-empty, non-comment line for the stream URL
+          let nextUrl = "";
+          for (let j = i + 1; j < lines.length; j++) {
+            const candidate = lines[j].trim();
+            if (candidate && !candidate.startsWith("#")) {
+              nextUrl = candidate;
+              i = j;
+              break;
+            }
+          }
+
+          if (nextUrl) {
+            streams.push({
+              quality: qual,
+              bandwidth,
+              url: resolveAbsoluteUrl(nextUrl, targetUrl)
+            });
+          }
+        }
+      }
+
+      if (streams.length === 0) {
+        throw new Error("Не удалось извлечь потоки из мастер-плейлиста.");
+      }
+
+      // Find the stream matching requested quality or the closest match
+      const reqNum = parseInt(targetQuality, 10) || 720;
+      let matchedStream = streams.find(s => s.quality === reqNum);
+      if (!matchedStream) {
+        // Find closest
+        streams.sort((a, b) => Math.abs(a.quality - reqNum) - Math.abs(b.quality - reqNum));
+        matchedStream = streams[0];
+      }
+
+      // Recurse to fetch the actual media variant playlist
+      return fetchAndResolveMediaPlaylist(matchedStream.url, targetQuality, depth + 1);
+    }
+
+    // Case 2: Media Playlist (contains segments)
+    let initSegmentUrl: string | null = null;
+    const isFmp4 = playlistText.includes("#EXT-X-MAP");
+
+    const mapMatch = playlistText.match(/#EXT-X-MAP:URI="([^"]+)"/i);
+    if (mapMatch && mapMatch[1]) {
+      initSegmentUrl = resolveAbsoluteUrl(mapMatch[1], targetUrl);
+    }
+
+    const lines = playlistText.split("\n");
+    const segmentUrls: string[] = [];
+
+    for (let line of lines) {
+      line = line.trim();
+      if (line && !line.startsWith("#")) {
+        const resolved = resolveAbsoluteUrl(line, targetUrl);
+        if (resolved) {
+          segmentUrls.push(resolved);
+        }
+      }
+    }
+
+    if (segmentUrls.length === 0) {
+      throw new Error("В выбранном качестве нет доступных фрагментов для скачивания.");
+    }
+
+    return {
+      isFmp4,
+      initSegmentUrl,
+      segmentUrls
+    };
+  };
+
   const handleStartDownload = async (quality: string) => {
     if (downloading) return;
+
+    if (!isVip) {
+      openPremiumModal("Скачивание серий в MP4 без ограничений");
+      return;
+    }
+
     setError(null);
     setSelectedQuality(quality);
     setDownloading(true);
@@ -195,72 +356,76 @@ export const BrowserDownloadWidget: React.FC<BrowserDownloadWidgetProps> = ({
     const outputFileName = `${animeTitle.replace(/[\/:*?"<>|]/g, "_")}_Ep_${episodeNumber}_${quality}p.mp4`;
 
     try {
-      // 1. Load video converter library (mux.js)
+      // 1. Prepare video conversion libraries
       setProgress({
         id: "client_download",
         stage: "loading_libs",
         processed: 0,
         total: 1,
-        progress: 2,
+        progress: 3,
         status: "running",
         fileName: outputFileName
       });
       await loadMuxJs();
 
-      // 2. Fetch HLS playlist entries
+      // 2. Resolve media playlist & segments
       setProgress({
         id: "client_download",
         stage: "fetching_playlist",
         processed: 0,
         total: 1,
-        progress: 5,
+        progress: 8,
         status: "running",
         fileName: outputFileName
       });
-      const playlistUrl = getCleanPlaylistUrl(activeUrl, fallbackUrl, quality, false);
-      const playlistRes = await fetch(playlistUrl);
-      
-      const playlistText = await playlistRes.text();
-      const trimmedText = playlistText.trim().toLowerCase();
-      const isHtmlResponse = trimmedText.startsWith("<!doctype") || trimmedText.startsWith("<html") || trimmedText.startsWith("<head") || trimmedText.startsWith("<body");
-      if (isHtmlResponse || !playlistRes.ok) {
-        throw new Error("Не удалось загрузить видеофайл. Пожалуйста, откройте страницу в новой вкладке или скачайте серию через Telegram-бот ниже.");
-      }
 
-      // Parse segment URLs from M3U8 content
-      const lines = playlistText.split("\n");
-      const segmentUrls: string[] = [];
-      for (let line of lines) {
-        line = line.trim();
-        if (line && !line.startsWith("#")) {
-          if (line.startsWith("/")) {
-            segmentUrls.push(window.location.origin + line);
-          } else if (!line.startsWith("http")) {
-            segmentUrls.push(window.location.origin + "/api/media/" + line);
-          } else {
-            segmentUrls.push(line);
-          }
+      let currentUrl = getCleanPlaylistUrl(activeUrl, fallbackUrl, quality, false);
+      let playlistResult: { isFmp4: boolean; initSegmentUrl: string | null; segmentUrls: string[] };
+
+      try {
+        playlistResult = await fetchAndResolveMediaPlaylist(currentUrl, quality);
+      } catch (primaryErr) {
+        // Fallback to Kodik if primary failed and fallback exists
+        if (fallbackUrl && fallbackUrl !== activeUrl) {
+          console.warn("Primary download playlist failed, falling back to Kodik:", primaryErr);
+          currentUrl = getCleanPlaylistUrl(fallbackUrl, null, quality, false);
+          playlistResult = await fetchAndResolveMediaPlaylist(currentUrl, quality);
+          setActiveUrl(fallbackUrl);
+          setResolvedProvider("kodik");
+        } else {
+          throw primaryErr;
         }
       }
 
-      const total = segmentUrls.length;
-      if (total === 0) {
-        throw new Error("Не удалось извлечь фрагменты видео из плейлиста для скачивания.");
+      const { isFmp4, initSegmentUrl, segmentUrls } = playlistResult;
+      const totalSegments = segmentUrls.length;
+
+      // 3. Download Init Segment if fMP4
+      let initBuffer: ArrayBuffer | null = null;
+      if (initSegmentUrl) {
+        try {
+          const initRes = await fetch(initSegmentUrl);
+          if (initRes.ok) {
+            initBuffer = await initRes.arrayBuffer();
+          }
+        } catch (initErr) {
+          console.warn("Could not fetch fMP4 init segment:", initErr);
+        }
       }
 
-      // 3. Download segments with concurrency pool
+      // 4. Download Segments with high-speed parallel worker pool
       setProgress({
         id: "client_download",
         stage: "downloading",
         processed: 0,
-        total,
-        progress: 10,
+        total: totalSegments,
+        progress: 12,
         status: "running",
         fileName: outputFileName
       });
 
-      const concurrency = 8;
-      const results = new Array<ArrayBuffer>(total);
+      const concurrency = 6;
+      const chunkBuffers = new Array<ArrayBuffer>(totalSegments);
       let completedCount = 0;
       let activeIndex = 0;
 
@@ -273,31 +438,29 @@ export const BrowserDownloadWidget: React.FC<BrowserDownloadWidgetProps> = ({
             const segmentRes = await fetch(url);
             if (!segmentRes.ok) throw new Error(`Chunk status: ${segmentRes.status}`);
             const buf = await segmentRes.arrayBuffer();
-            results[index] = buf;
+            chunkBuffers[index] = buf;
             return;
           } catch (chunkErr) {
-            console.warn(`Attempt ${attempt} failed for chunk index ${index}:`, chunkErr);
             if (attempt === maxAttempts) {
-              throw new Error(`Ошибка загрузки фрагмента ${index + 1} из ${total}. Пожалуйста, перезапустите скачивание.`);
+              throw new Error(`Ошибка загрузки фрагмента ${index + 1} из ${totalSegments}`);
             }
-            await new Promise((resolve) => setTimeout(resolve, 300 * attempt));
+            await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
           }
         }
       };
 
       const worker = async () => {
-        while (activeIndex < total) {
+        while (activeIndex < totalSegments) {
           const currentIndex = activeIndex++;
           await downloadChunk(currentIndex, segmentUrls[currentIndex]);
           completedCount++;
           
-          // Allocate 10% - 90% for progress bar
-          const downloadProgressPercent = 10 + Math.round((completedCount / total) * 80);
+          const downloadProgressPercent = 12 + Math.round((completedCount / totalSegments) * 80);
           setProgress({
             id: "client_download",
             stage: "downloading",
             processed: completedCount,
-            total,
+            total: totalSegments,
             progress: downloadProgressPercent,
             status: "running",
             fileName: outputFileName
@@ -305,88 +468,91 @@ export const BrowserDownloadWidget: React.FC<BrowserDownloadWidgetProps> = ({
         }
       };
 
-      const workers = Array.from({ length: Math.min(concurrency, total) }, worker);
+      const workers = Array.from({ length: Math.min(concurrency, totalSegments) }, worker);
       await Promise.all(workers);
 
-      // 4. Muxing Stage (TS to MP4 Conversion in Browser)
+      // 5. Muxing / MP4 Assembly Stage
       setProgress({
         id: "client_download",
         stage: "muxing",
-        processed: total,
-        total,
+        processed: totalSegments,
+        total: totalSegments,
         progress: 95,
         status: "running",
         fileName: outputFileName
       });
 
-      // Execute Transmuxing on the results array with custom options to align timestamps
-      const transmuxer = new (window as any).muxjs.mp4.Transmuxer({
-        baseMediaDecodeTime: 0,
-        keepOriginalTimestamps: false
-      });
+      let finalMp4Blob: Blob;
 
-      try {
-        transmuxer.setBaseMediaDecodeTime(0);
-      } catch (t_err) {
-        console.warn("Could not set baseMediaDecodeTime directly:", t_err);
-      }
+      if (isFmp4 && initBuffer) {
+        // Direct fMP4 assembly: combine init segment + all media fragment buffers
+        const allBuffers = [initBuffer, ...chunkBuffers.filter(Boolean)];
+        finalMp4Blob = new Blob(allBuffers, { type: "video/mp4" });
+      } else {
+        // TS to MP4 transmuxing with mux.js
+        try {
+          const transmuxer = new (window as any).muxjs.mp4.Transmuxer({
+            baseMediaDecodeTime: 0,
+            keepOriginalTimestamps: false
+          });
 
-      const remuxedSegs: Uint8Array[] = [];
-      let remuxedInitSegment: any = null;
-      let remuxedBytesLength = 0;
+          const remuxedSegs: Uint8Array[] = [];
+          let remuxedInitSegment: any = null;
+          let remuxedBytesLength = 0;
 
-      transmuxer.on('data', (event: any) => {
-        if (event.type === 'combined' || event.type === 'video') {
-          if (!remuxedInitSegment) {
-            remuxedInitSegment = event.initSegment;
+          transmuxer.on('data', (event: any) => {
+            if (event.type === 'combined' || event.type === 'video') {
+              if (!remuxedInitSegment) {
+                remuxedInitSegment = event.initSegment;
+              }
+              remuxedSegs.push(event.data);
+              remuxedBytesLength += event.data.byteLength;
+            }
+          });
+
+          for (let i = 0; i < chunkBuffers.length; i++) {
+            if (chunkBuffers[i]) {
+              transmuxer.push(new Uint8Array(chunkBuffers[i]));
+            }
           }
-          remuxedSegs.push(event.data);
-          remuxedBytesLength += event.data.byteLength;
+
+          transmuxer.flush();
+
+          if (remuxedInitSegment && remuxedSegs.length > 0) {
+            const mp4Buffer = new Uint8Array(remuxedInitSegment.byteLength + remuxedBytesLength);
+            mp4Buffer.set(remuxedInitSegment, 0);
+
+            let offset = remuxedInitSegment.byteLength;
+            for (const seg of remuxedSegs) {
+              mp4Buffer.set(seg, offset);
+              offset += seg.byteLength;
+            }
+
+            finalMp4Blob = new Blob([mp4Buffer], { type: "video/mp4" });
+          } else {
+            // Fallback to raw container blob
+            finalMp4Blob = new Blob(chunkBuffers.filter(Boolean), { type: "video/mp4" });
+          }
+        } catch (transmuxErr) {
+          console.warn("mux.js transmuxing fallback:", transmuxErr);
+          finalMp4Blob = new Blob(chunkBuffers.filter(Boolean), { type: "video/mp4" });
         }
-      });
-
-      // Feed sequential downloaded segments to the transmuxer
-      // NOTE: We do NOT call flush() inside the loop anymore! This ensures continuous track parsing,
-      // preventing DTS/PTS drift and maintaining perfect audio/video synchronization across segment boundaries.
-      for (let i = 0; i < results.length; i++) {
-        if (results[i]) {
-          transmuxer.push(new Uint8Array(results[i]));
-        }
       }
 
-      // Flush exactly once after concatenating all media content to construct final MP4 fragments
-      transmuxer.flush();
-
-      const finalInitSegment = remuxedInitSegment;
-      if (!finalInitSegment) {
-        throw new Error("Не удалось сгенерировать медиа-заголовки MP4. Поток поврежден или имеет несовместимый кодек.");
-      }
-
-      // Formulate complete MP4 bytes
-      const mp4Buffer = new Uint8Array(finalInitSegment.byteLength + remuxedBytesLength);
-      mp4Buffer.set(finalInitSegment, 0);
-
-      let offset = finalInitSegment.byteLength;
-      for (const seg of remuxedSegs) {
-        mp4Buffer.set(seg, offset);
-        offset += seg.byteLength;
-      }
-
-      const mp4Blob = new Blob([mp4Buffer], { type: "video/mp4" });
-      const localUrl = URL.createObjectURL(mp4Blob);
+      const localUrl = URL.createObjectURL(finalMp4Blob);
       setLocalDownloadBlobUrl(localUrl);
 
       setProgress({
         id: "client_download",
         stage: "ready",
-        processed: total,
-        total,
+        processed: totalSegments,
+        total: totalSegments,
         progress: 100,
         status: "success",
         fileName: outputFileName
       });
 
-      // Trigger standard save
+      // Trigger automatic download
       const link = document.createElement("a");
       link.href = localUrl;
       link.setAttribute("download", outputFileName);
@@ -397,7 +563,7 @@ export const BrowserDownloadWidget: React.FC<BrowserDownloadWidgetProps> = ({
       setDownloading(false);
     } catch (err: any) {
       console.error("Browser MP4 download failed:", err);
-      setError(err.message || "Ошибка сборки .MP4");
+      setError(err.message || "Ошибка скачивания серии");
       setDownloading(false);
       setProgress({
         id: "client_download",
@@ -406,7 +572,7 @@ export const BrowserDownloadWidget: React.FC<BrowserDownloadWidgetProps> = ({
         total: 1,
         progress: 0,
         status: "failed",
-        error: err.message || "Ошибка конвертации в MP4"
+        error: err.message || "Ошибка загрузки .MP4"
       });
     }
   };
@@ -414,19 +580,19 @@ export const BrowserDownloadWidget: React.FC<BrowserDownloadWidgetProps> = ({
   const getStageMessage = (stage: string) => {
     switch (stage) {
       case "loading_libs":
-        return "Подготовка к началу загрузки...";
+        return "Подготовка загрузчика...";
       case "fetching_playlist":
-        return "Подготовка файлов серии...";
+        return "Получение плейлиста серии...";
       case "downloading":
-        return progress ? `Скачивание видеофайла (${progress.processed} из ${progress.total || "..."})...` : "Скачивание серии...";
+        return progress ? `Скачивание видеофрагментов (${progress.processed} из ${progress.total || "..."})...` : "Скачивание серии...";
       case "muxing":
-        return "Завершение сборки видео...";
+        return "Сборка готового MP4 файла...";
       case "ready":
-        return "Видео успешно готово!";
+        return "Серия успешно скачана!";
       case "failed":
-        return "Ошибка при загрузке";
+        return "Ошибка скачивания";
       default:
-        return "Подготовка к скачиванию...";
+        return "Подготовка...";
     }
   };
 
@@ -435,19 +601,19 @@ export const BrowserDownloadWidget: React.FC<BrowserDownloadWidgetProps> = ({
       <div className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <label className="text-xs uppercase tracking-wider font-extrabold text-slate-300">
-            Выберите качество для скачивания .MP4 в браузере:
+            Скачать серию в формате .MP4:
           </label>
           {!loadingQualities && qualities.length > 0 && (
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-[11px] font-bold">
-              {qualities.includes("1080") ? (
-                <span className="text-emerald-400 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                  AniBoom 1080p Ultra HD
+              {resolvedProvider === "aniboom" && qualities.includes("1080") ? (
+                <span className="text-[#8B5CF6] flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#8B5CF6] animate-pulse"></span>
+                  1080p Full HD
                 </span>
               ) : (
-                <span className="text-cyan-400 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
-                  {qualities[0] ? `${qualities[0]}p HD` : 'HD качество'}
+                <span className="text-slate-300 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#8B5CF6]"></span>
+                  {qualities[0] ? `${qualities[0]}p` : 'HD'}
                 </span>
               )}
             </div>
@@ -458,14 +624,29 @@ export const BrowserDownloadWidget: React.FC<BrowserDownloadWidgetProps> = ({
           {loadingQualities && (
             <div className="flex items-center gap-2 text-slate-400 text-xs font-semibold py-2">
               <Loader2 className="w-4 h-4 animate-spin text-cyan-500" />
-              Проверка доступных вариантов...
+              Проверка доступных вариантов качества...
             </div>
           )}
 
           {error && (
-            <div className="text-red-400 text-xs font-semibold flex items-center gap-1.5 bg-red-500/10 border border-red-500/20 px-4 py-2.5 rounded-xl w-full">
-              <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
-              <span>{error}</span>
+            <div className="text-red-400 text-xs font-semibold flex items-center justify-between gap-2 bg-red-500/10 border border-red-500/20 px-4 py-2.5 rounded-xl w-full">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
+                <span>{error}</span>
+              </div>
+              {fallbackUrl && fallbackUrl !== activeUrl && (
+                <button
+                  onClick={() => {
+                    setActiveUrl(fallbackUrl);
+                    setError(null);
+                    setQualities(["720", "480", "360"]);
+                  }}
+                  className="flex items-center gap-1 text-[11px] bg-red-500/20 hover:bg-red-500/30 text-red-300 px-2.5 py-1 rounded-lg font-bold"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  Переключить на Kodik
+                </button>
+              )}
             </div>
           )}
 
@@ -483,14 +664,13 @@ export const BrowserDownloadWidget: React.FC<BrowserDownloadWidgetProps> = ({
                   }`}
                 >
                   <Film className="w-3.5 h-3.5 shrink-0" />
-                  {qual}p (.mp4)
+                  <span>{qual}p (.mp4)</span>
+                  {!isVip && (
+                    <Crown className="w-3 h-3 text-[#8B5CF6] shrink-0 ml-0.5" />
+                  )}
                 </button>
               ))}
             </div>
-          )}
-
-          {!loadingQualities && qualities.length === 0 && !error && (
-            <span className="text-slate-400 text-xs">Качество не определено</span>
           )}
         </div>
       </div>
@@ -521,8 +701,8 @@ export const BrowserDownloadWidget: React.FC<BrowserDownloadWidgetProps> = ({
           <div className="flex items-center gap-3">
             <CheckCircle className="w-6 h-6 text-cyan-400 shrink-0" />
             <div>
-              <p className="text-white font-bold text-sm">Серия успешно скачана!</p>
-              <p className="text-slate-400 text-xs mt-0.5">Видео сохранено в формате .mp4 и готово к просмотру на любом плеере или телефоне.</p>
+              <p className="text-white font-bold text-sm">Серия успешно сохранена!</p>
+              <p className="text-slate-400 text-xs mt-0.5">Файл .mp4 скачан в папку «Загрузки» и готов к просмотру.</p>
             </div>
           </div>
           <button
@@ -539,7 +719,7 @@ export const BrowserDownloadWidget: React.FC<BrowserDownloadWidgetProps> = ({
             className="flex items-center gap-1.5 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white font-bold text-xs uppercase px-4 py-2.5 rounded-xl cursor-pointer transition-all duration-300 hover:scale-105"
           >
             <Download className="w-4 h-4" />
-            Сохранить .mp4
+            Сохранить повторно
           </button>
         </div>
       )}
@@ -556,7 +736,7 @@ export const BrowserDownloadWidget: React.FC<BrowserDownloadWidgetProps> = ({
               <div>
                 <h4 className="text-white font-bold text-sm">Альтернативный способ: Скачать через Telegram</h4>
                 <p className="text-slate-400 text-xs mt-1 leading-relaxed">
-                  Наш Telegram-бот поможет моментально получить нужную серию. Вы получите готовое видео высокого качества прямо в диалоге с ботом, которое удобно смотреть на телефонах (iPhone / Android), планшетах или компьютерах!
+                  Наш Telegram-бот поможет моментально получить нужную серию. Вы получите готовое видео прямо в чате для удобного просмотра офлайн!
                 </p>
               </div>
             </div>
@@ -575,3 +755,4 @@ export const BrowserDownloadWidget: React.FC<BrowserDownloadWidgetProps> = ({
     </div>
   );
 };
+

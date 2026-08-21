@@ -17,9 +17,9 @@ import {
 import { containsProfanity } from '../utils/profanity';
 
 
-// Use environment variables or fallback to the key you provided
+// Use environment variables or fallback to the active project
 const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL || 'https://wazhihhiburkucpnypzc.supabase.co';
-const supabaseKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndhemhpaGhpYnVya3VjcG55cHpjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzNDA0NTAsImV4cCI6MjA4NjkxNjQ1MH0.4SnAvfL6hLZLAx0p04cluZc5YHtCGZsnz0ZLXlD-RM4';
+const supabaseKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVsdW1iYXJ3dXRuc29kbXp4cHN0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE3MDA5ODIsImV4cCI6MjA4NzI3Njk4Mn0.4HTww4JB9dcc9FcyONURPsdcu4CAdKzScsshAj3lJxs';
 
 let supabaseClient: any = null;
 console.log('Initializing Supabase with URL:', supabaseUrl);
@@ -32,12 +32,52 @@ const memoryStorage = {
     removeItem: (key: string) => {},
 };
 
+// Helper to sanitize headers for browser Fetch API (prevent "String contains non ISO-8859-1 code point")
+const sanitizeHeaderValue = (val: any): string => {
+  if (val === null || val === undefined) return '';
+  const str = String(val);
+  // Strip any characters outside Latin-1 / ISO-8859-1 (code > 255)
+  return str.replace(/[^\x00-\xFF]/g, '');
+};
+
+const safeSupabaseFetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  try {
+    if (init && init.headers) {
+      if (typeof Headers !== 'undefined' && init.headers instanceof Headers) {
+        const cleanHeaders = new Headers();
+        init.headers.forEach((v, k) => {
+          cleanHeaders.set(sanitizeHeaderValue(k), sanitizeHeaderValue(v));
+        });
+        init = { ...init, headers: cleanHeaders };
+      } else if (Array.isArray(init.headers)) {
+        const cleanHeaders: [string, string][] = init.headers.map(([k, v]) => [
+          sanitizeHeaderValue(k),
+          sanitizeHeaderValue(v)
+        ]);
+        init = { ...init, headers: cleanHeaders };
+      } else if (typeof init.headers === 'object') {
+        const cleanHeaders: Record<string, string> = {};
+        for (const [k, v] of Object.entries(init.headers)) {
+          cleanHeaders[sanitizeHeaderValue(k)] = sanitizeHeaderValue(v);
+        }
+        init = { ...init, headers: cleanHeaders };
+      }
+    }
+  } catch (e) {
+    console.warn('Error sanitizing Supabase fetch headers:', e);
+  }
+  return fetch(input, init);
+};
+
 try {
   if (supabaseUrl && supabaseKey && supabaseKey !== 'placeholder') {
     supabaseClient = createClient(supabaseUrl, supabaseKey, {
       auth: {
         storage: memoryStorage,
         persistSession: false,
+      },
+      global: {
+        fetch: safeSupabaseFetch,
       },
     });
     console.log('Supabase client created successfully with memory storage');
@@ -262,10 +302,15 @@ class DatabaseService {
   }
 
   private translateError(message: string): string {
+    if (!message) return 'Произошла непредвиденная ошибка';
+    if (message.includes('Failed to fetch') || message.includes('fetch failed') || message.includes('NetworkError') || message.includes('ERR_TUNNEL') || message.includes('AuthRetryableFetchError')) {
+      return 'Сервер авторизации Supabase недоступен. Проверьте статус проекта в Supabase Dashboard (проект на бесплатном тарифе может быть приостановлен).';
+    }
     if (message.includes('User already registered')) return 'Пользователь с таким email уже зарегистрирован';
     if (message.includes('database error saving new user')) return 'Этот email уже занят или произошла ошибка базы данных';
     if (message.includes('Invalid login credentials')) return 'Неверный email или пароль';
     if (message.includes('Email not confirmed')) return 'Email не подтвержден';
+    if (message.includes('rate limit') || message.includes('over_email_send_rate_limit')) return 'Слишком много запросов. Пожалуйста, подождите минуту перед повторной попыткой.';
     return message;
   }
 
@@ -302,12 +347,17 @@ class DatabaseService {
 
       if (!authData.user) return { user: null, message: 'Registration failed' };
 
-      // Create profile in D1 explicitly
+      // Create profile in D1 explicitly with 1 month of FREE VIP for registration
+      const oneMonthLater = new Date();
+      oneMonthLater.setMonth(oneMonthLater.getMonth() + 1);
+
       const newProfile: any = {
         id: authData.user.id,
         email: data.email,
         name: data.name,
-        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${data.name}`
+        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${data.name}`,
+        is_premium: 1,
+        premium_until: oneMonthLater.toISOString()
       };
       
       await supabaseClient.from('profiles').insert([newProfile]);
@@ -344,18 +394,24 @@ class DatabaseService {
   }
 
   async resetPassword(email: string): Promise<{ success: boolean; message?: string }> {
-    if (!this.isSupabaseAvailable()) return { success: false, message: 'Database unavailable' };
+    if (!this.isSupabaseAvailable()) return { success: false, message: 'База данных недоступна' };
+    const cleanEmail = String(email || '').trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      return { success: false, message: 'Укажите корректный email адрес' };
+    }
     try {
-      const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
-        redirectTo: window.location.origin,
+      const redirectUrl = typeof window !== 'undefined' ? `${window.location.origin}/reset-password` : undefined;
+      const { error } = await supabaseClient.auth.resetPasswordForEmail(cleanEmail, {
+        redirectTo: redirectUrl,
       });
       if (error) {
-        return { success: false, message: error.message };
+        console.error('Reset password error:', error);
+        return { success: false, message: this.translateError(error.message) };
       }
-      return { success: true, message: 'Check your email for the password reset link' };
-    } catch (e) {
+      return { success: true, message: 'Ссылка для сброса пароля отправлена на ваш email!' };
+    } catch (e: any) {
       console.error('Reset password exception:', e);
-      return { success: false, message: 'Exception occurred' };
+      return { success: false, message: e?.message || 'Не удалось отправить ссылку для сброса пароля' };
     }
   }
 
@@ -396,12 +452,21 @@ class DatabaseService {
       }
     }
 
+    // Calculate if user is currently premium based on is_premium flag and premium_until date
+    let isPremiumActive = Boolean(p.is_premium);
+    if (p.premium_until) {
+      const expires = new Date(p.premium_until).getTime();
+      if (!isNaN(expires)) {
+        isPremiumActive = expires > Date.now();
+      }
+    }
+
     return {
       id: p.id,
       name: name,
       email: p.email,
       avatar: p.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${p.email || p.id}`,
-      isPremium: p.is_premium,
+      isPremium: isPremiumActive,
       premiumUntil: p.premium_until,
       bio: p.bio,
       watchedTime: p.watched_time,
@@ -464,6 +529,7 @@ class DatabaseService {
       if (updates.avatar) mapped.avatar = updates.avatar;
       if (updates.bio !== undefined) mapped.bio = updates.bio;
       if (updates.isPremium !== undefined) mapped.is_premium = updates.isPremium;
+      if (updates.premiumUntil !== undefined) mapped.premium_until = updates.premiumUntil;
       if (updates.episodesWatched !== undefined) mapped.episodes_watched = updates.episodesWatched;
       if (updates.watchedTime !== undefined) mapped.watched_time = updates.watchedTime;
       if (updates.watchedAnimeIds) mapped.watched_anime_ids = JSON.stringify(updates.watchedAnimeIds);
@@ -532,6 +598,28 @@ class DatabaseService {
       if (e instanceof Error && e.message === 'Username already taken') {
           throw e;
       }
+      return null;
+    }
+  }
+
+  async activateVip(email: string, days: number): Promise<User | null> {
+    if (!this.isSupabaseAvailable()) return null;
+    try {
+      const user = await this.getProfile(email);
+      let baseDate = new Date();
+      if (user?.premiumUntil) {
+        const existingExpires = new Date(user.premiumUntil);
+        if (!isNaN(existingExpires.getTime()) && existingExpires.getTime() > Date.now()) {
+          baseDate = existingExpires;
+        }
+      }
+      const newExpires = new Date(baseDate.getTime() + days * 24 * 60 * 60 * 1000);
+      return await this.updateProfile(email, {
+        isPremium: true,
+        premiumUntil: newExpires.toISOString()
+      });
+    } catch (e) {
+      console.error('activateVip error:', e);
       return null;
     }
   }

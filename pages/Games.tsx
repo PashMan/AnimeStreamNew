@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Play, Sparkles, Trophy, RotateCcw, Crown, Heart, Star, Flame, Eye, ShoppingBag, ShieldCheck, Check, Gamepad2 } from 'lucide-react';
+import { Play, Trophy, RotateCcw, Crown, Heart, Star, Flame, Eye, ShoppingBag, ShieldCheck, Check, Gamepad2 } from 'lucide-react';
 import SEO from '../components/SEO';
 import { useAuth } from '../context/AuthContext';
 

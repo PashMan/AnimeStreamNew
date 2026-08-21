@@ -7,6 +7,7 @@ import { db } from '../services/db';
 import AuthModal from './AuthModal';
 import { fetchAnimes, fetchAnimeDetails } from '../services/shikimori';
 import { FALLBACK_IMAGE } from '../constants';
+import { PremiumModal } from './PremiumModal';
 import { AIChatBot } from './AIChatBot';
 
 import { useSlugBlocks } from '../store/slugBlocks';
@@ -535,6 +536,20 @@ const Layout: React.FC = () => {
                 </div>
               )}
  
+              {/* Premium Link Button */}
+              <Link
+                to="/premium"
+                className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-black uppercase text-[10px] tracking-wider transition-all shadow-md ${
+                  user?.isPremium
+                    ? 'bg-[#8B5CF6]/20 text-[#A78BFA] border border-[#8B5CF6]/40 hover:bg-[#8B5CF6]/30 shadow-[#8B5CF6]/15'
+                    : 'bg-[#8B5CF6]/10 text-slate-200 border border-[#8B5CF6]/30 hover:bg-[#8B5CF6]/20 hover:text-white shadow-[#8B5CF6]/10 hover:scale-105'
+                }`}
+                title="Премиум подписка"
+              >
+                <Crown className={`w-3.5 h-3.5 ${user?.isPremium ? 'text-[#8B5CF6]' : 'text-slate-400'}`} />
+                <span>{user?.isPremium ? 'Premium' : 'Premium 0 ₽'}</span>
+              </Link>
+
               {user && (
                 <Link aria-label="Messages" to="/messages" title="Сообщения" className="p-2.5 bg-white/5 hover:bg-primary hover:text-white rounded-xl transition-all relative text-slate-300">
                    <MessageSquareText className="w-4.5 h-4.5" />
@@ -675,6 +690,19 @@ const Layout: React.FC = () => {
               <Link to="/community" className={`p-4 rounded-xl font-black uppercase tracking-widest text-sm transition-colors ${isActive('/community') ? 'bg-[#8B5CF6] text-white' : 'text-slate-300 hover:bg-white/5'}`}>
                 Сообщество
               </Link>
+              <Link 
+                to="/premium" 
+                onClick={() => setIsMenuOpen(false)}
+                className={`p-4 rounded-xl font-black uppercase tracking-widest text-sm transition-colors flex items-center justify-between bg-[#8B5CF6]/10 border border-[#8B5CF6]/25 ${isActive('/premium') ? 'text-white bg-[#8B5CF6]/20' : 'text-slate-200 hover:text-white'}`}
+              >
+                <span className="flex items-center gap-2">
+                  <Crown className="w-4 h-4 text-[#8B5CF6]" />
+                  <span>Premium</span>
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#8B5CF6]/20 border border-[#8B5CF6]/30 text-[#A78BFA]">
+                  {user?.isPremium ? 'Активен' : '1 мес 0 ₽'}
+                </span>
+              </Link>
             </>
           ) : (
             <>
@@ -706,6 +734,20 @@ const Layout: React.FC = () => {
 
               <Link to="/community" className={`p-4 rounded-xl font-black uppercase tracking-widest text-sm transition-colors ${isActive('/community') ? 'bg-primary text-white' : 'text-slate-300 hover:bg-white/5'}`}>
                 Сообщество
+              </Link>
+
+              <Link 
+                to="/premium" 
+                onClick={() => setIsMenuOpen(false)}
+                className={`p-4 rounded-xl font-black uppercase tracking-widest text-sm transition-colors flex items-center justify-between bg-[#8B5CF6]/10 border border-[#8B5CF6]/25 ${isActive('/premium') ? 'text-white bg-[#8B5CF6]/20' : 'text-slate-200 hover:text-white'}`}
+              >
+                <span className="flex items-center gap-2">
+                  <Crown className="w-4 h-4 text-[#8B5CF6]" />
+                  <span>Premium</span>
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#8B5CF6]/20 border border-[#8B5CF6]/30 text-[#A78BFA]">
+                  {user?.isPremium ? 'Активен' : '1 мес 0 ₽'}
+                </span>
               </Link>
             </>
           )}
@@ -887,6 +929,9 @@ const Layout: React.FC = () => {
           <span className="text-[9px] font-black uppercase tracking-wider">{isMenuOpen ? 'Закрыть' : 'Меню'}</span>
         </button>
       </div>
+
+      {/* Global Premium Modal instance */}
+      <PremiumModal />
     </div>
   );
 };

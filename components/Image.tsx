@@ -44,17 +44,24 @@ export const Image = ({ src, alt, className, fallbackClassName, priority, animeI
       }
   }, [src]);
 
-  // If src is missing initially, start fallback chain immediately
+  // Check if image is already loaded (from cache)
   useEffect(() => {
-      if ((!src || src === FALLBACK_IMAGE) && fallbackLevel === 0) {
+      if (imgRef.current && imgRef.current.complete && imgRef.current.naturalWidth > 0) {
+          setIsLoading(false);
+      }
+  }, [imageSrc]);
+
+  // If src is missing or placeholder initially, start fallback chain immediately
+  useEffect(() => {
+      if ((!src || src === FALLBACK_IMAGE || src.includes('missing') || src.includes('none.png')) && fallbackLevel === 0) {
           setFallbackLevel(1);
       }
-  }, [src, fallbackLevel, animeTitle]);
+  }, [src, fallbackLevel, animeTitle, animeId]);
 
   useEffect(() => {
-      if (fallbackLevel === 1 && animeTitle && isInView) {
+      if (fallbackLevel === 1 && (animeTitle || animeId) && isInView) {
           let active = true;
-          fetchAnimeImage(animeTitle).then(url => {
+          fetchAnimeImage(animeTitle || '', animeId).then(url => {
               if (active) {
                   if (url) {
                       setImageSrc(url);
@@ -62,12 +69,12 @@ export const Image = ({ src, alt, className, fallbackClassName, priority, animeI
                       setFallbackLevel(2); // Give up
                   }
               }
-          }).catch((err) => {
+          }).catch(() => {
               active && setFallbackLevel(2);
           });
           return () => { active = false; };
       }
-  }, [fallbackLevel, animeTitle, isInView]);
+  }, [fallbackLevel, animeTitle, animeId, isInView]);
 
   const handleError = () => {
       setIsLoading(false);
@@ -81,10 +88,13 @@ export const Image = ({ src, alt, className, fallbackClassName, priority, animeI
       if (onImageLoad) onImageLoad();
   };
 
-  if (fallbackLevel === 2 || (!imageSrc && fallbackLevel === 0 && !animeId)) {
+  if (fallbackLevel === 2 || (!imageSrc && fallbackLevel === 0 && !animeId && !animeTitle)) {
     return (
-      <div className={`flex items-center justify-center bg-white/5 text-slate-500 overflow-hidden ${className} ${fallbackClassName || ''}`}>
-        <img src={FALLBACK_IMAGE} alt="" className="w-full h-full object-cover opacity-50 grayscale" />
+      <div className={`flex items-center justify-center bg-slate-900/80 text-slate-500 overflow-hidden border border-white/5 ${className} ${fallbackClassName || ''}`}>
+        <div className="flex flex-col items-center justify-center p-3 text-center">
+          <ImageOff className="w-6 h-6 text-slate-600 mb-1 opacity-70" />
+          <span className="text-[10px] text-slate-500 font-medium tracking-tight line-clamp-1">{alt || 'Нет изображения'}</span>
+        </div>
       </div>
     );
   }
