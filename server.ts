@@ -4863,24 +4863,29 @@ app.get('/*', async (c) => {
     reqPath.startsWith('/assets/') ||
     /\.(js|mjs|cjs|ts|tsx|jsx|css|map|wasm|png|jpg|jpeg|gif|svg|ico|webp|json|woff|woff2|ttf|eot|xml|txt)$/i.test(reqPath)
   ) {
+    const cleanPath = reqPath.split('?')[0].toLowerCase();
     let contentType = 'text/plain; charset=utf-8';
-    if (reqPath.endsWith('.css')) {
+    if (cleanPath.endsWith('.css')) {
       contentType = 'text/css; charset=utf-8';
-    } else if (/\.(js|mjs|cjs)$/i.test(reqPath)) {
+    } else if (/\.(js|mjs|cjs)$/i.test(cleanPath)) {
       contentType = 'application/javascript; charset=utf-8';
-    } else if (/\.(png|jpg|jpeg|gif|svg|ico|webp)$/i.test(reqPath)) {
+    } else if (/\.(png|jpg|jpeg|gif|svg|ico|webp)$/i.test(cleanPath)) {
       contentType = 'image/png';
-    } else if (/\.(woff|woff2|ttf|eot)$/i.test(reqPath)) {
+    } else if (/\.(woff|woff2|ttf|eot)$/i.test(cleanPath)) {
       contentType = 'font/woff2';
-    } else if (reqPath.endsWith('.json')) {
+    } else if (cleanPath.endsWith('.json')) {
       contentType = 'application/json; charset=utf-8';
     }
 
-    c.header('Content-Type', contentType);
-    c.header('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
-    c.header('Pragma', 'no-cache');
-    c.header('Expires', '0');
-    return c.text('/* Asset Not Found */', 404);
+    return new Response('/* Asset Not Found */', {
+      status: 404,
+      headers: {
+        'Content-Type': contentType,
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
+    });
   }
 
   // SPA Fallback for HTML navigation routes
