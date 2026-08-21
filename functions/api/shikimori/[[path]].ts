@@ -121,7 +121,119 @@ export const onRequest = async (context: any) => {
     }
 
     if (path.startsWith('/animes')) {
-      // Return empty array gracefully with 200 status so client can fallback to local cache or Kodik
+      const idMatch = path.match(/^\/animes\/(\d+)$/);
+      if (idMatch) {
+        const animeId = parseInt(idMatch[1], 10);
+        try {
+          const anilistQuery = `query ($idMal: Int) { 
+            Media(idMal: $idMal, type: ANIME) { 
+              id idMal title { romaji english native } description episodes status format seasonYear averageScore genres 
+              studios(isMain: true) { nodes { name } } 
+              coverImage { extraLarge large medium } bannerImage 
+              nextAiringEpisode { episode airingAt } 
+            } 
+          }`;
+          const aniRes = await fetch('https://graphql.anilist.co', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query: anilistQuery, variables: { idMal: animeId } }),
+            signal: AbortSignal.timeout(2500)
+          });
+          if (aniRes.ok) {
+            const aniData: any = await aniRes.json();
+            const m = aniData?.data?.Media;
+            if (m) {
+              const coverUrl = m.coverImage?.extraLarge || m.coverImage?.large || m.coverImage?.medium || '';
+              const mapped = {
+                id: m.idMal || m.id,
+                name: m.title?.romaji || m.title?.english,
+                russian: m.title?.english || m.title?.romaji,
+                image: {
+                  original: coverUrl,
+                  preview: m.coverImage?.large || coverUrl,
+                  x96: m.coverImage?.medium || coverUrl,
+                  x48: m.coverImage?.medium || coverUrl
+                },
+                url: `/animes/${m.idMal || m.id}`,
+                kind: m.format ? m.format.toLowerCase() : 'tv',
+                score: m.averageScore ? (m.averageScore / 10).toFixed(1) : '8.0',
+                status: m.status === 'RELEASING' ? 'ongoing' : (m.status === 'FINISHED' ? 'released' : 'anons'),
+                episodes: m.episodes || 0,
+                episodes_aired: m.nextAiringEpisode ? m.nextAiringEpisode.episode - 1 : (m.episodes || 0),
+                aired_on: m.seasonYear ? `${m.seasonYear}-01-01` : null,
+                released_on: null,
+                description: m.description ? m.description.replace(/<[^>]*>?/gm, '') : 'Описание скоро появится',
+                description_html: m.description,
+                genres: (m.genres || []).map((g: string, idx: number) => ({ id: idx + 1, name: g, russian: g, kind: 'genre' })),
+                studios: (m.studios?.nodes || []).map((s: any, idx: number) => ({ id: idx + 1, name: s.name, filtered_name: s.name, real: true, image: null }))
+              };
+              return new Response(JSON.stringify(mapped), {
+                status: 200,
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Access-Control-Allow-Origin': '*',
+                  'Cache-Control': 'public, max-age=600'
+                }
+              });
+            }
+          }
+        } catch (_) {}
+      } else {
+        // List fallback
+        try {
+          const aniListQuery = `query { 
+            Page(page: 1, perPage: 25) { 
+              media(type: ANIME, sort: [POPULARITY_DESC, TRENDING_DESC]) { 
+                id idMal title { romaji english native } description episodes status format seasonYear averageScore genres 
+                studios(isMain: true) { nodes { name } } 
+                coverImage { extraLarge large medium } bannerImage 
+                nextAiringEpisode { episode airingAt } 
+              } 
+            } 
+          }`;
+          const aniRes = await fetch('https://graphql.anilist.co', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query: aniListQuery }),
+            signal: AbortSignal.timeout(2500)
+          });
+          if (aniRes.ok) {
+            const aniData: any = await aniRes.json();
+            const media = aniData?.data?.Page?.media || [];
+            const mappedList = media.map((m: any) => {
+              const coverUrl = m.coverImage?.extraLarge || m.coverImage?.large || m.coverImage?.medium || '';
+              return {
+                id: m.idMal || m.id,
+                name: m.title?.romaji || m.title?.english,
+                russian: m.title?.english || m.title?.romaji,
+                image: {
+                  original: coverUrl,
+                  preview: m.coverImage?.large || coverUrl,
+                  x96: m.coverImage?.medium || coverUrl,
+                  x48: m.coverImage?.medium || coverUrl
+                },
+                url: `/animes/${m.idMal || m.id}`,
+                kind: m.format ? m.format.toLowerCase() : 'tv',
+                score: m.averageScore ? (m.averageScore / 10).toFixed(1) : '8.0',
+                status: m.status === 'RELEASING' ? 'ongoing' : (m.status === 'FINISHED' ? 'released' : 'anons'),
+                episodes: m.episodes || 0,
+                episodes_aired: m.nextAiringEpisode ? m.nextAiringEpisode.episode - 1 : (m.episodes || 0),
+                aired_on: m.seasonYear ? `${m.seasonYear}-01-01` : null,
+                released_on: null
+              };
+            });
+            return new Response(JSON.stringify(mappedList), {
+              status: 200,
+              headers: {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*',
+                'Cache-Control': 'public, max-age=300'
+              }
+            });
+          }
+        } catch (_) {}
+      }
+
       return new Response(JSON.stringify([]), {
         status: 200,
         headers: {

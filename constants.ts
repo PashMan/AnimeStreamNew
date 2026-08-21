@@ -7,7 +7,7 @@ export const FALLBACK_IMAGE = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.or
 export const CURRENT_USER: User = {
   name: "Hiroshi_K",
   email: "support@kamianime.club",
-  avatar: "/ai-avatar.png",
+  avatar: "/ai-chat.jpg",
   isPremium: true,
   episodesWatched: 142,
   watchedTime: "48ч 12м"
