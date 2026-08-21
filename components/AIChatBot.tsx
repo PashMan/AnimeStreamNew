@@ -150,6 +150,7 @@ export const AIChatBot: React.FC = () => {
             src="/ai-chat.jpg"
             alt="KamiAI"
             className="w-full h-full object-cover rounded-full"
+            onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/ai-avatar.png'; }}
           />
           {/* Online green indicator badge */}
           <span className="absolute bottom-0 right-0 w-4 h-4 rounded-full bg-emerald-500 border-2 border-[#12111A] shadow-md"></span>
@@ -174,6 +175,7 @@ export const AIChatBot: React.FC = () => {
                   src="/ai-chat.jpg"
                   alt="KamiAI"
                   className="w-10 h-10 rounded-full border-2 border-[#8B5CF6]/60 object-cover shadow-md"
+                  onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/ai-avatar.png'; }}
                 />
                 <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-[#18132B]"></span>
               </div>
@@ -214,6 +216,7 @@ export const AIChatBot: React.FC = () => {
                     src="/ai-chat.jpg"
                     alt="KamiAI"
                     className="w-8 h-8 rounded-full border border-[#8B5CF6]/50 object-cover shadow-sm shrink-0 self-start mt-0.5"
+                    onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/ai-avatar.png'; }}
                   />
                 )}
                 <div
@@ -269,6 +272,7 @@ export const AIChatBot: React.FC = () => {
                   src="/ai-chat.jpg"
                   alt="KamiAI"
                   className="w-8 h-8 rounded-full border border-[#8B5CF6]/50 object-cover shadow-sm shrink-0 self-start animate-bounce mt-0.5"
+                  onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/ai-avatar.png'; }}
                 />
                 <div className="bg-white/5 border border-white/10 rounded-2xl rounded-tl-sm px-4 py-3 text-slate-300 text-sm flex items-center gap-2">
                   <Loader2 className="w-3.5 h-3.5 text-[#A78BFA] animate-spin" />

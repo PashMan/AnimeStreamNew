@@ -230,7 +230,11 @@ app.post('/api/ai/recommend', async (c) => {
   }
 });
 
-// API Route for Shikimori (Proxy with mirror fallback)
+// In-memory cache for anime image URLs & AniList data
+const animeImageCache = new Map<string, { url: string; buffer?: ArrayBuffer; contentType?: string }>();
+const jikanImageCache = new Map<string, string>();
+
+// API Route for Shikimori (Proxy with mirror fallback and AniList failover)
 app.get('/api/shikimori/*', async (c) => {
   const path = c.req.path.replace(/^\/api\/shikimori/, '');
   const query = c.req.url.includes('?') ? c.req.url.substring(c.req.url.indexOf('?')) : '';
@@ -241,25 +245,148 @@ app.get('/api/shikimori/*', async (c) => {
     `https://desu.shikimori.one/api${path}${query}`
   ];
 
-  for (const targetUrl of mirrors) {
-    try {
-      const response = await fetch(targetUrl, {
+  // Try Shikimori mirrors with quick timeout
+  try {
+    const fetchPromises = mirrors.map(url =>
+      fetch(url, {
         headers: {
-          'User-Agent': 'KamiAnime-Server/2.5 (client: backend-proxy; contact: admin@kamianime.club)',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
           'Referer': 'https://shikimori.one/',
           'Accept': 'application/json, text/plain, */*'
         },
-        signal: AbortSignal.timeout(4000)
-      });
+        signal: AbortSignal.timeout(1500)
+      }).then(async r => {
+        if (r.ok) return await r.json();
+        throw new Error(`HTTP ${r.status}`);
+      })
+    );
 
-      if (response.ok) {
-        const data = await response.json();
-        return c.json(data);
-      }
-      if (response.status === 404 || response.status === 422) {
-        return c.json([], 200);
-      }
-    } catch (_) {}
+    const data = await Promise.any(fetchPromises);
+    if (data) {
+      return c.json(data);
+    }
+  } catch (_) {}
+
+  // Fallback to AniList GraphQL if Shikimori is down/blocked
+  if (path.startsWith('/animes')) {
+    const idMatch = path.match(/^\/animes\/(\d+)$/);
+    if (idMatch) {
+      const animeId = parseInt(idMatch[1], 10);
+      try {
+        const anilistQuery = `query ($idMal: Int) { 
+          Media(idMal: $idMal, type: ANIME) { 
+            id 
+            idMal 
+            title { romaji english native } 
+            description 
+            episodes 
+            status 
+            format 
+            seasonYear 
+            averageScore 
+            genres 
+            studios(isMain: true) { nodes { name } } 
+            coverImage { extraLarge large medium } 
+            bannerImage 
+            nextAiringEpisode { episode airingAt } 
+          } 
+        }`;
+        const aniRes = await fetch('https://graphql.anilist.co', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: anilistQuery, variables: { idMal: animeId } }),
+          signal: AbortSignal.timeout(2500)
+        });
+        if (aniRes.ok) {
+          const aniData = await aniRes.json() as any;
+          const m = aniData?.data?.Media;
+          if (m) {
+            const coverUrl = m.coverImage?.extraLarge || m.coverImage?.large || m.coverImage?.medium || '';
+            const mapped = {
+              id: m.idMal || m.id,
+              name: m.title?.romaji || m.title?.english,
+              russian: m.title?.english || m.title?.romaji,
+              image: {
+                original: coverUrl,
+                preview: m.coverImage?.large || coverUrl,
+                x96: m.coverImage?.medium || coverUrl,
+                x48: m.coverImage?.medium || coverUrl
+              },
+              url: `/animes/${m.idMal || m.id}`,
+              kind: m.format ? m.format.toLowerCase() : 'tv',
+              score: m.averageScore ? (m.averageScore / 10).toFixed(1) : '8.0',
+              status: m.status === 'RELEASING' ? 'ongoing' : (m.status === 'FINISHED' ? 'released' : 'anons'),
+              episodes: m.episodes || 0,
+              episodes_aired: m.nextAiringEpisode ? m.nextAiringEpisode.episode - 1 : (m.episodes || 0),
+              aired_on: m.seasonYear ? `${m.seasonYear}-01-01` : null,
+              released_on: null,
+              description: m.description ? m.description.replace(/<[^>]*>?/gm, '') : 'Описание скоро появится',
+              description_html: m.description,
+              genres: (m.genres || []).map((g: string, idx: number) => ({ id: idx + 1, name: g, russian: g, kind: 'genre' })),
+              studios: (m.studios?.nodes || []).map((s: any, idx: number) => ({ id: idx + 1, name: s.name, filtered_name: s.name, real: true, image: null }))
+            };
+            return c.json(mapped);
+          }
+        }
+      } catch (_) {}
+    } else {
+      // List query fallback (e.g. popular / ongoing)
+      try {
+        const aniListQuery = `query { 
+          Page(page: 1, perPage: 25) { 
+            media(type: ANIME, sort: [POPULARITY_DESC, TRENDING_DESC]) { 
+              id 
+              idMal 
+              title { romaji english native } 
+              description 
+              episodes 
+              status 
+              format 
+              seasonYear 
+              averageScore 
+              genres 
+              studios(isMain: true) { nodes { name } } 
+              coverImage { extraLarge large medium } 
+              bannerImage 
+              nextAiringEpisode { episode airingAt } 
+            } 
+          } 
+        }`;
+        const aniRes = await fetch('https://graphql.anilist.co', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: aniListQuery }),
+          signal: AbortSignal.timeout(2500)
+        });
+        if (aniRes.ok) {
+          const aniData = await aniRes.json() as any;
+          const media = aniData?.data?.Page?.media || [];
+          const mappedList = media.map((m: any) => {
+            const coverUrl = m.coverImage?.extraLarge || m.coverImage?.large || m.coverImage?.medium || '';
+            return {
+              id: m.idMal || m.id,
+              name: m.title?.romaji || m.title?.english,
+              russian: m.title?.english || m.title?.romaji,
+              image: {
+                original: coverUrl,
+                preview: m.coverImage?.large || coverUrl,
+                x96: m.coverImage?.medium || coverUrl,
+                x48: m.coverImage?.medium || coverUrl
+              },
+              url: `/animes/${m.idMal || m.id}`,
+              kind: m.format ? m.format.toLowerCase() : 'tv',
+              score: m.averageScore ? (m.averageScore / 10).toFixed(1) : '8.0',
+              status: m.status === 'RELEASING' ? 'ongoing' : (m.status === 'FINISHED' ? 'released' : 'anons'),
+              episodes: m.episodes || 0,
+              episodes_aired: m.nextAiringEpisode ? m.nextAiringEpisode.episode - 1 : (m.episodes || 0),
+              aired_on: m.seasonYear ? `${m.seasonYear}-01-01` : null,
+              released_on: null
+            };
+          });
+          return c.json(mappedList);
+        }
+      } catch (_) {}
+    }
   }
 
   // Graceful empty fallback for common public endpoints
@@ -2165,15 +2292,40 @@ app.get('/api/manga/chapter/:chapterId/pages', async (c) => {
   }
 });
 
-// In-memory cache for Jikan image URLs to avoid rate limits
-const jikanImageCache = new Map<string, string>();
-
 // API Route for Image Proxy (matches Cloudflare Worker behavior)
 app.get('/api/image/*', async (c) => {
   const imagePath = c.req.path.replace('/api/image/', '');
   const urlSearch = c.req.url.includes('?') ? c.req.url.substring(c.req.url.indexOf('?')) : '';
   const isExplicitlyMissing = imagePath.includes('missing') || imagePath.includes('none.png');
   
+  // Extract anime ID if present
+  const animeIdMatch = imagePath.match(/(?:animes|original|preview|x96|x48)\/(\d+)\.(?:jpg|png|webp|jpeg)/i) || 
+                       imagePath.match(/\/(\d+)\.(?:jpg|png|webp|jpeg)$/) || 
+                       c.req.url.match(/id=(\d+)/);
+  const animeId = animeIdMatch ? parseInt(animeIdMatch[1], 10) : null;
+
+  // Check in-memory AniList / Jikan cache first for instant response
+  if (animeId && animeImageCache.has(animeId.toString())) {
+    const cached = animeImageCache.get(animeId.toString())!;
+    try {
+      const cachedRes = await fetch(cached.url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+        signal: AbortSignal.timeout(2000)
+      });
+      if (cachedRes.ok) {
+        return new Response(cachedRes.body, {
+          status: 200,
+          headers: {
+            'Content-Type': cachedRes.headers.get('content-type') || 'image/jpeg',
+            'Cache-Control': 'public, max-age=2592000',
+            'Access-Control-Allow-Origin': '*',
+            'X-Image-Source': 'Cached-Fallback'
+          }
+        });
+      }
+    } catch (_) {}
+  }
+
   const headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
     'Referer': 'https://shikimori.one/',
@@ -2181,139 +2333,95 @@ app.get('/api/image/*', async (c) => {
   };
 
   try {
-    let response: Response | null = null;
+    const fetchTasks: Promise<Response>[] = [];
 
+    // Shikimori mirror tasks
     if (!isExplicitlyMissing) {
       const mirrors = [
         `https://shikimori.one/${imagePath}${urlSearch}`,
         `https://shikimori.io/${imagePath}${urlSearch}`,
         `https://desu.shikimori.one/${imagePath}${urlSearch}`
       ];
-
-      for (const mirrorUrl of mirrors) {
-        try {
-          const r = await fetch(mirrorUrl, { headers, signal: AbortSignal.timeout(1800) });
-          if (r.ok && !r.url.includes('missing') && !r.url.includes('none.png')) {
-            response = r;
-            break;
-          }
-          if (r.status === 404) {
-            break;
-          }
-        } catch (_) {}
+      for (const mUrl of mirrors) {
+        fetchTasks.push(
+          fetch(mUrl, { headers, signal: AbortSignal.timeout(1200) }).then(r => {
+            if (r.ok && !r.url.includes('missing') && !r.url.includes('none.png')) return r;
+            throw new Error('Not ok');
+          })
+        );
       }
     }
 
-    if (response && response.ok) {
-      return new Response(response.body, {
-        status: 200,
-        headers: {
-          'Content-Type': response.headers.get('content-type') || 'image/jpeg',
-          'Cache-Control': 'public, max-age=2592000',
-          'Access-Control-Allow-Origin': '*'
-        }
-      });
+    // AniList GraphQL parallel task if anime ID is known
+    if (animeId) {
+      fetchTasks.push(
+        (async () => {
+          const anilistQuery = `query ($idMal: Int) { Media(idMal: $idMal, type: ANIME) { coverImage { extraLarge large medium } bannerImage } }`;
+          const aniRes = await fetch('https://graphql.anilist.co', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query: anilistQuery, variables: { idMal: animeId } }),
+            signal: AbortSignal.timeout(2000)
+          });
+          if (aniRes.ok) {
+            const aniData = await aniRes.json() as any;
+            const media = aniData?.data?.Media;
+            const isCoverOrBanner = imagePath.includes('cover') || imagePath.includes('original') || c.req.url.includes('type=cover');
+            const imgUrl = (isCoverOrBanner && media?.bannerImage) ? media.bannerImage : (media?.coverImage?.extraLarge || media?.coverImage?.large || media?.coverImage?.medium || media?.bannerImage);
+            if (imgUrl) {
+              animeImageCache.set(animeId.toString(), { url: imgUrl });
+              const aniImgRes = await fetch(imgUrl, {
+                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+                signal: AbortSignal.timeout(2500)
+              });
+              if (aniImgRes.ok) return aniImgRes;
+            }
+          }
+          throw new Error('AniList miss');
+        })()
+      );
     }
 
-    // Fallback to AniList GraphQL, Kodik API, and Jikan
-    const animeIdMatch = imagePath.match(/(?:animes|original|preview|x96|x48)\/(\d+)\.(?:jpg|png|webp|jpeg)/i) || 
-                         imagePath.match(/\/(\d+)\.(?:jpg|png|webp|jpeg)$/) || 
-                         c.req.url.match(/id=(\d+)/);
-    if (animeIdMatch) {
-      const animeId = parseInt(animeIdMatch[1], 10);
-
-      // 2a. Try AniList GraphQL first
-      try {
-        const anilistQuery = `query ($idMal: Int) { Media(idMal: $idMal, type: ANIME) { coverImage { extraLarge large medium } bannerImage } }`;
-        const aniRes = await fetch('https://graphql.anilist.co', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-          body: JSON.stringify({ query: anilistQuery, variables: { idMal: animeId } }),
-          signal: AbortSignal.timeout(3000)
-        });
-        if (aniRes.ok) {
-          const aniData = await aniRes.json() as any;
-          const media = aniData?.data?.Media;
-          const isCoverOrBanner = imagePath.includes('cover') || imagePath.includes('original') || c.req.url.includes('type=cover');
-          const imgUrl = (isCoverOrBanner && media?.bannerImage) ? media.bannerImage : (media?.coverImage?.extraLarge || media?.coverImage?.large || media?.coverImage?.medium || media?.bannerImage);
-          if (imgUrl) {
-            const aniImgRes = await fetch(imgUrl, {
-              headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-              signal: AbortSignal.timeout(3000)
-            });
-            if (aniImgRes.ok) {
-              return new Response(aniImgRes.body, {
-                status: 200,
-                headers: {
-                  'Content-Type': aniImgRes.headers.get('content-type') || 'image/jpeg',
-                  'Cache-Control': 'public, max-age=2592000',
-                  'Access-Control-Allow-Origin': '*',
-                  'X-Image-Source': 'AniList-Fallback'
-                }
-              });
-            }
+    try {
+      const winner = await Promise.any(fetchTasks);
+      if (winner && winner.ok) {
+        return new Response(winner.body, {
+          status: 200,
+          headers: {
+            'Content-Type': winner.headers.get('content-type') || 'image/jpeg',
+            'Cache-Control': 'public, max-age=2592000',
+            'Access-Control-Allow-Origin': '*'
           }
-        }
-      } catch (_) {}
-
-      // 2b. Try Kodik API
-      try {
-        const kodikRes = await fetch(`https://kodikapi.com/search?token=e3189966144beaa4a54c600125c1109a&shikimori_id=${animeId}&with_material_data=true`, {
-          signal: AbortSignal.timeout(2500)
         });
-        if (kodikRes.ok) {
-          const kData = await kodikRes.json() as any;
-          const poster = kData?.results?.[0]?.material_data?.poster_url || kData?.results?.[0]?.material_data?.anime_photos?.[0];
-          if (poster) {
-            const pUrl = poster.startsWith('//') ? `https:${poster}` : poster;
-            const pRes = await fetch(pUrl, { signal: AbortSignal.timeout(2500) });
-            if (pRes.ok) {
-              return new Response(pRes.body, {
-                status: 200,
-                headers: {
-                  'Content-Type': pRes.headers.get('content-type') || 'image/jpeg',
-                  'Cache-Control': 'public, max-age=2592000',
-                  'Access-Control-Allow-Origin': '*',
-                  'X-Image-Source': 'Kodik-Fallback'
-                }
-              });
-            }
-          }
-        }
-      } catch (_) {}
+      }
+    } catch (_) {}
 
-      // 2c. Try Jikan API
+    // Fallback to Jikan API
+    if (animeId) {
       try {
         let imageUrl = jikanImageCache.get(animeId.toString());
-        
         if (!imageUrl) {
-          const jikanRes = await fetch(`https://api.jikan.moe/v4/anime/${animeId}`, { signal: AbortSignal.timeout(2500) });
+          const jikanRes = await fetch(`https://api.jikan.moe/v4/anime/${animeId}`, { signal: AbortSignal.timeout(2000) });
           if (jikanRes.ok) {
             const jikanData = await jikanRes.json() as any;
             imageUrl = jikanData.data?.images?.jpg?.large_image_url || jikanData.data?.images?.jpg?.image_url;
-            if (imageUrl) {
-              jikanImageCache.set(animeId.toString(), imageUrl);
-            }
+            if (imageUrl) jikanImageCache.set(animeId.toString(), imageUrl);
           }
         }
-
         if (imageUrl) {
-          const fallbackRes = await fetch(imageUrl, { signal: AbortSignal.timeout(2500) });
+          const fallbackRes = await fetch(imageUrl, { signal: AbortSignal.timeout(2000) });
           if (fallbackRes.ok) {
             return new Response(fallbackRes.body, {
               status: 200,
               headers: {
                 'Content-Type': fallbackRes.headers.get('content-type') || 'image/jpeg',
                 'Cache-Control': 'public, max-age=2592000',
-                'Access-Control-Allow-Origin': '*',
-                'X-Image-Source': 'Jikan-Fallback'
+                'Access-Control-Allow-Origin': '*'
               }
             });
           }
         }
-      } catch (e) {
-        console.error('[DEBUG] Jikan fallback failed', e);
-      }
+      } catch (_) {}
     }
     
     const fallbackSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="900" viewBox="0 0 600 900"><rect width="600" height="900" fill="#141519"/><circle cx="300" cy="400" r="45" fill="#252438"/><polygon points="285,380 285,420 325,400" fill="#8B5CF6"/><text x="300" y="490" font-family="sans-serif" font-size="22" font-weight="700" fill="#e2e8f0" text-anchor="middle">KamiAnime</text><text x="300" y="525" font-family="sans-serif" font-size="14" fill="#64748b" text-anchor="middle">Обложка</text></svg>`;
@@ -4658,8 +4766,9 @@ app.get('/api/media/download/file', async (c) => {
 // WS Room Route (must be registered before SPA fallback)
 app.get('/ws/room', handleRoomWebSocket);
 
-// Serve all static files from ./dist directory
+// Serve all static files from ./dist and ./public directories
 app.use('/*', serveStatic({ root: './dist' }));
+app.use('/*', serveStatic({ root: './public' }));
 
 // Never serve HTML for missing static files (scripts, styles, images, assets) - return 404 with correct MIME type
 app.get('/*', async (c) => {
