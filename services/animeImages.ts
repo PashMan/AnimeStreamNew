@@ -69,7 +69,23 @@ export const fetchAnimeImage = async (title: string, idMal?: string): Promise<st
       } catch (_) {}
     }
 
-    // 3. Fallback to Jikan
+// 3. Kitsu API lookup by title
+    if (cleanTitle) {
+      try {
+        const kRes = await fetch(`https://kitsu.io/api/edge/anime?filter[text]=${encodeURIComponent(cleanTitle)}&page[limit]=1`, { signal: AbortSignal.timeout(2500) });
+        if (kRes.ok) {
+          const kData = await kRes.json();
+          const first = kData?.data?.[0]?.attributes;
+          const kImg = first?.posterImage?.large || first?.posterImage?.original || first?.posterImage?.medium;
+          if (kImg) {
+            saveToStorage(cacheKey, kImg);
+            return kImg;
+          }
+        }
+      } catch (_) {}
+    }
+
+    // 4. Fallback to Jikan
     if (idMal) {
       try {
         const jRes = await fetch(`https://api.jikan.moe/v4/anime/${idMal}`, { signal: AbortSignal.timeout(2500) });
@@ -84,6 +100,13 @@ export const fetchAnimeImage = async (title: string, idMal?: string): Promise<st
       } catch (_) {}
     }
 
+    // 5. Shikimori system direct original URL
+    if (idMal) {
+      const shikiUrl = `https://shikimori.one/system/animes/original/${idMal}.jpg`;
+      saveToStorage(cacheKey, shikiUrl);
+      return shikiUrl;
+    }
+
     return null;
   })();
 
@@ -95,3 +118,88 @@ export const fetchAnimeImage = async (title: string, idMal?: string): Promise<st
     pendingRequests.delete(cacheKey);
   }
 };
+
+/**
+ * Fetch maximum resolution widescreen banner image for Hero section
+ */
+export const fetchHighResHeroBanner = async (title: string, idMal?: string): Promise<string | null> => {
+  if (!title && !idMal) return null;
+
+  const cacheKey = idMal ? `hero_banner_id_${idMal}` : `hero_banner_${title}`;
+  const cached = getFromStorage(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.data;
+  }
+
+  const cleanTitle = title ? title.split('/')[0].trim() : '';
+
+  // 1. AniList bannerImage
+  try {
+    const numId = idMal ? parseInt(idMal, 10) : NaN;
+    const query = `query ($idMal: Int, $search: String) {
+      Media(idMal: $idMal, search: $search, type: ANIME) {
+        bannerImage
+        coverImage { extraLarge large }
+      }
+    }`;
+    const vars = !isNaN(numId) ? { idMal: numId } : { search: cleanTitle };
+    const res = await fetch('https://graphql.anilist.co', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ query, variables: vars }),
+      signal: AbortSignal.timeout(3000)
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const media = data?.data?.Media;
+      if (media?.bannerImage) {
+        saveToStorage(cacheKey, media.bannerImage);
+        return media.bannerImage;
+      }
+    }
+  } catch (_) {}
+
+  // 2. Kitsu official 1920px coverImage (high-res widescreen)
+  if (cleanTitle) {
+    try {
+      const kRes = await fetch(`https://kitsu.io/api/edge/anime?filter[text]=${encodeURIComponent(cleanTitle)}&page[limit]=1`, { signal: AbortSignal.timeout(3000) });
+      if (kRes.ok) {
+        const kData = await kRes.json();
+        const first = kData?.data?.[0]?.attributes;
+        const kitsuBanner = first?.coverImage?.original || first?.coverImage?.large;
+        if (kitsuBanner) {
+          saveToStorage(cacheKey, kitsuBanner);
+          return kitsuBanner;
+        }
+      }
+    } catch (_) {}
+  }
+
+  // 3. AniList extraLarge cover (1000x1500)
+  try {
+    const numId = idMal ? parseInt(idMal, 10) : NaN;
+    const query = `query ($idMal: Int, $search: String) {
+      Media(idMal: $idMal, search: $search, type: ANIME) {
+        coverImage { extraLarge large }
+      }
+    }`;
+    const vars = !isNaN(numId) ? { idMal: numId } : { search: cleanTitle };
+    const res = await fetch('https://graphql.anilist.co', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ query, variables: vars }),
+      signal: AbortSignal.timeout(3000)
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const cover = data?.data?.Media?.coverImage?.extraLarge || data?.data?.Media?.coverImage?.large;
+      if (cover) {
+        saveToStorage(cacheKey, cover);
+        return cover;
+      }
+    }
+  } catch (_) {}
+
+  return null;
+};
+

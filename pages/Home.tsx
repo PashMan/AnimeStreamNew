@@ -16,6 +16,7 @@ import { FALLBACK_IMAGE, COLLECTIONS_DATA } from '../constants';
 import CollectionCard from '../components/CollectionCard';
 import CreateCollectionModal from '../components/CreateCollectionModal';
 import { KodikRecentUpdate, fetchRecentUpdates } from '../services/kodik';
+import { fetchHighResHeroBanner } from '../services/animeImages';
 
 function formatKodikTime(dateStr: string): string {
   if (!dateStr) return "Только что";
@@ -99,23 +100,40 @@ const Home: React.FC = () => {
     
     const loadHero = async () => {
         if (heroAnimes.length === 0) setIsHeroLoading(true);
-        const data = await fetchAnimes({ order: 'popularity', status: 'ongoing', limit: 15 }, true);
+        const data = await fetchAnimes({ order: 'popularity', status: 'ongoing', limit: 20 }, true);
         if (!isMounted) return;
         
         if (data && data.length > 0) {
-            const heroList = data.slice(0, 5);
+            // Filter out One Piece (id 21) and Detective Conan (id 235)
+            const filtered = data.filter(a => {
+                const t = (a.title || '').toLowerCase();
+                const ru = (a.russian || '').toLowerCase();
+                const idStr = String(a.id);
+                const isOnePiece = idStr === '21' || t.includes('one piece') || ru.includes('ван-пис') || ru.includes('ван пис');
+                const isConan = idStr === '235' || t.includes('detective conan') || ru.includes('детектив конан');
+                return !isOnePiece && !isConan;
+            });
+
+            const heroList = filtered.slice(0, 5);
             setHeroAnimes(heroList);
             setIsHeroLoading(false);
             
             await Promise.all(heroList.map(async (anime) => {
                 try {
-                    const details = await fetchAnimeDetails(anime.id, true);
-                    if (details && isMounted) {
+                    const [details, highResBanner] = await Promise.all([
+                        fetchAnimeDetails(anime.id, true),
+                        fetchHighResHeroBanner(anime.originalName || anime.title, anime.id)
+                    ]);
+                    if (isMounted) {
                         setHeroAnimes(prev => {
                             const next = [...prev];
                             const index = next.findIndex(a => a.id === anime.id);
                             if (index !== -1) {
-                                next[index] = { ...next[index], ...details };
+                                next[index] = { 
+                                  ...next[index], 
+                                  ...details,
+                                  bannerImage: highResBanner || details?.bannerImage || next[index].bannerImage || details?.cover || next[index].cover
+                                };
                             }
                             return next;
                         });
