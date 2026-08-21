@@ -2075,9 +2075,16 @@ const Details: React.FC = () => {
                             player.name === "Collaps"
                           );
 
+                          const isKodikIframe = finalIframeUrl && (
+                            finalIframeUrl.includes("kodik") ||
+                            player.name === "Kodik"
+                          );
+
                           const playerSrc = isCollaps && finalIframeUrl
                             ? `/api/collaps/embed?url=${encodeURIComponent(finalIframeUrl)}`
-                            : (finalIframeUrl || undefined);
+                            : isKodikIframe && finalIframeUrl
+                              ? `/api/kodik/embed?url=${encodeURIComponent(finalIframeUrl)}`
+                              : (finalIframeUrl || undefined);
 
                           console.log(
                             `%c[Player Source]%c ВЫБРАН ИСТОЧНИК: %c ${(player.name || "IFRAME").toUpperCase()} %c | Серия: ${paramEpisode || 1} | Озвучка: ${selectedTranslation?.title || "Основная"}`,
@@ -2118,10 +2125,10 @@ const Details: React.FC = () => {
                 </div>
 
                 {/* Voice Translations & Clean Episode List Widget */}
-                {anime && selectedPlayer !== "Kodik" && !selectedPlayer?.toLowerCase().includes("kodik") && (
-                  <div className="bg-[#1c1d21]/60 border border-white/5 p-5 md:p-6 rounded-[1.5rem] md:rounded-[2rem] flex flex-col gap-6 font-sans shadow-xl backdrop-blur-sm">
+                {anime && (
+                  <div className="bg-[#1c1d21]/80 border border-white/10 p-5 md:p-6 rounded-[1.5rem] md:rounded-[2rem] flex flex-col gap-6 font-sans shadow-xl backdrop-blur-sm relative z-20">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-white/5">
-                      <div className="relative flex-1 max-w-md">
+                      <div className="relative flex-1 max-w-md z-30">
                         {(() => {
                           const activeT = selectedTranslation || translations[0];
                           const activeCleanTitle = activeT ? getCleanTitle(activeT.title) : "Дубляж KamiAnime";

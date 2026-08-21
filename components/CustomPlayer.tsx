@@ -972,22 +972,50 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
     // Keep selected quality valid across provider/quality list changes
     useEffect(() => {
       if (availableQualities.length > 0) {
-        const isValid = availableQualities.some((q) => q.html === selectedQuality);
-        if (!isValid) {
-          if (selectedQuality.includes("4K")) {
-            const ai1080 = availableQualities.find((q) => q.html.includes("1080p (Anime4K"));
-            if (ai1080) {
-              setSelectedQuality(ai1080.html);
-              return;
-            }
-          } else if (selectedQuality.includes("1080p (Anime4K")) {
-            const ai4k = availableQualities.find((q) => q.html.includes("4K"));
-            if (ai4k) {
-              setSelectedQuality(ai4k.html);
-              return;
-            }
+        const savedQ = localStorage.getItem("kami_player_selected_quality") || selectedQuality;
+        const exactMatch = availableQualities.find((q) => q.html === savedQ);
+        if (exactMatch) {
+          setSelectedQuality(exactMatch.html);
+          selectedQualityRef.current = exactMatch.html;
+          return;
+        }
+        // Match closest quality category if exact label differs
+        if (savedQ.includes("4K")) {
+          const match4k = availableQualities.find((q) => q.html.includes("4K") || q.targetH === 2160);
+          if (match4k) {
+            setSelectedQuality(match4k.html);
+            selectedQualityRef.current = match4k.html;
+            return;
           }
-          setSelectedQuality("Авто");
+        }
+        if (savedQ.includes("1080")) {
+          const match1080 = availableQualities.find((q) => q.html.includes("1080") || q.targetH === 1080);
+          if (match1080) {
+            setSelectedQuality(match1080.html);
+            selectedQualityRef.current = match1080.html;
+            return;
+          }
+        }
+        if (savedQ.includes("720")) {
+          const match720 = availableQualities.find((q) => q.html.includes("720"));
+          if (match720) {
+            setSelectedQuality(match720.html);
+            selectedQualityRef.current = match720.html;
+            return;
+          }
+        }
+        if (savedQ.includes("480")) {
+          const match480 = availableQualities.find((q) => q.html.includes("480"));
+          if (match480) {
+            setSelectedQuality(match480.html);
+            selectedQualityRef.current = match480.html;
+            return;
+          }
+        }
+        const auto = availableQualities.find((q) => q.html === "Авто") || availableQualities[0];
+        if (auto) {
+          setSelectedQuality(auto.html);
+          selectedQualityRef.current = auto.html;
         }
       }
     }, [availableQualities]);
@@ -1670,10 +1698,21 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                   updateQualitiesFromLevels(parsedLevels);
 
                   const curQ = selectedQualityRef.current;
-                  const maxLvl = Math.max(0, parsedLevels.length - 1);
-                  if (curQ.includes("4K") || curQ.includes("1080p (Anime4K")) {
-                    hls.currentLevel = maxLvl;
-                    hls.loadLevel = maxLvl;
+                  if (curQ && curQ !== "Авто") {
+                    if (curQ.includes("4K") || curQ.includes("1080p (Anime4K")) {
+                      const maxLvl = Math.max(0, parsedLevels.length - 1);
+                      hls.nextLevel = maxLvl;
+                      if (hls.loadLevel !== undefined) hls.loadLevel = maxLvl;
+                    } else {
+                      const numericH = parseInt(curQ.replace(/\D/g, ""), 10);
+                      if (!isNaN(numericH) && numericH > 0) {
+                        const matchedIdx = parsedLevels.findIndex((l: any) => l.height === numericH);
+                        if (matchedIdx !== -1) {
+                          hls.nextLevel = matchedIdx;
+                          if (hls.loadLevel !== undefined) hls.loadLevel = matchedIdx;
+                        }
+                      }
+                    }
                   }
                 });
 
@@ -1767,21 +1806,10 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
           if (!art) return;
           const curr = art.currentTime;
           const dur = art.duration;
+          if (curr > 0) {
+            lastPlaybackPosRef.current = curr;
+          }
           saveProgress(curr, dur);
-
-          // Opening badge: between 10s and 110s
-          if (curr >= 10 && curr <= 110) {
-            setShowSkipOpBtn(true);
-          } else {
-            setShowSkipOpBtn(false);
-          }
-
-          // Ending badge: in last 85 seconds of the episode (when dur > 180s)
-          if (dur > 180 && curr >= dur - 85) {
-            setShowSkipEdBtn(true);
-          } else {
-            setShowSkipEdBtn(false);
-          }
         });
 
         // Auto-switch to next episode when current video ends
@@ -1930,12 +1958,14 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
           } else {
             hls.nextLevel = targetLvl;
             if (hls.loadLevel !== undefined) hls.loadLevel = targetLvl;
-            hls.currentLevel = targetLvl;
           }
 
-          if (currentPos > 0 && art.video && Math.abs(art.currentTime - currentPos) > 1.5) {
-            art.currentTime = currentPos;
-            if (wasPlaying && art.video.paused) {
+          if (currentPos > 0) {
+            lastPlaybackPosRef.current = currentPos;
+            if (art.video && Math.abs(art.currentTime - currentPos) > 2) {
+              art.currentTime = currentPos;
+            }
+            if (wasPlaying && art.video && art.video.paused) {
               art.video.play().catch(() => {});
             }
           }

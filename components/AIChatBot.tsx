@@ -11,6 +11,7 @@ interface ChatMessage {
 
 const CHAR_LIMIT = 150;
 const COOLDOWN_SEC = 8;
+const AI_AVATAR_SRC = "/ai-chat.jpg";
 
 export const AIChatBot: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
