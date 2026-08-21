@@ -14,7 +14,7 @@ import { useDmcaBlocks } from '../store/dmcaBlocks';
 import { motion, PanInfo } from 'motion/react';
 
 const Profile: React.FC = () => {
-  const { user, openAuthModal, updateProfile, isVip } = useAuth();
+  const { user, openAuthModal, updateProfile, isVip, openPremiumModal } = useAuth();
   const { slugBlocks } = useSlugBlocks();
   const { dmcaBlocks } = useDmcaBlocks();
   const [allFavIds, setAllFavIds] = useState<string[]>([]);
@@ -109,7 +109,14 @@ const Profile: React.FC = () => {
       return;
     }
 
-    if (file.size > 10 * 1024 * 1024) { // 10MB limit before compression
+    const isGif = file.type === 'image/gif' || file.name.toLowerCase().endsWith('.gif');
+    if (isGif && !isVip) {
+      setUploadError('Анимированные GIF-аватарки доступны только владельцам Premium!');
+      openPremiumModal('Анимированные GIF-аватарки и баннеры');
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) { // 10MB limit
       setUploadError('Файл слишком большой. Максимум 10МБ');
       return;
     }
@@ -118,16 +125,19 @@ const Profile: React.FC = () => {
     setUploadError(null);
 
     try {
-      // Compression options
-      const options = {
-        maxSizeMB: 0.5,
-        maxWidthOrHeight: 1024,
-        useWebWorker: true,
-      };
+      let uploadFile: File = file;
 
-      const compressedFile = await imageCompression(file, options);
-      
-      const publicUrl = await db.uploadAvatar(compressedFile, user.id || user.email);
+      // Only compress non-GIF files, because compression flattens animated GIFs into static images
+      if (!isGif) {
+        const options = {
+          maxSizeMB: 0.5,
+          maxWidthOrHeight: 1024,
+          useWebWorker: true,
+        };
+        uploadFile = await imageCompression(file, options);
+      }
+
+      const publicUrl = await db.uploadAvatar(uploadFile, user.id || user.email);
       if (publicUrl) {
         setEditAvatar(publicUrl);
         // If not in editing mode (e.g. clicking camera icon), save immediately
@@ -156,6 +166,13 @@ const Profile: React.FC = () => {
       return;
     }
 
+    const isGif = file.type === 'image/gif' || file.name.toLowerCase().endsWith('.gif');
+    if (isGif && !isVip) {
+      setUploadError('Анимированные GIF-баннеры и фоны доступны только владельцам Premium!');
+      openPremiumModal('Анимированные GIF-аватарки и баннеры');
+      return;
+    }
+
     if (file.size > 10 * 1024 * 1024) { 
       setUploadError('Файл слишком большой. Максимум 10МБ');
       return;
@@ -165,38 +182,42 @@ const Profile: React.FC = () => {
     setUploadError(null);
 
     try {
-      const img = new window.Image();
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      const reader = new FileReader();
+      let compressedFile: File = file;
 
-      await new Promise((resolve, reject) => {
-        reader.onload = e => { img.src = e.target?.result as string; };
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-        img.onload = () => {
-          let { width, height } = img;
-          const MAX_SIZE = 1920; 
-          if (width > MAX_SIZE || height > MAX_SIZE) {
-            if (width > height) {
-              height = Math.round((height * MAX_SIZE) / width);
-              width = MAX_SIZE;
-            } else {
-              width = Math.round((width * MAX_SIZE) / height);
-              height = MAX_SIZE;
+      if (!isGif) {
+        const img = new window.Image();
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        const reader = new FileReader();
+
+        await new Promise((resolve, reject) => {
+          reader.onload = e => { img.src = e.target?.result as string; };
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+          img.onload = () => {
+            let { width, height } = img;
+            const MAX_SIZE = 1920; 
+            if (width > MAX_SIZE || height > MAX_SIZE) {
+              if (width > height) {
+                height = Math.round((height * MAX_SIZE) / width);
+                width = MAX_SIZE;
+              } else {
+                width = Math.round((width * MAX_SIZE) / height);
+                height = MAX_SIZE;
+              }
             }
-          }
-          canvas.width = width;
-          canvas.height = height;
-          ctx?.drawImage(img, 0, 0, width, height);
-          resolve(null);
-        };
-      });
+            canvas.width = width;
+            canvas.height = height;
+            ctx?.drawImage(img, 0, 0, width, height);
+            resolve(null);
+          };
+        });
 
-      const compressedBase64 = canvas.toDataURL('image/webp', 0.85);
-      const res = await fetch(compressedBase64);
-      const blob = await res.blob();
-      const compressedFile = new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".webp", { type: 'image/webp' });
+        const compressedBase64 = canvas.toDataURL('image/webp', 0.85);
+        const res = await fetch(compressedBase64);
+        const blob = await res.blob();
+        compressedFile = new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".webp", { type: 'image/webp' });
+      }
 
       const url = await db.uploadAvatar(compressedFile, (user.id || user.email) + '_' + suffix);
       

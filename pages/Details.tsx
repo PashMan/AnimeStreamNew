@@ -256,7 +256,56 @@ const Details: React.FC = () => {
     const animeTitle = anime.title || anime.originalName || '';
     const altTitle = anime.originalName || '';
     const currentEp = paramEpisode ? parseInt(paramEpisode, 10) : 1;
-    fetch(`/api/manga/anime-bridge?title=${encodeURIComponent(animeTitle)}&altTitle=${encodeURIComponent(altTitle)}&episode=${currentEp}&shikimoriId=${anime.id}`)
+
+    // Detect season from translation metadata or combined title strings
+    let detectedSeason: number | undefined = undefined;
+    if (selectedTranslation && (selectedTranslation as any).season) {
+      const s = Number((selectedTranslation as any).season);
+      if (!isNaN(s) && s > 0) detectedSeason = s;
+    }
+
+    if (!detectedSeason) {
+      const searchStr = `${anime.title || ''} ${anime.originalName || ''} ${selectedTranslation?.title || ''}`;
+      const seasonMatch = 
+        searchStr.match(/(\d+)\s*[-_]?\s*сезон/i) ||
+        searchStr.match(/сезон\s*(\d+)/i) ||
+        searchStr.match(/(\d+)(?:nd|rd|st|th)?\s*season/i) ||
+        searchStr.match(/season\s*(\d+)/i) ||
+        searchStr.match(/\bS(\d+)\b/i) ||
+        searchStr.match(/\bTV[-_\s]*(\d+)\b/i) ||
+        searchStr.match(/\bPart[-_\s]*(\d+)\b/i) ||
+        searchStr.match(/\bЧасть[-_\s]*(\d+)\b/i);
+
+      if (seasonMatch && seasonMatch[1]) {
+        const s = parseInt(seasonMatch[1], 10);
+        if (s > 0 && s <= 20) detectedSeason = s;
+      }
+
+      if (!detectedSeason) {
+        const trailingMatch = (anime.title || '').trim().match(/^(.*?)\s+(\d+)$/);
+        if (trailingMatch) {
+          const s = parseInt(trailingMatch[2], 10);
+          if (s > 0 && s <= 10) detectedSeason = s;
+        }
+      }
+
+      if (!detectedSeason) {
+        const lower = searchStr.toLowerCase();
+        if (lower.includes('деревня кузнецов') || lower.includes('swordsmith village')) detectedSeason = 3;
+        else if (lower.includes('квартал красных фонарей') || lower.includes('entertainment district') || lower.includes('yuukaku')) detectedSeason = 2;
+        else if (lower.includes('поезд «бесконечный»') || lower.includes('mugen train')) detectedSeason = 2;
+        else if (lower.includes('тренировка столпов') || lower.includes('hashira training')) detectedSeason = 4;
+        else if (lower.includes('инцидент в сибуе') || lower.includes('shibuya incident')) detectedSeason = 2;
+        else if (lower.includes('тысячелетняя кровавая война') || lower.includes('thousand-year blood war')) detectedSeason = 2;
+      }
+    }
+
+    let bridgeUrl = `/api/manga/anime-bridge?title=${encodeURIComponent(animeTitle)}&altTitle=${encodeURIComponent(altTitle)}&episode=${currentEp}&shikimoriId=${anime.id}`;
+    if (detectedSeason) {
+      bridgeUrl += `&season=${detectedSeason}`;
+    }
+
+    fetch(bridgeUrl)
       .then(res => res.json())
       .then(data => {
         if (data && data.success) {
@@ -264,7 +313,7 @@ const Details: React.FC = () => {
         }
       })
       .catch(err => console.warn('Anime-Manga bridge fetch error:', err));
-  }, [anime, paramEpisode]);
+  }, [anime, paramEpisode, selectedTranslation]);
 
   const [resolvedStream, setResolvedStream] = useState<{
     url: string;
@@ -2350,78 +2399,32 @@ const Details: React.FC = () => {
                   </div>
                 )}
 
-                {/* Separate Manga Sync Card (Placed below episodes and translations) */}
+                {/* Manga Card */}
                 {anime && (
-                  <div className={`p-4 sm:p-5 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 backdrop-blur-sm shadow-xl relative overflow-hidden group transition-all ${
-                    mangaBridge?.isSeasonEnd
-                      ? "bg-gradient-to-r from-purple-950/80 via-[#181920]/95 to-indigo-950/80 border border-purple-500/40 ring-1 ring-purple-500/20"
-                      : "bg-[#181920]/90 border border-white/10"
-                  }`}>
+                  <div className="p-4 sm:p-5 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 backdrop-blur-sm shadow-xl relative overflow-hidden group transition-all bg-[#181920]/90 border border-white/10">
                     <div className="flex items-center gap-3.5 z-10">
-                      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-inner ${
-                        mangaBridge?.isSeasonEnd
-                          ? "bg-purple-500/25 border border-purple-400/50 text-purple-300 animate-pulse"
-                          : "bg-[#8B5CF6]/15 border border-[#8B5CF6]/30 text-[#A78BFA]"
-                      }`}>
+                      <div className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-inner bg-[#8B5CF6]/15 border border-[#8B5CF6]/30 text-[#A78BFA]">
                         <BookOpen className="w-6 h-6" />
                       </div>
                       <div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <h4 className="text-sm font-black text-white flex items-center gap-2">
-                            Синхронизация с мангой
-                          </h4>
-                          {mangaBridge?.mappedChapter && (
-                            <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[11px] font-extrabold border border-emerald-500/30">
-                              {paramEpisode || "1"} серия ➔ {mangaBridge.mappedChapter} глава
-                            </span>
-                          )}
-                          {mangaBridge?.isSeasonEnd && mangaBridge?.nextChapterToRead && (
-                            <span className="px-2.5 py-0.5 rounded-full bg-purple-500/30 text-purple-200 text-[11px] font-black border border-purple-400/40 shadow-sm">
-                              ✨ Сюжет продолжается с главы №{mangaBridge.nextChapterToRead}
-                            </span>
-                          )}
-                          {mangaBridge?.source === 'cloudflare_d1' && (
-                            <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 text-[10px] font-bold border border-blue-500/30">
-                              Cloudflare D1
-                            </span>
-                          )}
-                          {mangaBridge?.volume && (
-                            <span className="px-2 py-0.5 rounded bg-white/10 text-slate-300 text-[10px] font-bold">
-                              Том {mangaBridge.volume}
-                            </span>
-                          )}
-                          {!isVip && (
-                            <span className="px-2 py-0.5 rounded bg-white/10 text-slate-300 text-[10px] font-black uppercase flex items-center gap-1 border border-white/10">
-                              <Crown className="w-2.5 h-2.5 text-[#8B5CF6]" /> Premium
-                            </span>
-                          )}
-                        </div>
+                        <h4 className="text-sm font-black text-white flex items-center gap-2">
+                          Манга по этому аниме
+                        </h4>
                         <p className="text-xs text-slate-300 mt-1 font-medium leading-relaxed max-w-xl">
-                          {mangaBridge?.adaptationSummary || `Продолжить чтение манги с момента окончания ${paramEpisode || "1"} серии`}
+                          Читайте оригинальную мангу «{anime.title || anime.originalName}» онлайн в удобном ридере
                         </p>
                       </div>
                     </div>
 
                     <button
                       onClick={() => {
-                        if (!isVip) {
-                          openPremiumModal("Продолжить читать мангу с момента конца серии");
-                          return;
-                        }
-                        const queryTitle = mangaBridge?.mangaTitle || anime?.title || anime?.originalName || "";
-                        const targetChapter = mangaBridge?.isSeasonEnd && mangaBridge?.nextChapterToRead 
-                          ? mangaBridge.nextChapterToRead 
-                          : (mangaBridge?.mappedChapter || paramEpisode || 1);
-                        openMangaPage(queryTitle, paramEpisode || 1, targetChapter);
+                        const queryTitle = anime?.title || anime?.originalName || "";
+                        navigate(`/manga?search=${encodeURIComponent(queryTitle)}`);
                       }}
                       className="px-5 py-3 bg-[#8B5CF6] hover:bg-[#7C3AED] text-white font-black text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer flex items-center gap-2 shrink-0 self-stretch sm:self-auto justify-center shadow-lg shadow-[#8B5CF6]/30 z-10"
                     >
                       <BookOpen className="w-4 h-4" />
-                      <span>
-                        {mangaBridge?.isSeasonEnd && mangaBridge?.nextChapterToRead
-                          ? `Продолжить с главы №${mangaBridge.nextChapterToRead}`
-                          : (mangaBridge?.mappedChapter ? `Читать ${mangaBridge.mappedChapter} главу` : 'Читать мангу')}
-                      </span>
+                      <span>Перейти к манге</span>
                     </button>
                   </div>
                 )}

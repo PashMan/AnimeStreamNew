@@ -580,7 +580,7 @@ function parseMangaUpdatesSeason(startStr: string, endStr: string, episodeNum: n
 /**
  * Use Gemini 3.7 Flash API to resolve exact Anime Episode to Manga Chapter if available
  */
-async function resolveViaGemini(animeTitle: string, episodeNum: number): Promise<{
+async function resolveViaGemini(animeTitle: string, episodeNum: number, seasonNum: number = 1): Promise<{
   chapter: number | string;
   range?: string;
   volume?: number | string;
@@ -592,14 +592,14 @@ async function resolveViaGemini(animeTitle: string, episodeNum: number): Promise
   try {
     const ai = new GoogleGenAI({ apiKey: geminiKey });
     const prompt = `Ты база данных соответствия аниме и манги.
-Аниме: "${animeTitle}", Серия: ${episodeNum}.
+Аниме: "${animeTitle}", Сезон: ${seasonNum}, Серия в сезоне: ${episodeNum}.
 Определи точную главу манги, которую адаптирует эта серия (или с какой главы продолжать чтение).
 Ответь СТРОГО в формате JSON без кавычек markdown:
 {
   "chapter": 17,
   "range": "16-17",
   "volume": 3,
-  "summary": "11 серия адаптирует 16-17 главы манги. Читать рекомендуется с 17 главы."
+  "summary": "11 серия (${seasonNum} сезон) адаптирует 16-17 главы манги. Читать рекомендуется с 17 главы."
 }`;
 
     const response = await ai.models.generateContent({
@@ -790,7 +790,7 @@ export async function resolveAnimeEpisodeToManga(
   }
 
   // 3. Query Gemini AI for exact intelligence if key exists
-  const aiResult = await resolveViaGemini(rawTitle, ep);
+  const aiResult = await resolveViaGemini(rawTitle, ep, seasonNum);
   if (aiResult && aiResult.chapter) {
     return {
       success: true,
@@ -885,6 +885,29 @@ export async function resolveAnimeEpisodeWithD1(
     if (altInfo.seasonExplicitlySet) {
       seasonNum = altInfo.seasonNumber;
       isSeasonExplicit = true;
+    }
+  }
+
+  // If season is still ambiguous and shikimoriId is provided, query Shikimori for full anime title
+  if (!isSeasonExplicit && shikimoriId) {
+    try {
+      const shikiRes = await fetch(`https://shikimori.one/api/animes/${shikimoriId}`, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) KamiAnime/1.0',
+          'Accept': 'application/json'
+        }
+      });
+      if (shikiRes.ok) {
+        const shikiData = await shikiRes.json() as any;
+        const shikiFull = `${shikiData.russian || ''} ${shikiData.name || ''}`;
+        const shikiInfo = extractSeasonInfo(shikiFull);
+        if (shikiInfo.seasonExplicitlySet) {
+          seasonNum = shikiInfo.seasonNumber;
+          isSeasonExplicit = true;
+        }
+      }
+    } catch (e) {
+      // Ignore network errors for background metadata fetch
     }
   }
 

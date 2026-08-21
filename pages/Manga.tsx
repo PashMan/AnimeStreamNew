@@ -5,10 +5,18 @@ import {
   BookOpen, Star, ArrowLeft, ChevronRight, ChevronLeft, Heart, 
   Search, Loader2, ShieldAlert, BookX, ChevronDown, Layers, Settings, 
   Sliders, Eye, MessageSquare, Clock, Filter, ThumbsUp, 
-  Calendar, Flame, Compass, RefreshCw, X
+  Calendar, Flame, Compass, RefreshCw, X, Download, HardDriveDownload, 
+  CheckCircle2, Trash2, WifiOff
 } from 'lucide-react';
 import SEO from '../components/SEO';
 import { useAuth } from '../context/AuthContext';
+import { 
+  saveChapterOffline, 
+  getOfflineChapter, 
+  getAllOfflineChapters, 
+  deleteOfflineChapter, 
+  OfflineChapter 
+} from '../services/offlineManga';
 
 interface MangaItem {
   id: string;
@@ -38,9 +46,67 @@ interface HistoryItem {
 }
 
 const Manga: React.FC = () => {
-  const { user } = useAuth();
+  const { user, isVip, openPremiumModal } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const activeMangaId = searchParams.get('mangaId');
+
+  // Offline Manga Download States
+  const [downloadingChapterId, setDownloadingChapterId] = useState<string | null>(null);
+  const [downloadProgress, setDownloadProgress] = useState<{ current: number; total: number } | null>(null);
+  const [downloadedChapterIds, setDownloadedChapterIds] = useState<string[]>([]);
+  const [offlineChaptersList, setOfflineChaptersList] = useState<OfflineChapter[]>([]);
+
+  const refreshDownloadedChapters = async () => {
+    try {
+      const all = await getAllOfflineChapters();
+      setOfflineChaptersList(all);
+      setDownloadedChapterIds(all.map(c => c.id));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  useEffect(() => {
+    refreshDownloadedChapters();
+  }, []);
+
+  const handleDownloadChapter = async (e: React.MouseEvent, ch: ChapterItem, manga: MangaItem) => {
+    e.stopPropagation();
+    if (!isVip) {
+      openPremiumModal('Оффлайн-скачивание глав манги');
+      return;
+    }
+
+    if (downloadedChapterIds.includes(ch.id)) {
+      if (confirm(`Удалить главу ${ch.chapter} из оффлайн-памяти?`)) {
+        await deleteOfflineChapter(ch.id);
+        await refreshDownloadedChapters();
+      }
+      return;
+    }
+
+    setDownloadingChapterId(ch.id);
+    setDownloadProgress({ current: 0, total: 100 });
+
+    try {
+      const res = await fetch(`/api/manga/chapter/${ch.id}/pages`);
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.pages && data.pages.length > 0) {
+        await saveChapterOffline(manga, ch, data.pages, (curr, tot) => {
+          setDownloadProgress({ current: curr, total: tot });
+        });
+        await refreshDownloadedChapters();
+      } else {
+        alert('Не удалось загрузить страницы для оффлайн сохранения');
+      }
+    } catch (err) {
+      console.error('Download error:', err);
+      alert('Ошибка при скачивании главы');
+    } finally {
+      setDownloadingChapterId(null);
+      setDownloadProgress(null);
+    }
+  };
 
   useEffect(() => {
     if (searchParams.get('clear_cache') === 'true') {
@@ -716,6 +782,20 @@ const Manga: React.FC = () => {
       localStorage.setItem('kami_manga_history_v2', JSON.stringify(updated));
     }
 
+    // Try reading from IndexedDB offline storage first
+    try {
+      const offlineRecord = await getOfflineChapter(chapterObj.id);
+      if (offlineRecord && offlineRecord.pages && offlineRecord.pages.length > 0) {
+        console.log(`[KamiManga Offline] Loaded ${offlineRecord.pages.length} pages from IndexedDB offline storage.`);
+        setPages(offlineRecord.pages);
+        setChapterPagesError(null);
+        setPagesLoading(false);
+        return;
+      }
+    } catch (err) {
+      console.warn('[KamiManga Offline] IndexedDB lookup error:', err);
+    }
+
     console.log(`[KamiManga] Loading pages for chapter: ${chapterObj.title || 'Chapter'} (ID: ${chapterObj.id})`);
     try {
       const res = await fetch(`/api/manga/chapter/${chapterObj.id}/pages`);
@@ -1103,17 +1183,27 @@ const Manga: React.FC = () => {
                         <span className="text-xs font-black uppercase text-slate-500 tracking-widest">Инициализация структуры глав...</span>
                       </div>
                     ) : (() => {
+                      const sanitizeGroupName = (name: string) => {
+                        if (!name) return "KamiManga Trans";
+                        const lower = name.toLowerCase();
+                        if (lower.includes("readmanga") || lower.includes("mangaread") || lower.includes("zazaza")) {
+                          return "Команда перевода";
+                        }
+                        return name;
+                      };
+
                       // Collect all unique translator groups and counts
                       const groupsMap: Record<string, number> = {};
                       chapters.forEach((ch) => {
-                        const gName = ch.group || "Внешний переводчик";
+                        const gName = sanitizeGroupName(ch.group);
                         groupsMap[gName] = (groupsMap[gName] || 0) + 1;
                       });
                       const availableGroups = Object.keys(groupsMap);
 
                       // Filter chapters by both translation group and chapter search query
                       const filtered = chapters.filter((ch) => {
-                        const matchGroup = !selectedTranslationGroup || (ch.group || "Внешний переводчик") === selectedTranslationGroup;
+                        const gName = sanitizeGroupName(ch.group);
+                        const matchGroup = !selectedTranslationGroup || gName === selectedTranslationGroup;
                         const matchSearch = ch.chapter.toLowerCase().includes(chapterSearchQuery.toLowerCase()) || 
                           (ch.title && ch.title.toLowerCase().includes(chapterSearchQuery.toLowerCase()));
                         return matchGroup && matchSearch;
@@ -1170,36 +1260,58 @@ const Manga: React.FC = () => {
                           ) : (
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[450px] overflow-y-auto pr-2 custom-scrollbar">
                               {filtered.map((ch) => {
-                                const isTargetBridge = animeBridgeData && (
-                                  Math.abs(parseFloat(String(ch.chapter || '0')) - parseFloat(String(animeBridgeData.mappedChapter || '0'))) < 0.6
-                                );
+                                const groupDisplayName = sanitizeGroupName(ch.group);
+                                const isDownloaded = downloadedChapterIds.includes(ch.id);
+                                const isDownloading = downloadingChapterId === ch.id;
 
                                 return (
-                                  <button
+                                  <div
                                     key={ch.id}
                                     onClick={() => startReadingChapter(ch)}
-                                    className={`p-3.5 rounded-2xl text-left transition-all active:scale-[0.98] flex items-center justify-between cursor-pointer border ${
-                                      isTargetBridge
-                                        ? 'bg-gradient-to-r from-[#8B5CF6]/20 via-purple-950/40 to-emerald-950/40 border-emerald-400 shadow-xl shadow-emerald-500/10 ring-2 ring-emerald-500/30'
-                                        : 'bg-[#18191d] border-white/5 hover:border-[#8B5CF6] hover:bg-[#8B5CF6]/5'
-                                    }`}
+                                    className="p-3.5 rounded-2xl text-left transition-all active:scale-[0.98] flex items-center justify-between cursor-pointer border bg-[#18191d] border-white/5 hover:border-[#8B5CF6] hover:bg-[#8B5CF6]/5 group"
                                   >
                                     <div className="min-w-0 pr-2">
                                       <div className="flex items-center gap-2 flex-wrap">
-                                        <span className="text-[8px] font-black uppercase text-[#8B5CF6] tracking-wider block">ГРУППА: {ch.group || "KamiManga Trans"}</span>
-                                        {isTargetBridge && (
-                                          <span className="px-2 py-0.5 rounded bg-emerald-500 text-black font-black text-[9px] uppercase tracking-wider animate-pulse">
-                                            🎯 Точно для {animeBridgeData.episode} серии
+                                        <span className="text-[8px] font-black uppercase text-[#8B5CF6] tracking-wider block">ГРУППА: {groupDisplayName}</span>
+                                        {isDownloaded && (
+                                          <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-black text-[8px] uppercase tracking-wider flex items-center gap-0.5 border border-emerald-500/30">
+                                            <CheckCircle2 className="w-2.5 h-2.5" /> Оффлайн
                                           </span>
                                         )}
                                       </div>
-                                      <h4 className={`text-xs font-black mt-0.5 ${isTargetBridge ? 'text-emerald-300' : 'text-white'}`}>
+                                      <h4 className="text-xs font-black mt-0.5 text-white">
                                         Глава {ch.chapter}
                                       </h4>
                                       <p className="text-[10px] text-slate-400 font-semibold truncate mt-0.5">{ch.title || `Раздел`}</p>
                                     </div>
-                                    <ChevronRight className={`w-4 h-4 shrink-0 ${isTargetBridge ? 'text-emerald-400' : 'text-slate-600'}`} />
-                                  </button>
+
+                                    <div className="flex items-center gap-2 shrink-0">
+                                      <button
+                                        type="button"
+                                        onClick={(e) => handleDownloadChapter(e, ch, selectedManga!)}
+                                        title={isDownloaded ? "Сохранено оффлайн (нажмите для удаления)" : "Скачать главу для чтения без интернета"}
+                                        className={`p-2 rounded-xl border transition-all cursor-pointer ${
+                                          isDownloaded
+                                            ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/30'
+                                            : isDownloading
+                                            ? 'bg-[#8B5CF6]/20 border-[#8B5CF6]/40 text-[#8B5CF6]'
+                                            : 'bg-white/5 border-white/10 text-slate-400 hover:text-white hover:bg-white/10'
+                                        }`}
+                                      >
+                                        {isDownloading ? (
+                                          <div className="flex items-center gap-1 text-[9px] font-black">
+                                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                            <span>{downloadProgress ? `${downloadProgress.current}/${downloadProgress.total}` : ''}</span>
+                                          </div>
+                                        ) : isDownloaded ? (
+                                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                                        ) : (
+                                          <Download className="w-3.5 h-3.5" />
+                                        )}
+                                      </button>
+                                      <ChevronRight className="w-4 h-4 shrink-0 text-slate-600 group-hover:text-white transition-colors" />
+                                    </div>
+                                  </div>
                                 );
                               })}
                             </div>
@@ -1321,6 +1433,71 @@ const Manga: React.FC = () => {
                 Манга
               </span>
             </div>
+
+            {/* SECTION 0: ОФФЛАЙН МАНГА (Если есть скачанные главы) */}
+            {offlineChaptersList.length > 0 && (
+              <div className="space-y-4 bg-purple-950/20 border border-purple-500/20 p-4 sm:p-5 rounded-3xl animate-in fade-in duration-300">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-black uppercase tracking-widest text-white flex items-center gap-2">
+                    <HardDriveDownload className="w-4 h-4 text-[#8B5CF6]" /> Оффлайн манга <span className="text-xs text-purple-300 font-bold">({offlineChaptersList.length} глав скачано)</span>
+                  </h2>
+                  <span className="text-[10px] text-emerald-400 font-extrabold uppercase px-2.5 py-1 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center gap-1.5">
+                    <WifiOff className="w-3.5 h-3.5" /> Доступно без интернета
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                  {offlineChaptersList.map((off) => (
+                    <div
+                      key={off.id}
+                      onClick={() => {
+                        const chItem: ChapterItem = {
+                          id: off.id,
+                          chapter: off.chapterNumber,
+                          volume: '1',
+                          title: off.chapterTitle || `Глава ${off.chapterNumber}`,
+                          group: off.group || 'Оффлайн',
+                          publishAt: ''
+                        };
+                        const mangaItem: MangaItem = {
+                          id: off.mangaId,
+                          title: off.mangaTitle,
+                          originalTitle: '',
+                          rating: 5,
+                          genres: [],
+                          status: '',
+                          description: '',
+                          cover: off.mangaCover || FALLBACK_COVER
+                        };
+                        startReadingChapter(chItem, mangaItem);
+                      }}
+                      className="p-3 bg-[#18191d] hover:bg-[#1f2026] border border-white/5 rounded-2xl flex items-center justify-between cursor-pointer transition-all group"
+                    >
+                      <div className="flex items-center gap-3 min-w-0 pr-2">
+                        {off.mangaCover && (
+                          <img src={off.mangaCover} alt="" className="w-9 h-12 object-cover rounded shadow shrink-0 border border-white/5" />
+                        )}
+                        <div className="min-w-0">
+                          <h4 className="text-xs font-bold text-white truncate">{off.mangaTitle}</h4>
+                          <p className="text-[10px] font-black text-[#8B5CF6] uppercase mt-0.5">Глава {off.chapterNumber} ({off.pagesCount} стр.)</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          await deleteOfflineChapter(off.id);
+                          await refreshDownloadedChapters();
+                        }}
+                        title="Удалить из оффлайн памяти"
+                        className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-all cursor-pointer"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* SECTION 1: СВЕРХУ НЕДАВНИЕ ДОБАВЛЕНИЯ */}
             <div className="space-y-4">
