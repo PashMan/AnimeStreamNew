@@ -36,9 +36,9 @@ export const onRequest = async (context: any) => {
   headers.set('Referer', 'https://shikimori.one/');
   headers.set('Accept', 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8');
 
-  // Extract anime ID from path
-  const animeIdMatch = path.match(/(?:animes|original|preview|x96|x48)\/(\d+)\.(?:jpg|png|webp|jpeg)/i) || 
-                       path.match(/\/(\d+)\.(?:jpg|png|webp|jpeg)/i) || 
+  // Extract anime ID from path (handles standard 12345.jpg and serial-12345.jpg)
+  const animeIdMatch = path.match(/(?:animes|original|preview|x96|x48)\/(?:serial-)?(\d+)\.(?:jpg|png|webp|jpeg)/i) || 
+                       path.match(/\/(?:serial-)?(\d+)\.(?:jpg|png|webp|jpeg)/i) || 
                        url.search.match(/id=(\d+)/);
   const animeId = animeIdMatch ? parseInt(animeIdMatch[1], 10) : null;
 
@@ -47,13 +47,15 @@ export const onRequest = async (context: any) => {
   // 2a. Shikimori CDN mirrors (parallel)
   if (!isExplicitlyMissing) {
     const mirrors = [
+      `https://desu.shikimori.one${path}${url.search}`,
       `https://shikimori.one${path}${url.search}`,
-      `https://desu.shikimori.one${path}${url.search}`
+      `https://desu.shikimori.me${path}${url.search}`,
+      `https://shikimori.me${path}${url.search}`
     ];
 
     for (const mirrorUrl of mirrors) {
       fetchTasks.push(
-        fetch(mirrorUrl, { method: 'GET', headers, signal: AbortSignal.timeout(1500) }).then(r => {
+        fetch(mirrorUrl, { method: 'GET', headers, signal: AbortSignal.timeout(3500) }).then(r => {
           if (r.ok && !r.url.includes('missing') && !r.url.includes('none.png')) return r;
           throw new Error('Shikimori mirror miss');
         })
@@ -62,7 +64,7 @@ export const onRequest = async (context: any) => {
   }
 
   // 2b. AniList GraphQL parallel task (HD covers)
-  if (animeId) {
+  if (animeId && animeId > 0) {
     fetchTasks.push(
       (async () => {
         const anilistQuery = `query ($idMal: Int) { Media(idMal: $idMal, type: ANIME) { coverImage { extraLarge large medium } bannerImage } }`;
@@ -70,7 +72,7 @@ export const onRequest = async (context: any) => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
           body: JSON.stringify({ query: anilistQuery, variables: { idMal: animeId } }),
-          signal: AbortSignal.timeout(2200)
+          signal: AbortSignal.timeout(3500)
         });
         if (aniRes.ok) {
           const aniData: any = await aniRes.json();
@@ -83,7 +85,7 @@ export const onRequest = async (context: any) => {
           if (imgUrl) {
             const aniImgRes = await fetch(imgUrl, { 
               headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-              signal: AbortSignal.timeout(2500) 
+              signal: AbortSignal.timeout(3500) 
             });
             if (aniImgRes.ok) return aniImgRes;
           }
