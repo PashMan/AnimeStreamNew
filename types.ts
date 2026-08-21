@@ -4,6 +4,8 @@ export interface Anime {
   slug?: string;
   title: string;
   originalName: string;
+  russian?: string;
+  russianTitle?: string;
   image: string;
   image_preview?: string;
   cover?: string;
@@ -18,7 +20,7 @@ export interface Anime {
   genres: string[];
   episodes: number;
   episodesAired?: number;
-  status: 'Ongoing' | 'Completed' | 'Upcoming' | 'released' | 'anons';
+  status: 'Ongoing' | 'Completed' | 'Upcoming' | 'released' | 'finished' | 'anons' | 'ongoing';
   description: string;
   studio: string;
   duration?: string;

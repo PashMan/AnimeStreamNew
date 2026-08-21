@@ -14,7 +14,7 @@ interface AnimeCardProps {
 const AnimeCard: React.FC<AnimeCardProps> = ({ anime, rank }) => {
   const totalEps = Number(anime.episodes) || 0;
   const airedEps = Number(anime.episodesAired) || 0;
-  const isReleased = anime.status === 'released' || anime.status === 'finished';
+  const isReleased = anime.status === 'released' || anime.status === 'finished' || anime.status === 'Completed';
 
   let formattedEpisodes = '';
   if (isReleased) {
