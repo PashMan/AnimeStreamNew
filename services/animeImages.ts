@@ -3,6 +3,18 @@ import { getFromStorage, saveToStorage } from './cache';
 
 const CACHE_TTL = 180 * 24 * 60 * 60 * 1000; // 180 days long-term cache
 
+const proxyImage = (url: string): string => {
+  if (!url) return '';
+  if (url.includes('shikimori.one')) {
+    const path = url.split('shikimori.one')[1];
+    return `/api/image${path}`;
+  }
+  if (url.startsWith('/')) {
+    return `/api/image${url}`;
+  }
+  return url;
+};
+
 // In-flight promise tracker to avoid duplicate calls for same anime
 const pendingRequests = new Map<string, Promise<string | null>>();
 
@@ -120,49 +132,100 @@ export const fetchAnimeImage = async (title: string, idMal?: string): Promise<st
 };
 
 /**
- * Fetch maximum resolution widescreen banner image for Hero section
+ * Fetch maximum resolution widescreen banner image or 1080p screenshot for Hero section
  */
-export const fetchHighResHeroBanner = async (title: string, idMal?: string): Promise<string | null> => {
-  if (!title && !idMal) return null;
+export const fetchHighResHeroBanner = async (title: string, idMal?: string, originalName?: string): Promise<string | null> => {
+  if (!title && !idMal && !originalName) return null;
 
-  const cacheKey = idMal ? `hero_banner_id_${idMal}` : `hero_banner_${title}`;
+  const cacheKey = idMal ? `hero_banner_v3_${idMal}` : `hero_banner_v3_${title}`;
   const cached = getFromStorage(cacheKey);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
     return cached.data;
   }
 
-  const cleanTitle = title ? title.split('/')[0].trim() : '';
+  const numId = idMal ? parseInt(idMal, 10) : NaN;
 
-  // 1. AniList bannerImage
-  try {
-    const numId = idMal ? parseInt(idMal, 10) : NaN;
-    const query = `query ($idMal: Int, $search: String) {
-      Media(idMal: $idMal, search: $search, type: ANIME) {
-        bannerImage
-        coverImage { extraLarge large }
-      }
-    }`;
-    const vars = !isNaN(numId) ? { idMal: numId } : { search: cleanTitle };
-    const res = await fetch('https://graphql.anilist.co', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ query, variables: vars }),
-      signal: AbortSignal.timeout(3000)
-    });
-    if (res.ok) {
-      const data = await res.json();
-      const media = data?.data?.Media;
-      if (media?.bannerImage) {
-        saveToStorage(cacheKey, media.bannerImage);
-        return media.bannerImage;
-      }
-    }
-  } catch (_) {}
-
-  // 2. Kitsu official 1920px coverImage (high-res widescreen)
-  if (cleanTitle) {
+  // 1. Native Shikimori 1080p/720p Full HD Screenshots
+  if (!isNaN(numId)) {
     try {
-      const kRes = await fetch(`https://kitsu.io/api/edge/anime?filter[text]=${encodeURIComponent(cleanTitle)}&page[limit]=1`, { signal: AbortSignal.timeout(3000) });
+      const res = await fetch(`/api/shikimori/animes/${numId}/screenshots`, { signal: AbortSignal.timeout(2500) });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          const firstShot = data[0]?.original || data[0]?.preview;
+          if (firstShot) {
+            let fullShot = firstShot;
+            if (fullShot.startsWith('/')) {
+              fullShot = `https://shikimori.one${fullShot}`;
+            }
+            const proxied = proxyImage(fullShot);
+            saveToStorage(cacheKey, proxied);
+            return proxied;
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  // 2. AniList Widescreen bannerImage by idMal
+  if (!isNaN(numId)) {
+    try {
+      const query = `query ($id: Int) {
+        Media(idMal: $id, type: ANIME) {
+          bannerImage
+          coverImage { extraLarge large }
+        }
+      }`;
+      const res = await fetch('https://graphql.anilist.co', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ query, variables: { id: numId } }),
+        signal: AbortSignal.timeout(3000)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const banner = data?.data?.Media?.bannerImage;
+        if (banner) {
+          saveToStorage(cacheKey, banner);
+          return banner;
+        }
+      }
+    } catch (_) {}
+  }
+
+  // 3. AniList Widescreen bannerImage by search title
+  const searchTitles = [originalName, title].filter(Boolean).map(t => t!.split('/')[0].trim());
+  for (const t of searchTitles) {
+    if (!t) continue;
+    try {
+      const query = `query ($search: String) {
+        Media(search: $search, type: ANIME) {
+          bannerImage
+          coverImage { extraLarge large }
+        }
+      }`;
+      const res = await fetch('https://graphql.anilist.co', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ query, variables: { search: t } }),
+        signal: AbortSignal.timeout(3000)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const banner = data?.data?.Media?.bannerImage;
+        if (banner) {
+          saveToStorage(cacheKey, banner);
+          return banner;
+        }
+      }
+    } catch (_) {}
+  }
+
+  // 4. Kitsu 1920px Widescreen Cover Image
+  for (const t of searchTitles) {
+    if (!t) continue;
+    try {
+      const kRes = await fetch(`https://kitsu.io/api/edge/anime?filter[text]=${encodeURIComponent(t)}&page[limit]=1`, { signal: AbortSignal.timeout(3000) });
       if (kRes.ok) {
         const kData = await kRes.json();
         const first = kData?.data?.[0]?.attributes;
@@ -175,30 +238,30 @@ export const fetchHighResHeroBanner = async (title: string, idMal?: string): Pro
     } catch (_) {}
   }
 
-  // 3. AniList extraLarge cover (1000x1500)
-  try {
-    const numId = idMal ? parseInt(idMal, 10) : NaN;
-    const query = `query ($idMal: Int, $search: String) {
-      Media(idMal: $idMal, search: $search, type: ANIME) {
-        coverImage { extraLarge large }
+  // 5. AniList ExtraLarge High-Res Cover (1000x1500)
+  if (!isNaN(numId)) {
+    try {
+      const query = `query ($id: Int) {
+        Media(idMal: $id, type: ANIME) {
+          coverImage { extraLarge large }
+        }
+      }`;
+      const res = await fetch('https://graphql.anilist.co', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ query, variables: { id: numId } }),
+        signal: AbortSignal.timeout(3000)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const cover = data?.data?.Media?.coverImage?.extraLarge || data?.data?.Media?.coverImage?.large;
+        if (cover) {
+          saveToStorage(cacheKey, cover);
+          return cover;
+        }
       }
-    }`;
-    const vars = !isNaN(numId) ? { idMal: numId } : { search: cleanTitle };
-    const res = await fetch('https://graphql.anilist.co', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ query, variables: vars }),
-      signal: AbortSignal.timeout(3000)
-    });
-    if (res.ok) {
-      const data = await res.json();
-      const cover = data?.data?.Media?.coverImage?.extraLarge || data?.data?.Media?.coverImage?.large;
-      if (cover) {
-        saveToStorage(cacheKey, cover);
-        return cover;
-      }
-    }
-  } catch (_) {}
+    } catch (_) {}
+  }
 
   return null;
 };

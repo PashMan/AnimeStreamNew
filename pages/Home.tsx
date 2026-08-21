@@ -122,7 +122,7 @@ const Home: React.FC = () => {
                 try {
                     const [details, highResBanner] = await Promise.all([
                         fetchAnimeDetails(anime.id, true),
-                        fetchHighResHeroBanner(anime.originalName || anime.title, anime.id)
+                        fetchHighResHeroBanner(anime.title, anime.id, anime.originalName)
                     ]);
                     if (isMounted) {
                         setHeroAnimes(prev => {
@@ -301,94 +301,119 @@ const Home: React.FC = () => {
 
           <input type="hidden" id="hero-slider" value={heroIndex} />
           <div className="relative max-w-[1600px] 3xl:max-w-[2000px] 4xl:max-w-[2500px] 5xl:max-w-[3200px] mx-auto px-4 sm:px-8 lg:px-12 3xl:px-16 h-full flex flex-col justify-end pb-10 md:pb-16 pt-24 z-20">
-            <div className="max-w-3xl 3xl:max-w-4xl space-y-3.5 md:space-y-5 animate-in fade-in slide-in-from-bottom-8 duration-700">
+            <div className="flex items-end justify-between gap-8 z-20 w-full">
+              {/* Left Column: Title, Metadata & Actions */}
+              <div className="max-w-3xl 3xl:max-w-4xl space-y-3.5 md:space-y-5 animate-in fade-in slide-in-from-bottom-8 duration-700 w-full">
               
-              {/* Meta tags / Badges row */}
-              <div className="flex flex-wrap items-center gap-2.5 sm:gap-3.5 my-2">
-                <span className="px-2.5 py-1 bg-primary text-white text-[10px] sm:text-xs font-black uppercase tracking-widest rounded shadow-lg shadow-primary/25 shrink-0">Онгоинг</span>
-                <span className="px-2.5 py-1 bg-primary/10 border border-primary/25 text-primary text-[10px] sm:text-xs font-black uppercase rounded backdrop-blur-md shrink-0">Субтитры | Озвучка</span>
-                {heroRating > 0 && (
-                  <span className="px-2.5 py-1 bg-amber-500/10 border border-amber-500/20 text-amber-500 text-[10px] sm:text-xs font-extrabold uppercase rounded backdrop-blur-md shrink-0">
-                     Рейтинг ★ {heroRating.toFixed(1)}
-                  </span>
-                )}
-                {currentHero.studio && (
-                  <span className="px-2.5 py-1 bg-white/5 border border-white/10 text-slate-300 text-[10px] sm:text-xs font-bold uppercase tracking-wider rounded backdrop-blur-md shrink-0">
-                    Студия: {currentHero.studio}
-                  </span>
-                )}
-                <span className="px-2.5 py-1 bg-white/5 border border-white/10 text-slate-300 text-[10px] sm:text-xs font-semibold rounded backdrop-blur-md shrink-0">
-                  {currentHero.year || '2024'}
-                </span>
-                <span className="px-2.5 py-1 bg-white/5 border border-white/10 text-slate-300 text-[10px] sm:text-xs font-semibold rounded backdrop-blur-md shrink-0">
-                  {currentHero.episodes || '?'} серий
-                </span>
-              </div>
-
-              {/* Title with sleek shadows */}
-              <h1 className="text-2xl sm:text-4xl md:text-6xl 3xl:text-7xl font-display font-black text-white hover:text-primary transition-all duration-300 tracking-tight leading-[0.95] line-clamp-2 uppercase drop-shadow-[0_4px_12px_rgba(0,0,0,0.5)]">
-                {currentHero.title}
-              </h1>
-
-              {/* Sub-meta (Genres) */}
-              <div className="text-[11px] 3xl:text-xs font-bold text-slate-400 flex items-center flex-wrap gap-1.5 h-5 min-h-[20px]">
-                {currentHero.genres && currentHero.genres.length > 0 ? (
-                  currentHero.genres.slice(0, 4).map((g, ind) => (
-                    <span key={g} className="flex items-center gap-1.5">
-                      <span className="hover:text-white transition-colors">{g}</span>
-                      {ind < Math.min(currentHero.genres.length, 4) - 1 && (
-                        <span className="w-1 h-1 rounded-full bg-slate-600 block" />
-                      )}
+                {/* Meta tags / Badges row */}
+                <div className="flex flex-wrap items-center gap-2.5 sm:gap-3.5 my-2">
+                  <span className="px-2.5 py-1 bg-primary text-white text-[10px] sm:text-xs font-black uppercase tracking-widest rounded shadow-lg shadow-primary/25 shrink-0">Онгоинг</span>
+                  <span className="px-2.5 py-1 bg-primary/10 border border-primary/25 text-primary text-[10px] sm:text-xs font-black uppercase rounded backdrop-blur-md shrink-0">Субтитры | Озвучка</span>
+                  {heroRating > 0 && (
+                    <span className="px-2.5 py-1 bg-amber-500/10 border border-amber-500/20 text-amber-500 text-[10px] sm:text-xs font-extrabold uppercase rounded backdrop-blur-md shrink-0">
+                       Рейтинг ★ {heroRating.toFixed(1)}
                     </span>
-                  ))
-                ) : (
-                  <span className="text-slate-500 font-medium">Загрузка жанров...</span>
-                )}
+                  )}
+                  {currentHero.studio && (
+                    <span className="px-2.5 py-1 bg-white/5 border border-white/10 text-slate-300 text-[10px] sm:text-xs font-bold uppercase tracking-wider rounded backdrop-blur-md shrink-0">
+                      Студия: {currentHero.studio}
+                    </span>
+                  )}
+                  <span className="px-2.5 py-1 bg-white/5 border border-white/10 text-slate-300 text-[10px] sm:text-xs font-semibold rounded backdrop-blur-md shrink-0">
+                    {currentHero.year || '2024'}
+                  </span>
+                  <span className="px-2.5 py-1 bg-white/5 border border-white/10 text-slate-300 text-[10px] sm:text-xs font-semibold rounded backdrop-blur-md shrink-0">
+                    {currentHero.episodes || '?'} серий
+                  </span>
+                </div>
+
+                {/* Title with sleek shadows */}
+                <h1 className="text-2xl sm:text-4xl md:text-6xl 3xl:text-7xl font-display font-black text-white hover:text-primary transition-all duration-300 tracking-tight leading-[0.95] line-clamp-2 uppercase drop-shadow-[0_4px_12px_rgba(0,0,0,0.5)]">
+                  {currentHero.title}
+                </h1>
+
+                {/* Sub-meta (Genres) */}
+                <div className="text-[11px] 3xl:text-xs font-bold text-slate-400 flex items-center flex-wrap gap-1.5 h-5 min-h-[20px]">
+                  {currentHero.genres && currentHero.genres.length > 0 ? (
+                    currentHero.genres.slice(0, 4).map((g, ind) => (
+                      <span key={g} className="flex items-center gap-1.5">
+                        <span className="hover:text-white transition-colors">{g}</span>
+                        {ind < Math.min(currentHero.genres.length, 4) - 1 && (
+                          <span className="w-1 h-1 rounded-full bg-slate-600 block" />
+                        )}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-slate-500 font-medium">Загрузка жанров...</span>
+                  )}
+                </div>
+
+                {/* Decription */}
+                <p className="text-slate-200 text-xs md:text-sm 3xl:text-base line-clamp-2 md:line-clamp-3 leading-relaxed max-w-2xl 3xl:max-w-3xl font-medium drop-shadow-[0_2px_4px_rgba(0,0,0,0.4)] md:pe-12">
+                  {currentHero.description || "Описание загружается..."}
+                </p>
+
+                {/* Buttons Row with premium interactive states */}
+                <div className="flex flex-wrap gap-4 sm:gap-6 items-center pt-3">
+                  <Link 
+                    to={dmcaBlocks.includes(currentHero.id.toString()) ? `/anime/${currentHero.id}-watch` : `/anime/${currentHero.id}${currentHero.slug && !slugBlocks.includes(currentHero.id.toString()) ? `-${currentHero.slug}` : ''}`} 
+                    className="px-6 py-3.5 sm:px-8 sm:py-4 bg-primary hover:bg-primary/95 text-white font-black rounded-xl flex items-center gap-2.5 shrink-0 uppercase text-xs sm:text-sm tracking-widest shadow-2xl shadow-primary/25 transition-all hover:scale-[1.03] active:scale-[0.97] cursor-pointer"
+                  >
+                    <PlayCircle className="w-5 h-5 fill-current shrink-0" /> Смотреть
+                  </Link>
+
+                  <Link 
+                    to={dmcaBlocks.includes(currentHero.id.toString()) ? `/anime/${currentHero.id}-watch` : `/anime/${currentHero.id}${currentHero.slug && !slugBlocks.includes(currentHero.id.toString()) ? `-${currentHero.slug}` : ''}`} 
+                    className="px-6 py-3.5 sm:px-8 sm:py-4 bg-white/10 hover:bg-white/15 border border-white/15 hover:border-white/30 text-white font-black rounded-xl flex items-center gap-2.5 shrink-0 uppercase text-xs sm:text-sm tracking-widest transition-all backdrop-blur-md hover:scale-[1.03] active:scale-[0.97] cursor-pointer"
+                  >
+                    Информация
+                  </Link>
+
+                  {/* Micro Slides Controls Container */}
+                  <div className="flex gap-2 items-center bg-black/40 backdrop-blur-md p-1.5 rounded-lg border border-white/5 ml-auto md:ml-4 select-none">
+                    <button 
+                      onClick={() => setHeroIndex(prev => (prev - 1 + heroAnimes.length) % heroAnimes.length)}
+                      className="p-1 px-1.5 rounded hover:bg-white/10 text-slate-400 hover:text-white transition-all active:scale-90 cursor-pointer"
+                      aria-label="Предыдущее аниме"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    <div className="flex gap-1.5 items-center">
+                      {heroAnimes.map((_, i) => (
+                        <button aria-label={`Слайд ${i + 1}`} key={i} onClick={() => setHeroIndex(i)} className={`h-1 rounded transition-all duration-300 ${i === heroIndex ? 'w-6 bg-primary' : 'w-1.5 bg-white/30 hover:bg-white/60'}`} />
+                      ))}
+                    </div>
+                    <button 
+                      onClick={() => setHeroIndex(prev => (prev + 1) % heroAnimes.length)}
+                      className="p-1 px-1.5 rounded hover:bg-white/10 text-slate-400 hover:text-white transition-all active:scale-90 cursor-pointer"
+                      aria-label="Следующее аниме"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
               </div>
 
-              {/* Decription */}
-              <p className="text-slate-200 text-xs md:text-sm 3xl:text-base line-clamp-2 md:line-clamp-3 leading-relaxed max-w-2xl 3xl:max-w-3xl font-medium drop-shadow-[0_2px_4px_rgba(0,0,0,0.4)] md:pe-12">
-                {currentHero.description || "Описание загружается..."}
-              </p>
-
-              {/* Buttons Row with premium interactive states */}
-              <div className="flex flex-wrap gap-4 sm:gap-6 items-center pt-3">
-                <Link 
-                  to={dmcaBlocks.includes(currentHero.id.toString()) ? `/anime/${currentHero.id}-watch` : `/anime/${currentHero.id}${currentHero.slug && !slugBlocks.includes(currentHero.id.toString()) ? `-${currentHero.slug}` : ''}`} 
-                  className="px-6 py-3.5 sm:px-8 sm:py-4 bg-primary hover:bg-primary/95 text-white font-black rounded-xl flex items-center gap-2.5 shrink-0 uppercase text-xs sm:text-sm tracking-widest shadow-2xl shadow-primary/25 transition-all hover:scale-[1.03] active:scale-[0.97] cursor-pointer"
+              {/* Right Column: Featured High-Res Cover Poster Card (Desktop) */}
+              <div className="hidden lg:block shrink-0 pb-1">
+                <Link
+                  to={dmcaBlocks.includes(currentHero.id.toString()) ? `/anime/${currentHero.id}-watch` : `/anime/${currentHero.id}${currentHero.slug && !slugBlocks.includes(currentHero.id.toString()) ? `-${currentHero.slug}` : ''}`}
+                  className="block relative group/poster rounded-2xl overflow-hidden border-2 border-white/15 shadow-[0_20px_50px_rgba(0,0,0,0.85)] bg-black/40 p-1.5 transition-all duration-500 hover:scale-[1.04] hover:border-primary/80 cursor-pointer"
                 >
-                  <PlayCircle className="w-5 h-5 fill-current shrink-0" /> Смотреть
-                </Link>
-
-                <Link 
-                  to={dmcaBlocks.includes(currentHero.id.toString()) ? `/anime/${currentHero.id}-watch` : `/anime/${currentHero.id}${currentHero.slug && !slugBlocks.includes(currentHero.id.toString()) ? `-${currentHero.slug}` : ''}`} 
-                  className="px-6 py-3.5 sm:px-8 sm:py-4 bg-white/10 hover:bg-white/15 border border-white/15 hover:border-white/30 text-white font-black rounded-xl flex items-center gap-2.5 shrink-0 uppercase text-xs sm:text-sm tracking-widest transition-all backdrop-blur-md hover:scale-[1.03] active:scale-[0.97] cursor-pointer"
-                >
-                  Информация
-                </Link>
-
-                {/* Micro Slides Controls Container */}
-                <div className="flex gap-2 items-center bg-black/40 backdrop-blur-md p-1.5 rounded-lg border border-white/5 ml-auto md:ml-4 select-none">
-                  <button 
-                    onClick={() => setHeroIndex(prev => (prev - 1 + heroAnimes.length) % heroAnimes.length)}
-                    className="p-1 px-1.5 rounded hover:bg-white/10 text-slate-400 hover:text-white transition-all active:scale-90 cursor-pointer"
-                    aria-label="Предыдущее аниме"
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                  </button>
-                  <div className="flex gap-1.5 items-center">
-                    {heroAnimes.map((_, i) => (
-                      <button aria-label={`Слайд ${i + 1}`} key={i} onClick={() => setHeroIndex(i)} className={`h-1 rounded transition-all duration-300 ${i === heroIndex ? 'w-6 bg-primary' : 'w-1.5 bg-white/30 hover:bg-white/60'}`} />
-                    ))}
+                  <Image 
+                    src={currentHero.cover || currentHero.image}
+                    alt={currentHero.title}
+                    animeId={currentHero.id}
+                    animeTitle={currentHero.originalName || currentHero.title}
+                    priority
+                    className="w-[190px] h-[285px] xl:w-[220px] xl:h-[330px] object-cover rounded-xl shadow-inner"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-0 group-hover/poster:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-4 rounded-xl">
+                    <span className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-1.5">
+                      <PlayCircle className="w-4 h-4 text-primary fill-primary" /> Смотреть HD
+                    </span>
                   </div>
-                  <button 
-                    onClick={() => setHeroIndex(prev => (prev + 1) % heroAnimes.length)}
-                    className="p-1 px-1.5 rounded hover:bg-white/10 text-slate-400 hover:text-white transition-all active:scale-90 cursor-pointer"
-                    aria-label="Следующее аниме"
-                  >
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                </div>
+                </Link>
               </div>
             </div>
           </div>
