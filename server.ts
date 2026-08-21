@@ -230,36 +230,44 @@ app.post('/api/ai/recommend', async (c) => {
   }
 });
 
-// API Route for Shikimori (Proxy to bypass CORS in production)
+// API Route for Shikimori (Proxy with mirror fallback)
 app.get('/api/shikimori/*', async (c) => {
   const path = c.req.path.replace(/^\/api\/shikimori/, '');
   const query = c.req.url.includes('?') ? c.req.url.substring(c.req.url.indexOf('?')) : '';
-  const targetUrl = `https://shikimori.one/api${path}${query}`;
   
-  try {
-    const response = await fetch(targetUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        'Referer': 'https://shikimori.one/'
-      }
-    });
+  const mirrors = [
+    `https://shikimori.one/api${path}${query}`,
+    `https://shikimori.io/api${path}${query}`,
+    `https://desu.shikimori.one/api${path}${query}`
+  ];
 
-    if (response.ok) {
-      const data = await response.json();
-      return c.json(data);
-    } else {
-      console.error(`[HONO SHIKIMORI PROXY FAILED] Status: ${response.status} for path: ${path}`);
-      try {
-        const text = await response.text();
-        return c.text(text, response.status as any);
-      } catch {
-        return c.json({ error: `Shikimori API responded with status ${response.status}` }, response.status as any);
+  for (const targetUrl of mirrors) {
+    try {
+      const response = await fetch(targetUrl, {
+        headers: {
+          'User-Agent': 'KamiAnime-Server/2.5 (client: backend-proxy; contact: admin@kamianime.club)',
+          'Referer': 'https://shikimori.one/',
+          'Accept': 'application/json, text/plain, */*'
+        },
+        signal: AbortSignal.timeout(4000)
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        return c.json(data);
       }
-    }
-  } catch (err: any) {
-    console.error(`[HONO SHIKIMORI PROXY ERROR] Path: ${path}`, err);
-    return c.json({ error: 'Proxy failed', message: err.message }, 500);
+      if (response.status === 404 || response.status === 422) {
+        return c.json([], 200);
+      }
+    } catch (_) {}
   }
+
+  // Graceful empty fallback for common public endpoints
+  if (path.startsWith('/calendar') || path.startsWith('/topics') || path.startsWith('/animes')) {
+    return c.json([], 200);
+  }
+
+  return c.json({ error: 'Shikimori upstream unavailable' }, 503);
 });
 
 // API Route for Anilibria v3 (Proxy to bypass CORS)

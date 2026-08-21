@@ -14,38 +14,35 @@ export const onRequest = async (context: any) => {
   }
 
   const path = url.pathname.replace(/^\/api\/shikimori/, '');
-  const targetUrl = `https://shikimori.one/api${path}${url.search}`;
-
   const authHeader = context.request.headers.get('Authorization');
   const isGetRequest = context.request.method === 'GET';
   const canCache = isGetRequest && !authHeader;
 
   // 1. Check Cloudflare Cache first for public GET requests
-  const cache = caches.default;
+  const cache = (caches as any)?.default;
   const cacheKey = new Request(url.toString(), { method: 'GET' });
   
-  if (canCache) {
-    const cachedResponse = await cache.match(cacheKey);
-    if (cachedResponse) {
-      return cachedResponse;
-    }
+  if (canCache && cache) {
+    try {
+      const cachedResponse = await cache.match(cacheKey);
+      if (cachedResponse && cachedResponse.ok) {
+        return cachedResponse;
+      }
+    } catch (_) {}
   }
 
-  // Create new headers
   const headers = new Headers();
-  headers.set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
+  headers.set('User-Agent', 'KamiAnime-Web/2.5 (client: web-browser; contact: admin@kamianime.club)');
   headers.set('Referer', 'https://shikimori.one/');
   headers.set('Accept', 'application/json, text/plain, */*');
   
-  // Forward Authorization header if present (for OAuth)
   if (authHeader) {
     headers.set('Authorization', authHeader);
   }
 
-  const init = {
+  const init: RequestInit = {
     method: context.request.method,
     headers: headers,
-    body: undefined as any
   };
 
   if (!isGetRequest && context.request.method !== 'HEAD') {
@@ -56,54 +53,100 @@ export const onRequest = async (context: any) => {
     }
   }
 
-  try {
-    const response = await fetch(targetUrl, init);
+  // Mirrors to try in sequence
+  const mirrors = [
+    `https://shikimori.one/api${path}${url.search}`,
+    `https://shikimori.io/api${path}${url.search}`,
+    `https://desu.shikimori.one/api${path}${url.search}`
+  ];
 
-    // Re-create response headers
-    const newHeaders = new Headers(response.headers);
-    newHeaders.set('Access-Control-Allow-Origin', '*');
-    newHeaders.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    newHeaders.set('Access-Control-Allow-Headers', '*');
-    
-    // Remove security headers that might block embedding
-    newHeaders.delete('Content-Security-Policy');
-    newHeaders.delete('X-Frame-Options');
+  let lastResponse: Response | null = null;
 
-    // Add Cache-Control for successful public GET requests
-    if (canCache && response.ok) {
-      // Cache for 15 minutes at the edge, and 5 minutes in the browser
-      newHeaders.set('Cache-Control', 'public, max-age=300, s-maxage=900');
-      newHeaders.delete('Vary');
-      newHeaders.delete('Set-Cookie');
-    } else if (canCache && !response.ok) {
-      // Cache errors briefly (1 minute) to avoid hammering the API
-      newHeaders.set('Cache-Control', 'public, max-age=60, s-maxage=60');
-    }
+  for (const targetUrl of mirrors) {
+    try {
+      const response = await fetch(targetUrl, {
+        ...init,
+        signal: AbortSignal.timeout(4000)
+      });
 
-    const finalResponse = new Response(response.body, {
-      status: response.status,
-      statusText: response.statusText,
-      headers: newHeaders,
-    });
+      if (response.ok) {
+        const newHeaders = new Headers(response.headers);
+        newHeaders.set('Access-Control-Allow-Origin', '*');
+        newHeaders.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+        newHeaders.set('Access-Control-Allow-Headers', '*');
+        newHeaders.delete('Content-Security-Policy');
+        newHeaders.delete('X-Frame-Options');
+        newHeaders.delete('Vary');
+        newHeaders.delete('Set-Cookie');
 
-    // Store in Cloudflare Cache asynchronously
-    if (canCache && (response.ok || response.status === 404 || response.status === 429)) {
-      context.waitUntil(cache.put(cacheKey, finalResponse.clone()));
-    }
+        if (canCache) {
+          // Cache successful response for 30 minutes on edge, 5 min in browser
+          newHeaders.set('Cache-Control', 'public, max-age=300, s-maxage=1800');
+        }
 
-    return finalResponse;
-  } catch (e: any) {
-    return new Response(JSON.stringify({ 
-      error: String(e),
-      message: e.message,
-      stack: e.stack,
-      targetUrl: targetUrl
-    }), { 
-      status: 500,
-      headers: { 
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*' 
+        const finalResponse = new Response(response.body, {
+          status: 200,
+          statusText: 'OK',
+          headers: newHeaders,
+        });
+
+        if (canCache && cache && context.waitUntil) {
+          context.waitUntil(cache.put(cacheKey, finalResponse.clone()));
+        }
+
+        return finalResponse;
       }
+
+      lastResponse = response;
+      // If 404/422, don't try other mirrors as item definitely doesn't exist
+      if (response.status === 404 || response.status === 422) {
+        break;
+      }
+    } catch (_) {
+      // Continue to next mirror
+    }
+  }
+
+  // Graceful fallbacks for common public GET endpoints if Shikimori rate-limits or is down
+  if (isGetRequest) {
+    if (path.startsWith('/calendar') || path.startsWith('/topics')) {
+      return new Response(JSON.stringify([]), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'public, max-age=60'
+        }
+      });
+    }
+
+    if (path.startsWith('/animes')) {
+      // Return empty array gracefully with 200 status so client can fallback to local cache or Kodik
+      return new Response(JSON.stringify([]), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'public, max-age=30'
+        }
+      });
+    }
+  }
+
+  if (lastResponse) {
+    const errorHeaders = new Headers(lastResponse.headers);
+    errorHeaders.set('Access-Control-Allow-Origin', '*');
+    return new Response(lastResponse.body, {
+      status: lastResponse.status,
+      headers: errorHeaders
     });
   }
+
+  return new Response(JSON.stringify({ error: 'Shikimori upstream unavailable' }), { 
+    status: 503,
+    headers: { 
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*' 
+    }
+  });
 };
