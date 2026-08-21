@@ -12,6 +12,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
+import { resolveAnimeEpisodeWithD1 } from './server/animeBridge';
 
 const execAsync = promisify(exec);
 
@@ -2316,6 +2317,28 @@ app.get('/api/manga/chapter/:chapterId/pages', async (c) => {
     return c.json({ pages });
   } catch (err: any) {
     return c.json({ error: err.message }, 500);
+  }
+});
+
+// API Route for Anime-to-Manga Chapter Sync Bridge with Cloudflare D1 mapping
+app.get('/api/manga/anime-bridge', async (c) => {
+  const title = c.req.query('title') || '';
+  const altTitle = c.req.query('altTitle') || '';
+  const episode = parseInt(c.req.query('episode') || '1', 10);
+  const season = c.req.query('season') || undefined;
+  const shikimoriId = c.req.query('shikimoriId') || '';
+  const db = (c.env as any)?.DB || null;
+
+  if (!title.trim() && !altTitle.trim()) {
+    return c.json({ error: 'Title or altTitle query parameter is required' }, 400);
+  }
+
+  try {
+    const bridgeResult = await resolveAnimeEpisodeWithD1(db, title || altTitle, episode, season, shikimoriId, altTitle);
+    return c.json(bridgeResult);
+  } catch (err: any) {
+    console.error('[API anime-bridge Error]:', err);
+    return c.json({ error: err.message || 'Failed to resolve anime episode to manga' }, 500);
   }
 });
 

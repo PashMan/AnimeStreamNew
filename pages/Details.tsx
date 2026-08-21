@@ -246,13 +246,17 @@ const Details: React.FC = () => {
     adaptationSummary?: string;
     source?: string;
     mangaTitle?: string;
+    isSeasonEnd?: boolean;
+    nextChapterToRead?: number;
+    seasonSummaryNote?: string;
   } | null>(null);
 
   useEffect(() => {
     if (!anime) return;
     const animeTitle = anime.title || anime.originalName || '';
+    const altTitle = anime.originalName || '';
     const currentEp = paramEpisode ? parseInt(paramEpisode, 10) : 1;
-    fetch(`/api/manga/anime-bridge?title=${encodeURIComponent(animeTitle)}&episode=${currentEp}`)
+    fetch(`/api/manga/anime-bridge?title=${encodeURIComponent(animeTitle)}&altTitle=${encodeURIComponent(altTitle)}&episode=${currentEp}&shikimoriId=${anime.id}`)
       .then(res => res.json())
       .then(data => {
         if (data && data.success) {
@@ -2348,9 +2352,17 @@ const Details: React.FC = () => {
 
                 {/* Separate Manga Sync Card (Placed below episodes and translations) */}
                 {anime && (
-                  <div className="bg-[#181920]/90 border border-white/10 p-4 sm:p-5 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 backdrop-blur-sm shadow-xl relative overflow-hidden group">
+                  <div className={`p-4 sm:p-5 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 backdrop-blur-sm shadow-xl relative overflow-hidden group transition-all ${
+                    mangaBridge?.isSeasonEnd
+                      ? "bg-gradient-to-r from-purple-950/80 via-[#181920]/95 to-indigo-950/80 border border-purple-500/40 ring-1 ring-purple-500/20"
+                      : "bg-[#181920]/90 border border-white/10"
+                  }`}>
                     <div className="flex items-center gap-3.5 z-10">
-                      <div className="w-12 h-12 rounded-2xl bg-[#8B5CF6]/15 border border-[#8B5CF6]/30 flex items-center justify-center text-[#A78BFA] shrink-0 shadow-inner">
+                      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-inner ${
+                        mangaBridge?.isSeasonEnd
+                          ? "bg-purple-500/25 border border-purple-400/50 text-purple-300 animate-pulse"
+                          : "bg-[#8B5CF6]/15 border border-[#8B5CF6]/30 text-[#A78BFA]"
+                      }`}>
                         <BookOpen className="w-6 h-6" />
                       </div>
                       <div>
@@ -2361,6 +2373,16 @@ const Details: React.FC = () => {
                           {mangaBridge?.mappedChapter && (
                             <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[11px] font-extrabold border border-emerald-500/30">
                               {paramEpisode || "1"} серия ➔ {mangaBridge.mappedChapter} глава
+                            </span>
+                          )}
+                          {mangaBridge?.isSeasonEnd && mangaBridge?.nextChapterToRead && (
+                            <span className="px-2.5 py-0.5 rounded-full bg-purple-500/30 text-purple-200 text-[11px] font-black border border-purple-400/40 shadow-sm">
+                              ✨ Сюжет продолжается с главы №{mangaBridge.nextChapterToRead}
+                            </span>
+                          )}
+                          {mangaBridge?.source === 'cloudflare_d1' && (
+                            <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 text-[10px] font-bold border border-blue-500/30">
+                              Cloudflare D1
                             </span>
                           )}
                           {mangaBridge?.volume && (
@@ -2387,13 +2409,19 @@ const Details: React.FC = () => {
                           return;
                         }
                         const queryTitle = mangaBridge?.mangaTitle || anime?.title || anime?.originalName || "";
-                        const targetChapter = mangaBridge?.mappedChapter || paramEpisode || 1;
+                        const targetChapter = mangaBridge?.isSeasonEnd && mangaBridge?.nextChapterToRead 
+                          ? mangaBridge.nextChapterToRead 
+                          : (mangaBridge?.mappedChapter || paramEpisode || 1);
                         openMangaPage(queryTitle, paramEpisode || 1, targetChapter);
                       }}
                       className="px-5 py-3 bg-[#8B5CF6] hover:bg-[#7C3AED] text-white font-black text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer flex items-center gap-2 shrink-0 self-stretch sm:self-auto justify-center shadow-lg shadow-[#8B5CF6]/30 z-10"
                     >
                       <BookOpen className="w-4 h-4" />
-                      <span>{mangaBridge?.mappedChapter ? `Читать ${mangaBridge.mappedChapter} главу` : 'Читать мангу'}</span>
+                      <span>
+                        {mangaBridge?.isSeasonEnd && mangaBridge?.nextChapterToRead
+                          ? `Продолжить с главы №${mangaBridge.nextChapterToRead}`
+                          : (mangaBridge?.mappedChapter ? `Читать ${mangaBridge.mappedChapter} главу` : 'Читать мангу')}
+                      </span>
                     </button>
                   </div>
                 )}

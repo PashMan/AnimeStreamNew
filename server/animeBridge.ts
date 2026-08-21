@@ -11,12 +11,15 @@ export interface AnimeBridgeResult {
   recommendedChapter: number | string;
   volume?: number | string;
   adaptationSummary: string;
-  source: 'verified_db' | 'mangaupdates' | 'gemini_ai' | 'algorithmic';
+  source: 'cloudflare_d1' | 'verified_db' | 'mangaupdates' | 'gemini_ai' | 'algorithmic';
   mangaId?: string;
   mangaTitle?: string;
   mangaCover?: string;
   totalChapters?: number;
   directUrl?: string;
+  isSeasonEnd?: boolean;
+  nextChapterToRead?: number;
+  seasonSummaryNote?: string;
 }
 
 // Curated verified database for top anime titles with per-season and per-episode exact mapping
@@ -398,6 +401,89 @@ const VERIFIED_ANIME_MAP: Record<string, TitleMapping> = {
   }
 };
 
+export function extractSeasonInfo(
+  rawTitle: string,
+  seasonParam?: number | string
+): {
+  seasonNumber: number;
+  seasonExplicitlySet: boolean;
+  cleanBaseTitle: string;
+} {
+  let seasonNumber = 1;
+  let seasonExplicitlySet = false;
+  const cleanBaseTitle = rawTitle.trim();
+
+  if (seasonParam && !isNaN(Number(seasonParam))) {
+    const s = Number(seasonParam);
+    if (s > 0) {
+      seasonNumber = s;
+      seasonExplicitlySet = true;
+    }
+  }
+
+  if (!seasonExplicitlySet) {
+    const seasonRegexes = [
+      /(\d+)\s*[-_]?\s*сезон/i,
+      /сезон\s*(\d+)/i,
+      /(\d+)(?:nd|rd|st|th)?\s*season/i,
+      /season\s*(\d+)/i,
+      /\bTV[-_\s]*(\d+)\b/i,
+      /\bPart[-_\s]*(\d+)\b/i,
+      /\bЧасть[-_\s]*(\d+)\b/i,
+      /\bS(\d+)\b/i
+    ];
+
+    for (const rx of seasonRegexes) {
+      const match = cleanBaseTitle.match(rx);
+      if (match) {
+        const sNum = parseInt(match[1] || match[2], 10);
+        if (sNum && sNum > 0) {
+          seasonNumber = sNum;
+          seasonExplicitlySet = true;
+          break;
+        }
+      }
+    }
+  }
+
+  if (!seasonExplicitlySet) {
+    const trailingMatch = cleanBaseTitle.match(/^(.*?)\s+(\d+)$/);
+    if (trailingMatch) {
+      const maybeBase = trailingMatch[1].trim();
+      const maybeSeason = parseInt(trailingMatch[2], 10);
+      if (maybeSeason > 0 && maybeSeason <= 10 && maybeBase.length >= 3) {
+        seasonNumber = maybeSeason;
+        seasonExplicitlySet = true;
+      }
+    }
+  }
+
+  if (!seasonExplicitlySet) {
+    const lower = cleanBaseTitle.toLowerCase();
+    if (lower.includes('деревня кузнецов') || lower.includes('swordsmith village')) {
+      seasonNumber = 3;
+      seasonExplicitlySet = true;
+    } else if (lower.includes('квартал красных фонарей') || lower.includes('entertainment district') || lower.includes('yuukaku')) {
+      seasonNumber = 2;
+      seasonExplicitlySet = true;
+    } else if (lower.includes('поезд «бесконечный»') || lower.includes('mugen train')) {
+      seasonNumber = 2;
+      seasonExplicitlySet = true;
+    } else if (lower.includes('тренировка столпов') || lower.includes('hashira training')) {
+      seasonNumber = 4;
+      seasonExplicitlySet = true;
+    } else if (lower.includes('инцидент в сибуе') || lower.includes('shibuya incident')) {
+      seasonNumber = 2;
+      seasonExplicitlySet = true;
+    } else if (lower.includes('тысячелетняя кровавая война') || lower.includes('thousand-year blood war')) {
+      seasonNumber = 2;
+      seasonExplicitlySet = true;
+    }
+  }
+
+  return { seasonNumber, seasonExplicitlySet, cleanBaseTitle };
+}
+
 /**
  * Clean and normalize anime query string
  */
@@ -407,8 +493,10 @@ function normalizeQuery(title: string): string {
     .replace(/[«»"']/g, '')
     .replace(/season\s*\d+/gi, '')
     .replace(/сезон\s*\d+/gi, '')
+    .replace(/\d+(?:st|nd|rd|th)\s*season/gi, '')
     .replace(/\(.*?\)/g, '')
     .replace(/\[.*?\]/g, '')
+    .replace(/\s+\d+$/, '')
     .trim();
 }
 
@@ -542,58 +630,119 @@ async function resolveViaGemini(animeTitle: string, episodeNum: number): Promise
 }
 
 /**
- * Core Resolver: Resolves Anime Title & Episode into accurate Manga Chapter & Reader Link
+ * Core Resolver: Resolves Anime Title & Episode into accurate Manga Chapter & Reader Link with full Season awareness
  */
 export async function resolveAnimeEpisodeToManga(
   animeTitle: string,
-  episode: number = 1
+  episode: number = 1,
+  seasonParam?: number | string,
+  altTitle?: string
 ): Promise<AnimeBridgeResult> {
   const ep = Math.max(1, Number(episode) || 1);
   const rawTitle = animeTitle.trim();
+  
+  // Extract season info from title or parameter
+  const seasonInfo = extractSeasonInfo(rawTitle, seasonParam);
+  let seasonNum = seasonInfo.seasonNumber;
+  let isSeasonExplicit = seasonInfo.seasonExplicitlySet;
+
+  // Try extracting season from altTitle if not explicitly set
+  if (!isSeasonExplicit && altTitle) {
+    const altInfo = extractSeasonInfo(altTitle);
+    if (altInfo.seasonExplicitlySet) {
+      seasonNum = altInfo.seasonNumber;
+      isSeasonExplicit = true;
+    }
+  }
+
   const normalized = normalizeQuery(rawTitle);
+  const altNormalized = altTitle ? normalizeQuery(altTitle) : '';
 
   // 1. Check in VERIFIED CURATED DATABASE (Highest accuracy)
   for (const [key, mapping] of Object.entries(VERIFIED_ANIME_MAP)) {
-    const isMatch = mapping.aliases.some(alias => 
-      normalized.includes(alias) || alias.includes(normalized) || rawTitle.toLowerCase().includes(alias)
-    );
+    const isMatch = mapping.aliases.some(alias => {
+      const normAlias = normalizeQuery(alias);
+      return (
+        normalized.includes(normAlias) ||
+        normAlias.includes(normalized) ||
+        rawTitle.toLowerCase().includes(alias) ||
+        (altNormalized && (altNormalized.includes(normAlias) || normAlias.includes(altNormalized)))
+      );
+    });
 
     if (isMatch) {
-      // Find season
       let targetSeason = mapping.seasons[0];
       let epInSeason = ep;
+      let absoluteEp = ep;
 
-      if (mapping.seasons.length > 1) {
-        let accEps = 0;
-        for (const s of mapping.seasons) {
-          if (ep <= accEps + s.episodesCount) {
-            targetSeason = s;
-            epInSeason = ep - accEps;
-            break;
+      if (isSeasonExplicit) {
+        // Find specific season requested (e.g. Season 2 Episode 1)
+        const matchedSeason = mapping.seasons.find(s => s.season === seasonNum);
+        if (matchedSeason) {
+          targetSeason = matchedSeason;
+          epInSeason = ep;
+          // Calculate absolute episode number across previous seasons
+          let prevEps = 0;
+          for (const s of mapping.seasons) {
+            if (s.season < matchedSeason.season) {
+              prevEps += s.episodesCount;
+            }
           }
-          accEps += s.episodesCount;
+          absoluteEp = prevEps + epInSeason;
+        } else {
+          // Fall back if requested season is beyond mapped seasons
+          targetSeason = mapping.seasons[mapping.seasons.length - 1];
+          epInSeason = ep;
+        }
+      } else {
+        // Absolute episode numbering (e.g. Episode 25 = Season 2 Episode 1)
+        if (mapping.seasons.length > 1) {
+          let accEps = 0;
+          for (const s of mapping.seasons) {
+            if (ep <= accEps + s.episodesCount) {
+              targetSeason = s;
+              epInSeason = ep - accEps;
+              break;
+            }
+            accEps += s.episodesCount;
+          }
+          if (ep > accEps) {
+            targetSeason = mapping.seasons[mapping.seasons.length - 1];
+            epInSeason = ep - (accEps - targetSeason.episodesCount);
+          }
         }
       }
 
-      // Check special rules for exact episode
+      const isSeasonFinalEpisode = epInSeason >= targetSeason.episodesCount;
+      const nextSeason = mapping.seasons.find(s => s.season === targetSeason.season + 1);
+      const nextChapterToRead = nextSeason ? nextSeason.startChapter : targetSeason.endChapter + 1;
+
+      // Check special rules for exact episode in season
       if (targetSeason.specialRules && targetSeason.specialRules[epInSeason]) {
         const rule = targetSeason.specialRules[epInSeason];
+        const mappedChapter = rule.chapter;
         return {
           success: true,
           animeTitle: rawTitle,
-          episode: ep,
+          episode: epInSeason,
           season: targetSeason.season,
-          mappedChapter: rule.chapter,
-          chapterRange: rule.range || `${rule.chapter}`,
-          recommendedChapter: rule.chapter,
+          mappedChapter,
+          chapterRange: rule.range || `${mappedChapter}`,
+          recommendedChapter: isSeasonFinalEpisode ? nextChapterToRead : mappedChapter,
           volume: rule.volume,
-          adaptationSummary: rule.note || `${ep} серия адаптирует ${rule.range || rule.chapter} главы манги (Сезон ${targetSeason.season}).`,
+          adaptationSummary: isSeasonFinalEpisode
+            ? `Финальная (${epInSeason}-я) серия ${targetSeason.season}-го сезона! Сюжет аниме в этом сезоне завершается на ${targetSeason.endChapter} главе. Сюжет продолжается с главы №${nextChapterToRead}.`
+            : rule.note || `${epInSeason} серия адаптирует ${rule.range || mappedChapter} главы манги (${targetSeason.season} сезон).`,
           source: 'verified_db',
-          mangaTitle: mapping.mangaSearchQuery
+          mangaTitle: mapping.mangaSearchQuery,
+          isSeasonEnd: isSeasonFinalEpisode,
+          nextChapterToRead: isSeasonFinalEpisode ? nextChapterToRead : undefined,
+          seasonSummaryNote: isSeasonFinalEpisode ? `Сюжет продолжается с главы №${nextChapterToRead}` : undefined,
+          totalChapters: mapping.totalMangaChapters
         };
       }
 
-      // Calculate through linear chapter distribution within season
+      // Linear calculation within season
       const ratio = (epInSeason - 1) / Math.max(1, targetSeason.episodesCount - 1);
       const span = targetSeason.endChapter - targetSeason.startChapter;
       const calculatedChap = Math.round(targetSeason.startChapter + ratio * span);
@@ -602,20 +751,25 @@ export async function resolveAnimeEpisodeToManga(
       return {
         success: true,
         animeTitle: rawTitle,
-        episode: ep,
+        episode: epInSeason,
         season: targetSeason.season,
         mappedChapter: calculatedChap,
         chapterRange: `${calculatedChap}–${nextChap}`,
-        recommendedChapter: calculatedChap,
-        adaptationSummary: `${ep} серия адаптирует события около ${calculatedChap} главы (Сезон ${targetSeason.season} охватывает главы ${targetSeason.startChapter}–${targetSeason.endChapter}).`,
+        recommendedChapter: isSeasonFinalEpisode ? nextChapterToRead : calculatedChap,
+        adaptationSummary: isSeasonFinalEpisode
+          ? `Финальная (${epInSeason}-я) серия ${targetSeason.season}-го сезона! Сюжет аниме завершается на ${targetSeason.endChapter} главе. Сюжет продолжается с главы №${nextChapterToRead}.`
+          : `${epInSeason} серия (${targetSeason.season} сезон) адаптирует события около ${calculatedChap} главы (сезон охватывает главы ${targetSeason.startChapter}–${targetSeason.endChapter}).`,
         source: 'verified_db',
         mangaTitle: mapping.mangaSearchQuery,
+        isSeasonEnd: isSeasonFinalEpisode,
+        nextChapterToRead: isSeasonFinalEpisode ? nextChapterToRead : undefined,
+        seasonSummaryNote: isSeasonFinalEpisode ? `Сюжет продолжается с главы №${nextChapterToRead}` : undefined,
         totalChapters: mapping.totalMangaChapters
       };
     }
   }
 
-  // 2. Query MangaUpdates API for official adaptation records
+  // 2. Query MangaUpdates API
   const muData = await fetchMangaUpdatesMapping(rawTitle);
   if (muData && muData.start && muData.end) {
     const parsed = parseMangaUpdatesSeason(muData.start, muData.end, ep);
@@ -624,10 +778,11 @@ export async function resolveAnimeEpisodeToManga(
         success: true,
         animeTitle: rawTitle,
         episode: ep,
+        season: seasonNum,
         mappedChapter: parsed.mappedChapter,
         chapterRange: parsed.chapterRange,
         recommendedChapter: parsed.mappedChapter,
-        adaptationSummary: `${ep} серия соответствует ~${parsed.mappedChapter} главе манги по базе MangaUpdates. ${parsed.seasonText}.`,
+        adaptationSummary: `${ep} серия (${seasonNum} сезон) соответствует ~${parsed.mappedChapter} главе манги по базе MangaUpdates.`,
         source: 'mangaupdates',
         mangaTitle: muData.mangaTitle || rawTitle
       };
@@ -641,27 +796,178 @@ export async function resolveAnimeEpisodeToManga(
       success: true,
       animeTitle: rawTitle,
       episode: ep,
+      season: seasonNum,
       mappedChapter: aiResult.chapter,
       chapterRange: aiResult.range || String(aiResult.chapter),
       recommendedChapter: aiResult.chapter,
       volume: aiResult.volume,
-      adaptationSummary: aiResult.summary || `${ep} серия соответствует ${aiResult.chapter} главе манги (по данным ИИ-анализа).`,
+      adaptationSummary: aiResult.summary || `${ep} серия соответствует ${aiResult.chapter} главе манги.`,
       source: 'gemini_ai',
       mangaTitle: rawTitle
     };
   }
 
-  // 4. Default algorithmic estimate (~2.2 chapters per episode)
-  const defaultChap = Math.max(1, Math.round(ep * 2.2));
+  // 4. Default algorithmic estimate with season offset
+  const seasonStartOffset = (seasonNum - 1) * 35;
+  const defaultChap = Math.max(1, Math.round(seasonStartOffset + ep * 2.2));
   return {
     success: true,
     animeTitle: rawTitle,
     episode: ep,
+    season: seasonNum,
     mappedChapter: defaultChap,
     chapterRange: `${defaultChap}–${defaultChap + 1}`,
     recommendedChapter: defaultChap,
-    adaptationSummary: `${ep} серия ориентировочно соответствует ${defaultChap} главе манги (~2-3 главы на серию).`,
+    adaptationSummary: `${ep} серия (${seasonNum} сезон) ориентировочно соответствует ${defaultChap} главе манги.`,
     source: 'algorithmic',
     mangaTitle: rawTitle
   };
+}
+
+/**
+ * Cloudflare D1 Database Integration & Season Completion Tracking
+ */
+export async function initD1AnimeMappings(db: any): Promise<void> {
+  if (!db) return;
+  try {
+    await db.prepare(`
+      CREATE TABLE IF NOT EXISTS anime_manga_mappings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        anime_key TEXT UNIQUE NOT NULL,
+        anime_title TEXT NOT NULL,
+        manga_title TEXT NOT NULL,
+        seasons_json TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `).run();
+
+    // Pre-seed core mapped titles if table is empty
+    const checkStmt = await db.prepare('SELECT COUNT(*) as cnt FROM anime_manga_mappings').first();
+    if (checkStmt && Number(checkStmt.cnt) === 0) {
+      const seedEntries = Object.entries(VERIFIED_ANIME_MAP).map(([key, mapping]) => {
+        return {
+          anime_key: key,
+          anime_title: mapping.aliases[0] || key,
+          manga_title: mapping.mangaSearchQuery,
+          seasons_json: JSON.stringify(mapping.seasons)
+        };
+      });
+
+      for (const item of seedEntries) {
+        await db.prepare(
+          'INSERT OR IGNORE INTO anime_manga_mappings (anime_key, anime_title, manga_title, seasons_json) VALUES (?, ?, ?, ?)'
+        ).bind(item.anime_key, item.anime_title, item.manga_title, item.seasons_json).run();
+      }
+    }
+  } catch (e) {
+    console.warn('[D1 Mapping Init Warning]:', (e as any)?.message);
+  }
+}
+
+export async function resolveAnimeEpisodeWithD1(
+  db: any,
+  animeTitle: string,
+  episode: number = 1,
+  seasonParam?: number | string,
+  shikimoriId?: string,
+  altTitle?: string
+): Promise<AnimeBridgeResult> {
+  const ep = Math.max(1, Number(episode) || 1);
+  const rawTitle = animeTitle.trim();
+
+  // Extract season info
+  const seasonInfo = extractSeasonInfo(rawTitle, seasonParam);
+  let seasonNum = seasonInfo.seasonNumber;
+  let isSeasonExplicit = seasonInfo.seasonExplicitlySet;
+
+  if (!isSeasonExplicit && altTitle) {
+    const altInfo = extractSeasonInfo(altTitle);
+    if (altInfo.seasonExplicitlySet) {
+      seasonNum = altInfo.seasonNumber;
+      isSeasonExplicit = true;
+    }
+  }
+
+  const normalized = normalizeQuery(rawTitle);
+
+  // 1. Attempt Cloudflare D1 resolution
+  if (db) {
+    try {
+      await initD1AnimeMappings(db);
+      const rows = await db.prepare('SELECT * FROM anime_manga_mappings').all();
+      if (rows && rows.results) {
+        for (const row of rows.results as any[]) {
+          const seasons = JSON.parse(row.seasons_json || '[]');
+          const aliases = row.anime_key ? [row.anime_key, row.anime_title] : [row.anime_title];
+          const isMatch = aliases.some(a => 
+            normalized.includes(normalizeQuery(a)) || normalizeQuery(a).includes(normalized)
+          );
+
+          if (isMatch && seasons.length > 0) {
+            let targetSeason = seasons[0];
+            let epInSeason = ep;
+
+            if (isSeasonExplicit) {
+              const matchedS = seasons.find((s: any) => s.season === seasonNum);
+              if (matchedS) {
+                targetSeason = matchedS;
+                epInSeason = ep;
+              } else {
+                targetSeason = seasons[seasons.length - 1];
+                epInSeason = ep;
+              }
+            } else {
+              let accEps = 0;
+              for (const s of seasons) {
+                if (ep <= accEps + s.episodesCount) {
+                  targetSeason = s;
+                  epInSeason = ep - accEps;
+                  break;
+                }
+                accEps += s.episodesCount;
+              }
+            }
+
+            const isSeasonFinalEpisode = epInSeason >= targetSeason.episodesCount;
+            const nextS = seasons.find((s: any) => s.season === targetSeason.season + 1);
+            const nextChapter = nextS ? nextS.startChapter : targetSeason.endChapter + 1;
+
+            let mappedChap = targetSeason.startChapter;
+            if (targetSeason.specialRules && targetSeason.specialRules[epInSeason]) {
+              mappedChap = targetSeason.specialRules[epInSeason].chapter;
+            } else {
+              const ratio = (epInSeason - 1) / Math.max(1, targetSeason.episodesCount - 1);
+              const span = targetSeason.endChapter - targetSeason.startChapter;
+              mappedChap = Math.round(targetSeason.startChapter + ratio * span);
+            }
+
+            return {
+              success: true,
+              animeTitle: rawTitle,
+              episode: epInSeason,
+              season: targetSeason.season,
+              mappedChapter: mappedChap,
+              chapterRange: `${mappedChap}–${mappedChap + 1}`,
+              recommendedChapter: isSeasonFinalEpisode ? nextChapter : mappedChap,
+              adaptationSummary: isSeasonFinalEpisode
+                ? `Финальная (${epInSeason}-я) серия ${targetSeason.season}-го сезона! Сюжет аниме завершается на ${targetSeason.endChapter} главе. Сюжет продолжается с главы №${nextChapter}.`
+                : `${epInSeason} серия (${targetSeason.season} сезон) адаптирует события около ${mappedChap} главы.`,
+              source: 'cloudflare_d1',
+              mangaTitle: row.manga_title || rawTitle,
+              isSeasonEnd: isSeasonFinalEpisode,
+              nextChapterToRead: isSeasonFinalEpisode ? nextChapter : undefined,
+              seasonSummaryNote: isSeasonFinalEpisode
+                ? `Сюжет продолжается с главы №${nextChapter}`
+                : undefined
+            };
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[D1 Bridge Resolver Warning]:', (e as any)?.message);
+    }
+  }
+
+  // 2. Fall back to in-memory verified DB, MangaUpdates API, Gemini, and algorithmic
+  return await resolveAnimeEpisodeToManga(rawTitle, ep, seasonNum, altTitle);
 }
