@@ -104,14 +104,11 @@ const Home: React.FC = () => {
         if (!isMounted) return;
         
         if (data && data.length > 0) {
-            const filteredData = data.filter(anime => {
-                const maxEpisodes = Math.max(anime.episodes || 0, anime.episodesAired || 0);
-                return maxEpisodes === 0 || maxEpisodes <= 36;
-            }).slice(0, 5);
-            setHeroAnimes(filteredData);
+            const heroList = data.slice(0, 5);
+            setHeroAnimes(heroList);
             setIsHeroLoading(false);
             
-            await Promise.all(filteredData.map(async (anime) => {
+            await Promise.all(heroList.map(async (anime) => {
                 try {
                     const details = await fetchAnimeDetails(anime.id, true);
                     if (details && isMounted) {
@@ -143,12 +140,9 @@ const Home: React.FC = () => {
     });
     
     // Immediate load for first sections
-    fetchAnimes({ order: 'ranked', status: 'ongoing', limit: 40 }).then(data => {
-        if (isMounted) {
-            setNewAnimes(data.filter(anime => {
-                const maxEpisodes = Math.max(anime.episodes || 0, anime.episodesAired || 0);
-                return maxEpisodes === 0 || maxEpisodes <= 36;
-            }).slice(0, 20));
+    fetchAnimes({ order: 'ranked', status: 'ongoing', limit: 30 }).then(data => {
+        if (isMounted && data) {
+            setNewAnimes(data.slice(0, 20));
         }
     });
     fetchAnimes({ order: 'popularity', limit: 20 }).then(data => {

@@ -173,6 +173,18 @@ const Manga: React.FC = () => {
   const [activeDetailTab, setActiveDetailTab] = useState<'info' | 'chapters' | 'comments'>('info');
   const [chapterSearchQuery, setChapterSearchQuery] = useState<string>('');
   const [isMangaLicensed, setIsMangaLicensed] = useState<boolean>(false);
+  const [animeBridgeData, setAnimeBridgeData] = useState<{
+    animeTitle: string;
+    episode: number;
+    season?: number;
+    mappedChapter: number | string;
+    chapterRange?: string;
+    recommendedChapter: number | string;
+    volume?: number | string;
+    adaptationSummary: string;
+    source: string;
+    mangaTitle?: string;
+  } | null>(null);
 
   // --- Active Reader States ---
   const [activeChapter, setActiveChapter] = useState<ChapterItem | null>(null);
@@ -363,14 +375,46 @@ const Manga: React.FC = () => {
     fetchCatalog(true);
   }, []);
 
-  // When search parameter changes, synchronize deep detail page load
+  // When search parameter changes, synchronize deep detail page load or auto-search from anime bridge
   useEffect(() => {
     if (activeMangaId) {
       loadSingleMangaDetail(activeMangaId);
     } else {
-      setSelectedManga(null);
+      const q = searchParams.get('search') || searchParams.get('q');
+      const ep = searchParams.get('episode');
+      const directChap = searchParams.get('chapter');
+      if (q) {
+        setSearchQuery(q);
+        const epNum = ep ? parseInt(ep, 10) : 1;
+
+        // 1. Query Anime-to-Manga bridge database for accurate episode-to-chapter resolution
+        fetch(`/api/manga/anime-bridge?title=${encodeURIComponent(q)}&episode=${epNum}`)
+          .then(res => res.json())
+          .then(bridge => {
+            if (bridge && bridge.success) {
+              setAnimeBridgeData(bridge);
+              setActiveDetailTab('chapters');
+            }
+          })
+          .catch(e => console.warn('Anime bridge error:', e));
+
+        // 2. Query Manga catalog
+        fetch(`/api/manga/search?limit=8&q=${encodeURIComponent(q)}&source=all&_t=${Date.now()}`)
+          .then(res => res.json())
+          .then(data => {
+            if (data.results && data.results.length > 0) {
+              const bestMatch = data.results[0];
+              setSelectedManga(bestMatch);
+              selectMangaItem(bestMatch);
+            }
+          })
+          .catch(err => console.warn('Manga sync search error:', err));
+      } else {
+        setSelectedManga(null);
+        setAnimeBridgeData(null);
+      }
     }
-  }, [activeMangaId]);
+  }, [activeMangaId, searchParams]);
 
   // Keyboard navigation for inside the interactive manga reader
   useEffect(() => {
@@ -921,6 +965,53 @@ const Manga: React.FC = () => {
                 </h3>
               </div>
 
+              {/* ANIME-MANGA ACCURATE BRIDGE CARD */}
+              {animeBridgeData && (
+                <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-[#8B5CF6]/20 via-purple-900/15 to-emerald-500/10 border border-[#8B5CF6]/40 shadow-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 relative overflow-hidden backdrop-blur-sm">
+                  <div className="flex items-center gap-3.5 z-10">
+                    <div className="w-12 h-12 rounded-2xl bg-[#8B5CF6]/20 border border-[#8B5CF6]/40 flex items-center justify-center text-[#A78BFA] shrink-0 shadow-lg">
+                      <BookOpen className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-black uppercase tracking-wider text-[#A78BFA]">
+                          Точная синхронизация серии и главы
+                        </span>
+                        <span className="px-2.5 py-0.5 rounded-lg bg-emerald-500/20 text-emerald-300 text-xs font-black border border-emerald-500/30 shadow-sm">
+                          {animeBridgeData.episode} серия ➔ {animeBridgeData.mappedChapter} глава
+                        </span>
+                        {animeBridgeData.volume && (
+                          <span className="px-2 py-0.5 rounded bg-white/10 text-slate-300 text-[10px] font-bold">
+                            Том {animeBridgeData.volume}
+                          </span>
+                        )}
+                        <span className="px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 text-[9px] font-black uppercase">
+                          База: {animeBridgeData.source === 'verified_db' ? 'Верифицировано' : animeBridgeData.source === 'mangaupdates' ? 'MangaUpdates' : 'ИИ-анализ'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-200 font-medium mt-1 leading-relaxed max-w-xl">
+                        {animeBridgeData.adaptationSummary}
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      const targetNum = parseFloat(String(animeBridgeData.mappedChapter));
+                      const matched = chapters.find(c => {
+                        const cNum = parseFloat(String(c.chapter || c.title || '0'));
+                        return Math.abs(cNum - targetNum) < 0.6;
+                      }) || chapters[0];
+                      if (matched) startReadingChapter(matched);
+                    }}
+                    className="px-5 py-3 bg-[#8B5CF6] hover:bg-[#7C3AED] text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-[#8B5CF6]/30 transition-all flex items-center gap-2 cursor-pointer shrink-0 self-stretch sm:self-auto justify-center z-10 active:scale-95"
+                  >
+                    <BookOpen className="w-4 h-4" />
+                    <span>Читать {animeBridgeData.mappedChapter} главу</span>
+                  </button>
+                </div>
+              )}
+
                {/* Tab Selector bar */}
               <div className="flex border-b border-white/5 select-none overflow-x-auto">
                 {[
@@ -1040,20 +1131,39 @@ const Manga: React.FC = () => {
                             )
                           ) : (
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[450px] overflow-y-auto pr-2 custom-scrollbar">
-                              {filtered.map((ch) => (
-                                <button
-                                  key={ch.id}
-                                  onClick={() => startReadingChapter(ch)}
-                                  className="p-3.5 bg-[#18191d] border border-white/5 rounded-2xl hover:border-[#8B5CF6] hover:bg-[#8B5CF6]/5 text-left transition-all active:scale-[0.98] flex items-center justify-between cursor-pointer"
-                                >
-                                  <div className="min-w-0 pr-2">
-                                    <span className="text-[8px] font-black uppercase text-[#8B5CF6] tracking-wider block">ГРУППА: {ch.group || "KamiManga Trans"}</span>
-                                    <h4 className="text-xs font-black text-white mt-0.5">Глава {ch.chapter}</h4>
-                                    <p className="text-[10px] text-slate-500 font-semibold truncate mt-0.5">{ch.title || `Раздел`}</p>
-                                  </div>
-                                  <ChevronRight className="w-4 h-4 text-slate-600 shrink-0" />
-                                </button>
-                              ))}
+                              {filtered.map((ch) => {
+                                const isTargetBridge = animeBridgeData && (
+                                  Math.abs(parseFloat(String(ch.chapter || '0')) - parseFloat(String(animeBridgeData.mappedChapter || '0'))) < 0.6
+                                );
+
+                                return (
+                                  <button
+                                    key={ch.id}
+                                    onClick={() => startReadingChapter(ch)}
+                                    className={`p-3.5 rounded-2xl text-left transition-all active:scale-[0.98] flex items-center justify-between cursor-pointer border ${
+                                      isTargetBridge
+                                        ? 'bg-gradient-to-r from-[#8B5CF6]/20 via-purple-950/40 to-emerald-950/40 border-emerald-400 shadow-xl shadow-emerald-500/10 ring-2 ring-emerald-500/30'
+                                        : 'bg-[#18191d] border-white/5 hover:border-[#8B5CF6] hover:bg-[#8B5CF6]/5'
+                                    }`}
+                                  >
+                                    <div className="min-w-0 pr-2">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="text-[8px] font-black uppercase text-[#8B5CF6] tracking-wider block">ГРУППА: {ch.group || "KamiManga Trans"}</span>
+                                        {isTargetBridge && (
+                                          <span className="px-2 py-0.5 rounded bg-emerald-500 text-black font-black text-[9px] uppercase tracking-wider animate-pulse">
+                                            🎯 Точно для {animeBridgeData.episode} серии
+                                          </span>
+                                        )}
+                                      </div>
+                                      <h4 className={`text-xs font-black mt-0.5 ${isTargetBridge ? 'text-emerald-300' : 'text-white'}`}>
+                                        Глава {ch.chapter}
+                                      </h4>
+                                      <p className="text-[10px] text-slate-400 font-semibold truncate mt-0.5">{ch.title || `Раздел`}</p>
+                                    </div>
+                                    <ChevronRight className={`w-4 h-4 shrink-0 ${isTargetBridge ? 'text-emerald-400' : 'text-slate-600'}`} />
+                                  </button>
+                                );
+                              })}
                             </div>
                           )}
                         </div>
