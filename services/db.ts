@@ -32,12 +32,52 @@ const memoryStorage = {
     removeItem: (key: string) => {},
 };
 
+// Helper to sanitize headers for browser Fetch API (prevent "String contains non ISO-8859-1 code point")
+const sanitizeHeaderValue = (val: any): string => {
+  if (val === null || val === undefined) return '';
+  const str = String(val);
+  // Strip any characters outside Latin-1 / ISO-8859-1 (code > 255)
+  return str.replace(/[^\x00-\xFF]/g, '');
+};
+
+const safeSupabaseFetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  try {
+    if (init && init.headers) {
+      if (typeof Headers !== 'undefined' && init.headers instanceof Headers) {
+        const cleanHeaders = new Headers();
+        init.headers.forEach((v, k) => {
+          cleanHeaders.set(sanitizeHeaderValue(k), sanitizeHeaderValue(v));
+        });
+        init = { ...init, headers: cleanHeaders };
+      } else if (Array.isArray(init.headers)) {
+        const cleanHeaders: [string, string][] = init.headers.map(([k, v]) => [
+          sanitizeHeaderValue(k),
+          sanitizeHeaderValue(v)
+        ]);
+        init = { ...init, headers: cleanHeaders };
+      } else if (typeof init.headers === 'object') {
+        const cleanHeaders: Record<string, string> = {};
+        for (const [k, v] of Object.entries(init.headers)) {
+          cleanHeaders[sanitizeHeaderValue(k)] = sanitizeHeaderValue(v);
+        }
+        init = { ...init, headers: cleanHeaders };
+      }
+    }
+  } catch (e) {
+    console.warn('Error sanitizing Supabase fetch headers:', e);
+  }
+  return fetch(input, init);
+};
+
 try {
   if (supabaseUrl && supabaseKey && supabaseKey !== 'placeholder') {
     supabaseClient = createClient(supabaseUrl, supabaseKey, {
       auth: {
         storage: memoryStorage,
         persistSession: false,
+      },
+      global: {
+        fetch: safeSupabaseFetch,
       },
     });
     console.log('Supabase client created successfully with memory storage');
@@ -349,18 +389,24 @@ class DatabaseService {
   }
 
   async resetPassword(email: string): Promise<{ success: boolean; message?: string }> {
-    if (!this.isSupabaseAvailable()) return { success: false, message: 'Database unavailable' };
+    if (!this.isSupabaseAvailable()) return { success: false, message: 'База данных недоступна' };
+    const cleanEmail = String(email || '').trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      return { success: false, message: 'Укажите корректный email адрес' };
+    }
     try {
-      const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
-        redirectTo: window.location.origin,
+      const redirectUrl = typeof window !== 'undefined' ? `${window.location.origin}/reset-password` : undefined;
+      const { error } = await supabaseClient.auth.resetPasswordForEmail(cleanEmail, {
+        redirectTo: redirectUrl,
       });
       if (error) {
-        return { success: false, message: error.message };
+        console.error('Reset password error:', error);
+        return { success: false, message: this.translateError(error.message) };
       }
-      return { success: true, message: 'Check your email for the password reset link' };
-    } catch (e) {
+      return { success: true, message: 'Ссылка для сброса пароля отправлена на ваш email!' };
+    } catch (e: any) {
       console.error('Reset password exception:', e);
-      return { success: false, message: 'Exception occurred' };
+      return { success: false, message: e?.message || 'Не удалось отправить ссылку для сброса пароля' };
     }
   }
 
