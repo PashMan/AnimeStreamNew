@@ -12,7 +12,28 @@ interface AnimeCardProps {
 }
 
 const AnimeCard: React.FC<AnimeCardProps> = ({ anime, rank }) => {
-  const episodeCount = `${anime.episodesAired || 0}/${anime.episodes || '?'}`;
+  const totalEps = Number(anime.episodes) || 0;
+  const airedEps = Number(anime.episodesAired) || 0;
+  const isReleased = anime.status === 'released' || anime.status === 'finished';
+
+  let formattedEpisodes = '';
+  if (isReleased) {
+    const count = totalEps || airedEps || 12;
+    formattedEpisodes = `${count} эп.`;
+  } else if (airedEps > 0 && totalEps > 0) {
+    if (airedEps >= totalEps) {
+      formattedEpisodes = `${totalEps} эп.`;
+    } else {
+      formattedEpisodes = `${airedEps} / ${totalEps} эп.`;
+    }
+  } else if (totalEps > 0) {
+    formattedEpisodes = `${totalEps} эп.`;
+  } else if (airedEps > 0) {
+    formattedEpisodes = `${airedEps} эп.`;
+  } else {
+    formattedEpisodes = '12+ эп.';
+  }
+
   const { slugBlocks } = useSlugBlocks();
   const { dmcaBlocks } = useDmcaBlocks();
   const isSlugBlocked = slugBlocks.includes(anime.id);
@@ -89,7 +110,7 @@ const AnimeCard: React.FC<AnimeCardProps> = ({ anime, rank }) => {
           {anime.title}
         </h3>
         <div className="flex items-center gap-1 text-[9px] font-extrabold uppercase tracking-tight text-slate-500">
-          <span className="text-primary font-black shrink-0">{episodeCount} эп</span>
+          <span className="text-primary font-black shrink-0">{formattedEpisodes}</span>
           <span className="w-0.5 h-0.5 rounded-full bg-slate-700 shrink-0" />
           <span className="text-[7.5px] px-1 py-0.5 bg-white/5 border border-white/5 rounded text-slate-400 font-black leading-none uppercase tracking-widest shrink-0">Суб</span>
           <span className="text-[7.5px] px-1 py-0.5 bg-white/5 border border-white/5 rounded text-slate-400 font-black leading-none uppercase tracking-widest shrink-0">Дуб</span>

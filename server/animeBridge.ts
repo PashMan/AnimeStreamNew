@@ -356,6 +356,45 @@ const VERIFIED_ANIME_MAP: Record<string, TitleMapping> = {
       { season: 1, episodesCount: 220, startChapter: 1, endChapter: 238 },
       { season: 2, episodesCount: 500, startChapter: 245, endChapter: 700 }
     ]
+  },
+  youjo_senki: {
+    aliases: ['военная хроника маленькой девочки', 'youjo senki', 'saga of tanya the evil', 'военная хроника маленькой девочки 2', 'таня грозная', 'хроники девочки'],
+    mangaSearchQuery: 'Военная хроника маленькой девочки',
+    totalMangaChapters: 85,
+    seasons: [
+      { season: 1, episodesCount: 12, startChapter: 1, endChapter: 20 },
+      { season: 2, episodesCount: 12, startChapter: 21, endChapter: 60 }
+    ]
+  },
+  mushoku_tensei: {
+    aliases: ['реинкарнация безработного', 'mushoku tensei', 'безработный'],
+    mangaSearchQuery: 'Реинкарнация безработного',
+    totalMangaChapters: 100,
+    seasons: [
+      { season: 1, episodesCount: 23, startChapter: 1, endChapter: 52 },
+      { season: 2, episodesCount: 24, startChapter: 53, endChapter: 90 }
+    ]
+  },
+  overlord: {
+    aliases: ['оверлорд', 'повелитель', 'overlord'],
+    mangaSearchQuery: 'Повелитель',
+    totalMangaChapters: 80,
+    seasons: [
+      { season: 1, episodesCount: 13, startChapter: 1, endChapter: 18 },
+      { season: 2, episodesCount: 13, startChapter: 19, endChapter: 35 },
+      { season: 3, episodesCount: 13, startChapter: 36, endChapter: 55 },
+      { season: 4, episodesCount: 13, startChapter: 56, endChapter: 80 }
+    ]
+  },
+  shield_hero: {
+    aliases: ['восхождение героя щита', 'tate no yuusha no nariagari', 'герой щита'],
+    mangaSearchQuery: 'Восхождение героя щита',
+    totalMangaChapters: 105,
+    seasons: [
+      { season: 1, episodesCount: 25, startChapter: 1, endChapter: 45 },
+      { season: 2, episodesCount: 13, startChapter: 46, endChapter: 62 },
+      { season: 3, episodesCount: 12, startChapter: 63, endChapter: 85 }
+    ]
   }
 };
 

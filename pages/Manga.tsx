@@ -386,6 +386,11 @@ const Manga: React.FC = () => {
       if (q) {
         setSearchQuery(q);
         const epNum = ep ? parseInt(ep, 10) : 1;
+        const cleanQuery = q
+          .replace(/\s+(2|\d+)\s*сезон/gi, '')
+          .replace(/\s+сезон\s*(2|\d+)/gi, '')
+          .replace(/\s+(TV-2|TV\s*2|2nd\s+Season|3rd\s+Season|Season\s*2|Season\s*3|II|III|\d+)$/i, '')
+          .trim();
 
         Promise.all([
           fetch(`/api/manga/anime-bridge?title=${encodeURIComponent(q)}&episode=${epNum}`)
@@ -394,7 +399,7 @@ const Manga: React.FC = () => {
           fetch(`/api/manga/search?limit=8&q=${encodeURIComponent(q)}&source=all&_t=${Date.now()}`)
             .then(res => res.json())
             .catch(() => null)
-        ]).then(([bridge, searchData]) => {
+        ]).then(async ([bridge, searchData]) => {
           let targetChapStr = directChap || null;
           if (bridge && bridge.success) {
             setAnimeBridgeData(bridge);
@@ -404,8 +409,24 @@ const Manga: React.FC = () => {
             }
           }
 
-          if (searchData && searchData.results && searchData.results.length > 0) {
-            const bestMatch = searchData.results[0];
+          let results = searchData?.results || [];
+
+          // If no results for raw title (e.g. "Военная хроника маленькой девочки 2"), try cleanQuery or bridge.mangaTitle
+          if (results.length === 0 && (cleanQuery !== q || bridge?.mangaTitle)) {
+            const secondaryTerm = bridge?.mangaTitle || cleanQuery;
+            try {
+              const res2 = await fetch(`/api/manga/search?limit=8&q=${encodeURIComponent(secondaryTerm)}&source=all&_t=${Date.now()}`);
+              if (res2.ok) {
+                const data2 = await res2.json();
+                if (data2.results && data2.results.length > 0) {
+                  results = data2.results;
+                }
+              }
+            } catch (_) {}
+          }
+
+          if (results.length > 0) {
+            const bestMatch = results[0];
             setSelectedManga(bestMatch);
             selectMangaItem(bestMatch, targetChapStr, true);
           }
