@@ -353,6 +353,29 @@ export const mapAnime = async (data: any): Promise<Anime> => {
       cover = proxyImage(`/system/animes/original/${data.id}.jpg`);
   }
 
+  let trailerYoutubeId: string | undefined = undefined;
+  let trailerUrl: string | undefined = undefined;
+
+  if (Array.isArray(data.videos) && data.videos.length > 0) {
+    const ytVideo = data.videos.find((v: any) => v.hosting === 'youtube' && (v.kind === 'pv' || v.kind === 'op' || v.kind === 'ed' || !v.kind)) || data.videos.find((v: any) => v.hosting === 'youtube');
+    if (ytVideo) {
+      if (ytVideo.player_url) {
+        const match = ytVideo.player_url.match(/(?:embed\/|v=|vi\/|youtu\.be\/|\/v\/)([^#&?]*)/);
+        if (match && match[1]) {
+          trailerYoutubeId = match[1];
+          trailerUrl = `https://www.youtube.com/watch?v=${match[1]}`;
+        }
+      }
+      if (!trailerYoutubeId && ytVideo.url) {
+        const match = ytVideo.url.match(/(?:embed\/|v=|vi\/|youtu\.be\/|\/v\/)([^#&?]*)/);
+        if (match && match[1]) {
+          trailerYoutubeId = match[1];
+          trailerUrl = `https://www.youtube.com/watch?v=${match[1]}`;
+        }
+      }
+    }
+  }
+
   return {
     id: data.id?.toString() || '',
     slug: slugify(data.name || data.russian || ''),
@@ -361,6 +384,8 @@ export const mapAnime = async (data: any): Promise<Anime> => {
     image,
     image_preview,
     cover: cover,
+    trailerYoutubeId,
+    trailerUrl,
     rating: data.score ? parseFloat(data.score) : 0,
     ageRating: data.rating || '',
     year: data.aired_on ? new Date(data.aired_on).getFullYear() : (data.released_on ? new Date(data.released_on).getFullYear() : 0),

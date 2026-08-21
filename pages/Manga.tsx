@@ -270,6 +270,8 @@ const Manga: React.FC = () => {
     }
   });
   const [mangaReaderPage, setMangaReaderPage] = useState<number>(0);
+  const [isChapterJumpModalOpen, setIsChapterJumpModalOpen] = useState<boolean>(false);
+  const [chapterJumpInput, setChapterJumpInput] = useState<string>('');
   const [readingBg, setReadingBg] = useState<'dark' | 'gray' | 'sepia' | 'light'>(() => {
     try {
       return (localStorage.getItem('kami_reader_bg') as 'dark' | 'gray' | 'sepia' | 'light') || 'dark';
@@ -1439,30 +1441,42 @@ const Manga: React.FC = () => {
                       {selectedManga.title}
                     </h3>
                     
-                    {/* Chapter Select menu */}
+                    {/* Chapter Select menu & Quick Jump */}
                     <div className="relative inline-block text-left mt-0.5 group/chdrop select-none">
-                      <button className="flex items-center gap-1.5 font-bold text-xs sm:text-sm text-white hover:text-[#8B5CF6] transition-colors focus:outline-none">
+                      <button 
+                        onClick={() => setIsChapterJumpModalOpen(true)}
+                        className="flex items-center gap-1.5 font-bold text-xs sm:text-sm text-white hover:text-[#8B5CF6] transition-colors focus:outline-none cursor-pointer"
+                        title="Нажмите для быстрого перехода к любой главе"
+                      >
                         <span>Глава {activeChapter.chapter}</span>
-                        <ChevronDown className="w-3.5 h-3.5" />
+                        <ChevronDown className="w-3.5 h-3.5 text-[#8B5CF6]" />
                       </button>
 
-                      <div className="absolute left-0 top-full mt-2 w-64 bg-[#18191d] border border-white/10 rounded-2xl p-2 shadow-2xl overflow-hidden hidden group-hover/chdrop:block hover:block z-50 animate-in fade-in slide-in-from-top-1 duration-150">
-                        <div className="text-[9px] font-black tracking-wider text-[#7d8291] uppercase px-3 py-1.5 border-b border-white/5">
-                          Перейти к главе
+                      <div className="absolute left-0 top-full mt-2 w-72 bg-[#18191d] border border-white/10 rounded-2xl p-2.5 shadow-2xl overflow-hidden hidden group-hover/chdrop:block hover:block z-50 animate-in fade-in slide-in-from-top-1 duration-150">
+                        <div className="flex items-center justify-between px-2 py-1.5 border-b border-white/5 mb-1.5">
+                          <span className="text-[9px] font-black tracking-wider text-[#7d8291] uppercase">
+                            Главы ({chapters.length})
+                          </span>
+                          <button
+                            onClick={() => setIsChapterJumpModalOpen(true)}
+                            className="text-[9px] font-bold text-[#8B5CF6] hover:underline uppercase"
+                          >
+                            Быстрый ввод
+                          </button>
                         </div>
-                        <div className="max-h-60 overflow-y-auto custom-scrollbar p-1 space-y-0.5 mt-1">
+                        <div className="max-h-60 overflow-y-auto custom-scrollbar p-1 space-y-1">
                           {chapters.map((ch) => (
                             <button
                               key={ch.id}
                               onClick={() => startReadingChapter(ch)}
-                              className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold transition-all flex flex-col ${
+                              className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-between ${
                                 ch.id === activeChapter.id
-                                  ? "bg-[#8B5CF6] text-black"
-                                  : "text-slate-300 hover:bg-white/5"
+                                  ? "bg-[#8B5CF6] text-black shadow-md font-black"
+                                  : "text-slate-300 hover:bg-white/10 hover:text-white"
                               }`}
                             >
-                              <span>Глава {ch.chapter}</span>
-                              <span className="text-[9px] opacity-75 truncate">{ch.title || 'Раздел главы'}</span>
+                              <span className="truncate">Глава {ch.chapter} {ch.title ? `— ${ch.title}` : ''}</span>
+                              {ch.id === activeChapter.id && <span className="text-[9px] uppercase tracking-wider ml-1 bg-black/20 px-1.5 py-0.5 rounded">Чтение</span>}
                             </button>
                           ))}
                         </div>
@@ -2015,6 +2029,134 @@ const Manga: React.FC = () => {
                   )}
                 </AnimatePresence>
               </div>
+
+              {/* Quick Jump to Chapter Modal Dialog */}
+              <AnimatePresence>
+                {isChapterJumpModalOpen && (
+                  <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                      className="bg-[#18191d] border border-white/10 rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-5"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-xl bg-[#8B5CF6]/20 flex items-center justify-center text-[#8B5CF6]">
+                            <BookOpen className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <h3 className="font-extrabold text-sm text-white">Переход к главе</h3>
+                            <p className="text-[11px] text-slate-400">Всего доступно глав: {chapters.length}</p>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => {
+                            setIsChapterJumpModalOpen(false);
+                            setChapterJumpInput('');
+                          }}
+                          className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-white/5 transition-all"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          const targetNum = chapterJumpInput.trim();
+                          if (!targetNum) return;
+                          
+                          // Find exact match or closest numeric match
+                          const found = chapters.find(c => c.chapter.toString() === targetNum || c.chapter.toString().startsWith(targetNum));
+                          if (found) {
+                            startReadingChapter(found);
+                            setIsChapterJumpModalOpen(false);
+                            setChapterJumpInput('');
+                          } else {
+                            // Try numeric parse
+                            const num = parseFloat(targetNum);
+                            if (!isNaN(num)) {
+                              const closest = [...chapters].sort((a, b) => {
+                                const diffA = Math.abs(parseFloat(a.chapter) - num);
+                                const diffB = Math.abs(parseFloat(b.chapter) - num);
+                                return diffA - diffB;
+                              })[0];
+                              if (closest) {
+                                startReadingChapter(closest);
+                                setIsChapterJumpModalOpen(false);
+                                setChapterJumpInput('');
+                              }
+                            }
+                          }
+                        }}
+                        className="space-y-4"
+                      >
+                        <div>
+                          <label className="text-xs font-bold text-slate-300 block mb-1.5">Введите номер главы</label>
+                          <input
+                            type="text"
+                            autoFocus
+                            placeholder={`Например: ${chapters[0]?.chapter || '1'}`}
+                            value={chapterJumpInput}
+                            onChange={(e) => setChapterJumpInput(e.target.value)}
+                            className="w-full h-12 px-4 bg-black/40 border border-white/10 focus:border-[#8B5CF6] rounded-2xl text-white outline-none font-bold text-sm"
+                          />
+                        </div>
+
+                        {/* List of matched or quick chapter chips */}
+                        <div className="space-y-1.5">
+                          <span className="text-[10px] font-black uppercase text-[#7d8291] tracking-wider block">
+                            Быстрый выбор:
+                          </span>
+                          <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto custom-scrollbar p-1">
+                            {chapters
+                              .filter(c => !chapterJumpInput || c.chapter.toString().includes(chapterJumpInput.trim()) || (c.title && c.title.toLowerCase().includes(chapterJumpInput.toLowerCase().trim())))
+                              .slice(0, 15)
+                              .map(c => (
+                                <button
+                                  key={c.id}
+                                  type="button"
+                                  onClick={() => {
+                                    startReadingChapter(c);
+                                    setIsChapterJumpModalOpen(false);
+                                    setChapterJumpInput('');
+                                  }}
+                                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                                    c.id === activeChapter.id
+                                      ? 'bg-[#8B5CF6] text-black font-black'
+                                      : 'bg-white/5 text-slate-300 hover:bg-white/15 hover:text-white border border-white/5'
+                                  }`}
+                                >
+                                  Гл. {c.chapter}
+                                </button>
+                              ))}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsChapterJumpModalOpen(false);
+                              setChapterJumpInput('');
+                            }}
+                            className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-400 hover:text-white hover:bg-white/5 transition-all"
+                          >
+                            Отмена
+                          </button>
+                          <button
+                            type="submit"
+                            className="px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider bg-[#8B5CF6] text-black hover:bg-[#A855F7] transition-all shadow-lg shadow-[#8B5CF6]/20"
+                          >
+                            Перейти
+                          </button>
+                        </div>
+                      </form>
+                    </motion.div>
+                  </div>
+                )}
+              </AnimatePresence>
             </motion.div>
           );
         })()}
