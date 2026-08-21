@@ -18,8 +18,8 @@ import { containsProfanity } from '../utils/profanity';
 
 
 // Use environment variables or fallback to the key you provided
-const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL || 'https://ulumbarwutnsodmzxpst.supabase.co';
-const supabaseKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVsdW1iYXJ3dXRuc29kbXp4cHN0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE3MDA5ODIsImV4cCI6MjA4NzI3Njk4Mn0.4HTww4JB9dcc9FcyONURPsdcu4CAdKzScsshAj3lJxs';
+const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL || 'https://wazhihhiburkucpnypzc.supabase.co';
+const supabaseKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndhemhpaGhpYnVya3VjcG55cHpjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzNDA0NTAsImV4cCI6MjA4NjkxNjQ1MH0.4SnAvfL6hLZLAx0p04cluZc5YHtCGZsnz0ZLXlD-RM4';
 
 let supabaseClient: any = null;
 console.log('Initializing Supabase with URL:', supabaseUrl);
