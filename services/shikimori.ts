@@ -538,10 +538,10 @@ export const enrichAnimeWithKodik = async (anime: Anime, id: string, searchTitle
       }
     }
 
-    // HD Image & Banner retrieval from AniList GraphQL
+    // HD Image, Banner & Trailer retrieval from AniList GraphQL
     try {
       const numId = parseInt(id, 10);
-      const anilistQuery = `query ($idMal: Int, $search: String) { Media(idMal: $idMal, search: $search, type: ANIME) { coverImage { extraLarge large medium } bannerImage } }`;
+      const anilistQuery = `query ($idMal: Int, $search: String) { Media(idMal: $idMal, search: $search, type: ANIME) { coverImage { extraLarge large medium } bannerImage trailer { id site } } }`;
       const aRes = await fetch('https://graphql.anilist.co', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
@@ -552,6 +552,7 @@ export const enrichAnimeWithKodik = async (anime: Anime, id: string, searchTitle
         const aData: any = await aRes.json();
         const coverImg = aData?.data?.Media?.coverImage?.extraLarge || aData?.data?.Media?.coverImage?.large;
         const banner = aData?.data?.Media?.bannerImage;
+        const trailer = aData?.data?.Media?.trailer;
         if (banner) {
           anime.bannerImage = banner;
           anime.cover = banner;
@@ -561,6 +562,10 @@ export const enrichAnimeWithKodik = async (anime: Anime, id: string, searchTitle
         }
         if (coverImg && !anime.cover) {
           anime.cover = coverImg;
+        }
+        if (trailer && trailer.site === 'youtube' && trailer.id) {
+          anime.trailerYoutubeId = trailer.id;
+          anime.trailerUrl = `https://www.youtube.com/watch?v=${trailer.id}`;
         }
       }
     } catch (_) {}

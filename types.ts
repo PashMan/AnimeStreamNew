@@ -8,6 +8,8 @@ export interface Anime {
   image_preview?: string;
   cover?: string;
   bannerImage?: string;
+  trailerUrl?: string;
+  trailerYoutubeId?: string;
   rating: number;
   ageRating?: string;
   score?: number;

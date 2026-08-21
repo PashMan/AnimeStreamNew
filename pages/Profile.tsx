@@ -14,7 +14,7 @@ import { useDmcaBlocks } from '../store/dmcaBlocks';
 import { motion, PanInfo } from 'motion/react';
 
 const Profile: React.FC = () => {
-  const { user, openAuthModal, updateProfile } = useAuth();
+  const { user, openAuthModal, updateProfile, isVip } = useAuth();
   const { slugBlocks } = useSlugBlocks();
   const { dmcaBlocks } = useDmcaBlocks();
   const [allFavIds, setAllFavIds] = useState<string[]>([]);
@@ -712,10 +712,16 @@ const Profile: React.FC = () => {
                       {uploadError && <p className="text-[10px] text-red-500 font-bold uppercase mb-4 text-center z-10 relative">{uploadError}</p>}
                       
                       <h1 className="text-2xl font-black uppercase tracking-tight text-center z-10 relative">{user.name}</h1>
-                      <div className="flex flex-col items-center gap-3 mt-3 z-10 relative">
-                         <span className={`px-4 py-1.5 text-[10px] font-black uppercase rounded-xl border tracking-widest bg-primary/20 text-primary border-primary/20`} style={{ color: currentTheme, borderColor: currentTheme, backgroundColor: currentTheme ? `${currentTheme}33` : undefined }}>
+                      <div className="flex flex-wrap items-center justify-center gap-2 mt-3 z-10 relative">
+                         <span className={`px-3.5 py-1 text-[10px] font-black uppercase rounded-xl border tracking-widest bg-primary/20 text-primary border-primary/20`} style={{ color: currentTheme, borderColor: currentTheme, backgroundColor: currentTheme ? `${currentTheme}33` : undefined }}>
                             Пользователь
                          </span>
+                         {(user.isPremium || isVip) && (
+                           <span className="px-3.5 py-1 text-[10px] font-black uppercase rounded-xl border tracking-widest bg-amber-500/20 text-amber-400 border-amber-500/30 flex items-center gap-1.5 shadow-lg shadow-amber-500/10">
+                             <Crown className="w-3 h-3 text-amber-400 fill-amber-400/30" />
+                             Премиум
+                           </span>
+                         )}
                       </div>
                       {user.bio && <p className="mt-5 opacity-80 text-sm leading-relaxed text-center z-10 relative">"{user.bio}"</p>}
                    </div>
