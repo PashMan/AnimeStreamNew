@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { db } from '../services/db';
 import { fetchAnimes } from '../services/shikimori';
 import { Anime, User } from '../types';
-import { FALLBACK_IMAGE } from '../constants';
+import { FALLBACK_IMAGE, AVAILABLE_PREFIXES } from '../constants';
 import { Link } from 'react-router-dom';
 import imageCompression from 'browser-image-compression';
 import SEO from '../components/SEO';
@@ -42,6 +42,7 @@ const Profile: React.FC = () => {
   const [editName, setEditName] = useState(user?.name || '');
   const [editBio, setEditBio] = useState(user?.bio || '');
   const [editAvatar, setEditAvatar] = useState(user?.avatar || '');
+  const [editPrefix, setEditPrefix] = useState(user?.customPrefix || 'Пользователь');
   
   // Design State
   const [editBg, setEditBg] = useState(user?.profileBg || '');
@@ -473,6 +474,7 @@ const Profile: React.FC = () => {
         name: editName,
         bio: editBio,
         avatar: editAvatar,
+        customPrefix: editPrefix,
         profileBg: editBg,
         profileBanner: editBanner,
         profileLayout: editLayout,
@@ -713,9 +715,22 @@ const Profile: React.FC = () => {
                       
                       <h1 className="text-2xl font-black uppercase tracking-tight text-center z-10 relative">{user.name}</h1>
                       <div className="flex flex-wrap items-center justify-center gap-2 mt-3 z-10 relative">
-                         <span className={`px-3.5 py-1 text-[10px] font-black uppercase rounded-xl border tracking-widest bg-primary/20 text-primary border-primary/20`} style={{ color: currentTheme, borderColor: currentTheme, backgroundColor: currentTheme ? `${currentTheme}33` : undefined }}>
-                            Пользователь
-                         </span>
+                         {(() => {
+                            const currentPrefixName = isEditing ? editPrefix : (user.customPrefix || 'Пользователь');
+                            const prefixDef = AVAILABLE_PREFIXES.find(p => p.name === currentPrefixName);
+                            return (
+                              <span 
+                                className="px-3.5 py-1 text-[10px] font-black uppercase rounded-xl border tracking-widest transition-all" 
+                                style={{ 
+                                  color: prefixDef ? prefixDef.color : (currentTheme || '#8B5CF6'), 
+                                  borderColor: prefixDef ? prefixDef.borderColor : (currentTheme ? `${currentTheme}40` : '#8B5CF640'), 
+                                  backgroundColor: prefixDef ? prefixDef.bgColor : (currentTheme ? `${currentTheme}20` : '#8B5CF620') 
+                                }}
+                              >
+                                 {currentPrefixName}
+                              </span>
+                            );
+                         })()}
                          {(user.isPremium || isVip) && (
                            <span className="px-3.5 py-1 text-[10px] font-black uppercase rounded-xl border tracking-widest bg-amber-500/20 text-amber-400 border-amber-500/30 flex items-center gap-1.5 shadow-lg shadow-amber-500/10">
                              <Crown className="w-3 h-3 text-amber-400 fill-amber-400/30" />
@@ -914,6 +929,51 @@ const Profile: React.FC = () => {
                             placeholder="Расскажите о себе..."
                             className="w-full p-5 min-h-[120px] bg-black/20 border border-white/10 rounded-2xl text-white focus:border-primary focus:bg-black/40 outline-none disabled:opacity-50 transition-all font-medium resize-y"
                           />
+                        </div>
+
+                        {/* Prefix / Title Selection Setting */}
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <label className="text-sm font-bold text-white mb-1 block">Префикс (Звание) профиля</label>
+                              <p className="text-[13px] text-slate-400">Выберите бейдж/префикс, отображаемый под вашей аватаркой.</p>
+                            </div>
+                            <span className="text-xs px-3 py-1 bg-white/5 border border-white/10 rounded-xl font-black text-white uppercase">
+                              Текущий: {editPrefix || user.customPrefix || 'Пользователь'}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
+                            {AVAILABLE_PREFIXES.map((prefix) => {
+                              const isSelected = (editPrefix || user.customPrefix || 'Пользователь') === prefix.name;
+                              return (
+                                <button
+                                  key={prefix.id}
+                                  type="button"
+                                  disabled={!isEditing}
+                                  onClick={() => setEditPrefix(prefix.name)}
+                                  className={`p-3.5 rounded-2xl border text-left transition-all duration-200 flex flex-col justify-between gap-2 ${
+                                    isSelected
+                                      ? 'border-primary shadow-lg bg-primary/10'
+                                      : 'border-white/5 bg-black/20 hover:border-white/20'
+                                  } ${!isEditing ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:scale-[1.02]'}`}
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <span 
+                                      className="text-xs font-black uppercase px-2.5 py-0.5 rounded-lg border"
+                                      style={{ color: prefix.color, borderColor: prefix.borderColor, backgroundColor: prefix.bgColor }}
+                                    >
+                                      {prefix.name}
+                                    </span>
+                                    {isSelected && <CheckCircle className="w-4 h-4 text-primary" />}
+                                  </div>
+                                  <p className="text-[10px] text-slate-400 line-clamp-2 leading-tight">
+                                    {prefix.description}
+                                  </p>
+                                </button>
+                              );
+                            })}
+                          </div>
                         </div>
 
                         <div className="h-px w-full bg-gradient-to-r from-transparent via-white/10 to-transparent my-4"></div>

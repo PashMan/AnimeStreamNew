@@ -5,12 +5,13 @@ import { db } from '../services/db';
 import { useAuth } from '../context/AuthContext';
 import { User, Anime } from '../types';
 import { fetchAnimes } from '../services/shikimori';
-import { Loader2, Heart, History, ArrowLeft, UserPlus, MessageSquare, Check, Film, X, Clock, Tv } from 'lucide-react';
+import { Loader2, Heart, History, ArrowLeft, UserPlus, MessageSquare, Check, Film, X, Clock, Tv, Crown } from 'lucide-react';
 import SEO from '../components/SEO';
 import { Image } from '../components/Image';
 import { useSlugBlocks } from '../store/slugBlocks';
 import { useDmcaBlocks } from '../store/dmcaBlocks';
 import { AnimeListRow } from '../components/AnimeListRow';
+import { AVAILABLE_PREFIXES } from '../constants';
 
 const UserProfile: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -254,6 +255,30 @@ const UserProfile: React.FC = () => {
 
              <div className="bg-surface/50 backdrop-blur-md border border-white/5 rounded-3xl p-6 space-y-4">
                 <h1 className="text-2xl font-black text-white uppercase tracking-tight text-center md:text-left">{profile.name}</h1>
+                <div className="flex flex-wrap items-center justify-center md:justify-start gap-2">
+                   {(() => {
+                      const prefixName = profile.customPrefix || 'Пользователь';
+                      const prefixDef = AVAILABLE_PREFIXES.find(p => p.name === prefixName);
+                      return (
+                        <span 
+                          className="px-3.5 py-1 text-[10px] font-black uppercase rounded-xl border tracking-widest" 
+                          style={{ 
+                            color: prefixDef ? prefixDef.color : '#8B5CF6', 
+                            borderColor: prefixDef ? prefixDef.borderColor : '#8B5CF640', 
+                            backgroundColor: prefixDef ? prefixDef.bgColor : '#8B5CF620' 
+                          }}
+                        >
+                           {prefixName}
+                        </span>
+                      );
+                   })()}
+                   {profile.isPremium && (
+                     <span className="px-3.5 py-1 text-[10px] font-black uppercase rounded-xl border tracking-widest bg-amber-500/20 text-amber-400 border-amber-500/30 flex items-center gap-1.5 shadow-lg shadow-amber-500/10">
+                       <Crown className="w-3 h-3 text-amber-400 fill-amber-400/30" />
+                       Премиум
+                     </span>
+                   )}
+                </div>
                 {profile.bio && (
                     <p className="text-slate-400 text-sm leading-relaxed text-center md:text-left">{profile.bio}</p>
                 )}

@@ -211,3 +211,24 @@ export const MOCK_NEWS: NewsItem[] = [
     category: "Интервью"
   }
 ];
+
+export interface PrefixOption {
+  id: string;
+  name: string;
+  color: string;
+  borderColor: string;
+  bgColor: string;
+  description: string;
+  icon?: string;
+}
+
+export const AVAILABLE_PREFIXES: PrefixOption[] = [
+  { id: 'user', name: 'Пользователь', color: '#8B5CF6', borderColor: '#8B5CF640', bgColor: '#8B5CF620', description: 'Стандартный статус участника' },
+  { id: 'otaku', name: 'Отаку', color: '#38BDF8', borderColor: '#38BDF840', bgColor: '#38BDF820', description: 'Истинный ценитель японской анимации' },
+  { id: 'sensei', name: 'Сенсей', color: '#10B981', borderColor: '#10B98140', bgColor: '#10B98120', description: 'Опытный наставник и ветеран просмотров' },
+  { id: 'mangaka', name: 'Мангака', color: '#F43F5E', borderColor: '#F43F5E40', bgColor: '#F43F5E20', description: 'Любитель манги и графических историй' },
+  { id: 'critic', name: 'Критик', color: '#F59E0B', borderColor: '#F59E0B40', bgColor: '#F59E0B20', description: 'Мастер рецензий и объективных оценок' },
+  { id: 'legend', name: 'Легенда', color: '#EC4899', borderColor: '#EC489940', bgColor: '#EC489920', description: 'Почётный ветеран с огромным стажем' },
+  { id: 'shinobi', name: 'Шиноби', color: '#6366F1', borderColor: '#6366F140', bgColor: '#6366F120', description: 'Неуловимый ночной зритель' },
+  { id: 'kouhai', name: 'Кохай', color: '#14B8A6', borderColor: '#14B8A640', bgColor: '#14B8A620', description: 'Начинающий исследователь аниме-вселенных' }
+];
