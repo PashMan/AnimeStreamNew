@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, forwardRef, useState } from "react";
+import { openMangaPage } from "../utils/mangaNav";
 import { createPortal } from "react-dom";
 import Artplayer from "artplayer";
 import Hls from "hls.js";
@@ -2464,7 +2465,7 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                       onClick={() => {
                         setIsSettingsOpen(false);
                         const targetChap = mangaBridge?.mappedChapter || episodeNumber || 1;
-                        window.location.href = `/manga?search=${encodeURIComponent(animeTitle)}&episode=${episodeNumber || 1}&chapter=${targetChap}`;
+                        openMangaPage(animeTitle, episodeNumber || 1, targetChap);
                       }}
                       className="flex items-center justify-between py-3 px-2.5 rounded-xl hover:bg-white/5 transition-colors cursor-pointer text-left group"
                     >

@@ -387,28 +387,29 @@ const Manga: React.FC = () => {
         setSearchQuery(q);
         const epNum = ep ? parseInt(ep, 10) : 1;
 
-        // 1. Query Anime-to-Manga bridge database for accurate episode-to-chapter resolution
-        fetch(`/api/manga/anime-bridge?title=${encodeURIComponent(q)}&episode=${epNum}`)
-          .then(res => res.json())
-          .then(bridge => {
-            if (bridge && bridge.success) {
-              setAnimeBridgeData(bridge);
-              setActiveDetailTab('chapters');
+        Promise.all([
+          fetch(`/api/manga/anime-bridge?title=${encodeURIComponent(q)}&episode=${epNum}`)
+            .then(res => res.json())
+            .catch(() => null),
+          fetch(`/api/manga/search?limit=8&q=${encodeURIComponent(q)}&source=all&_t=${Date.now()}`)
+            .then(res => res.json())
+            .catch(() => null)
+        ]).then(([bridge, searchData]) => {
+          let targetChapStr = directChap || null;
+          if (bridge && bridge.success) {
+            setAnimeBridgeData(bridge);
+            setActiveDetailTab('chapters');
+            if (!targetChapStr && bridge.mappedChapter) {
+              targetChapStr = String(bridge.mappedChapter);
             }
-          })
-          .catch(e => console.warn('Anime bridge error:', e));
+          }
 
-        // 2. Query Manga catalog
-        fetch(`/api/manga/search?limit=8&q=${encodeURIComponent(q)}&source=all&_t=${Date.now()}`)
-          .then(res => res.json())
-          .then(data => {
-            if (data.results && data.results.length > 0) {
-              const bestMatch = data.results[0];
-              setSelectedManga(bestMatch);
-              selectMangaItem(bestMatch);
-            }
-          })
-          .catch(err => console.warn('Manga sync search error:', err));
+          if (searchData && searchData.results && searchData.results.length > 0) {
+            const bestMatch = searchData.results[0];
+            setSelectedManga(bestMatch);
+            selectMangaItem(bestMatch, targetChapStr, true);
+          }
+        });
       } else {
         setSelectedManga(null);
         setAnimeBridgeData(null);
@@ -668,49 +669,10 @@ const Manga: React.FC = () => {
     }
   };
 
-  // Fetch chapters for selected manga
-  const selectMangaItem = async (manga: MangaItem) => {
-    setChaptersLoading(true);
-    setChapters([]);
-    setIsMangaLicensed(false);
-    setSelectedTranslationGroup('');
-    try {
-      const res = await fetch(`/api/manga/${manga.id}/chapters?_t=${Date.now()}`);
-      if (res.ok) {
-        const data = await res.json();
-        const chList: ChapterItem[] = data.chapters || [];
-        setChapters(chList);
-        setIsMangaLicensed(!!data.isLicensed);
-
-        // Group by translator name to find scanlator with most chapters
-        if (chList.length > 0) {
-          const groupsMap: Record<string, number> = {};
-          chList.forEach((ch) => {
-            const grp = ch.group || "Внешний переводчик";
-            groupsMap[grp] = (groupsMap[grp] || 0) + 1;
-          });
-          
-          let maxGroup = "";
-          let maxCount = -1;
-          Object.entries(groupsMap).forEach(([gName, count]) => {
-            if (count > maxCount) {
-              maxCount = count;
-              maxGroup = gName;
-            }
-          });
-          setSelectedTranslationGroup(maxGroup);
-        }
-      }
-    } catch (e) {
-      console.error("Chapters load error", e);
-    } finally {
-      setChaptersLoading(false);
-    }
-  };
-
   // Launch Reader
-  const startReadingChapter = async (chapterObj: ChapterItem) => {
-    if (selectedManga?.isPremium && !user?.isPremium) {
+  const startReadingChapter = async (chapterObj: ChapterItem, mangaOverride?: MangaItem) => {
+    const activeManga = mangaOverride || selectedManga;
+    if (activeManga?.isPremium && !user?.isPremium) {
       alert('Чтение Глав этой премиум-манги доступно подписчикам Premium! Пожалуйста, оформите подписку.');
       return;
     }
@@ -722,13 +684,13 @@ const Manga: React.FC = () => {
     setPagesLoading(true);
 
     // Save item details to continuous reading feed in localStorage
-    if (selectedManga) {
+    if (activeManga) {
       const latestHistory: HistoryItem = {
-        manga: selectedManga,
+        manga: activeManga,
         chapter: chapterObj,
         timestamp: Date.now()
       };
-      const updated = [latestHistory, ...readingHistory.filter(h => h.manga.id !== selectedManga.id)].slice(0, 15);
+      const updated = [latestHistory, ...readingHistory.filter(h => h.manga.id !== activeManga.id)].slice(0, 15);
       setReadingHistory(updated);
       localStorage.setItem('kami_manga_history_v2', JSON.stringify(updated));
     }
@@ -767,6 +729,61 @@ const Manga: React.FC = () => {
       setChapterPagesError('network_error');
     } finally {
       setPagesLoading(false);
+    }
+  };
+
+  // Fetch chapters for selected manga
+  const selectMangaItem = async (manga: MangaItem, targetChapterNum?: string | number | null, autoLaunch = false) => {
+    setChaptersLoading(true);
+    setChapters([]);
+    setIsMangaLicensed(false);
+    setSelectedTranslationGroup('');
+    try {
+      const res = await fetch(`/api/manga/${manga.id}/chapters?_t=${Date.now()}`);
+      if (res.ok) {
+        const data = await res.json();
+        const chList: ChapterItem[] = data.chapters || [];
+        setChapters(chList);
+        setIsMangaLicensed(!!data.isLicensed);
+
+        // Group by translator name to find scanlator with most chapters
+        if (chList.length > 0) {
+          const groupsMap: Record<string, number> = {};
+          chList.forEach((ch) => {
+            const grp = ch.group || "Внешний переводчик";
+            groupsMap[grp] = (groupsMap[grp] || 0) + 1;
+          });
+          
+          let maxGroup = "";
+          let maxCount = -1;
+          Object.entries(groupsMap).forEach(([gName, count]) => {
+            if (count > maxCount) {
+              maxCount = count;
+              maxGroup = gName;
+            }
+          });
+          setSelectedTranslationGroup(maxGroup);
+
+          // Auto open chapter if target chapter is specified
+          if (targetChapterNum !== undefined && targetChapterNum !== null) {
+            const targetNum = parseFloat(String(targetChapterNum));
+            if (!isNaN(targetNum)) {
+              const matched = chList.find(c => {
+                const cNum = parseFloat(String(c.chapter || c.title || '0'));
+                return Math.abs(cNum - targetNum) < 0.6;
+              }) || chList.find(c => parseFloat(String(c.chapter || '0')) >= targetNum) || chList[0];
+
+              if (matched && autoLaunch) {
+                startReadingChapter(matched, manga);
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.error("Chapters load error", e);
+    } finally {
+      setChaptersLoading(false);
     }
   };
 

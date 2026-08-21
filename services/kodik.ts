@@ -137,7 +137,10 @@ export const fetchRecentUpdates = async (limit = 40): Promise<KodikRecentUpdate[
       const title = mat.title || item.title || 'Без названия';
       const cleanTitle = title.split('/')[0].trim();
       
-      let image = mat.poster_url || mat.poster || '';
+      let image = mat.poster_url || mat.poster || mat.screenshots?.[0] || '';
+      if (image.startsWith('//')) {
+        image = `https:${image}`;
+      }
       if (image && image.includes('shikimori.one')) {
         const path = image.split('shikimori.one')[1];
         image = `/api/image${path}`;
