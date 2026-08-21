@@ -56,8 +56,19 @@ const AuthModal: React.FC = () => {
     }
   };
 
-  const handleGoogleLogin = () => {
-      loginWithGoogle();
+  const handleGoogleLogin = async () => {
+    setError('');
+    setIsLoading(true);
+    try {
+      const result = await loginWithGoogle();
+      if (result && !result.success && result.message) {
+        setError(result.message);
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Ошибка входа через Google. Попробуйте позже.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {

@@ -538,31 +538,32 @@ export const enrichAnimeWithKodik = async (anime: Anime, id: string, searchTitle
       }
     }
 
-    // Secondary Image & Cover fallback from AniList GraphQL if still missing
-    if (isMissingImage(anime.image) || isMissingImage(anime.cover)) {
-      try {
-        const numId = parseInt(id, 10);
-        const anilistQuery = `query ($idMal: Int, $search: String) { Media(idMal: $idMal, search: $search, type: ANIME) { coverImage { extraLarge large medium } bannerImage } }`;
-        const aRes = await fetch('https://graphql.anilist.co', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-          body: JSON.stringify({ query: anilistQuery, variables: isNaN(numId) ? { search: anime.originalName || searchTitle || anime.title } : { idMal: numId } })
-        });
-        if (aRes.ok) {
-          const aData: any = await aRes.json();
-          const coverImg = aData?.data?.Media?.coverImage?.extraLarge || aData?.data?.Media?.coverImage?.large;
-          const banner = aData?.data?.Media?.bannerImage;
-          if (coverImg && isMissingImage(anime.image)) {
-            anime.image = coverImg;
-          }
-          if (banner && isMissingImage(anime.cover)) {
-            anime.cover = banner;
-          } else if (coverImg && isMissingImage(anime.cover)) {
-            anime.cover = coverImg;
-          }
+    // HD Image & Banner retrieval from AniList GraphQL
+    try {
+      const numId = parseInt(id, 10);
+      const anilistQuery = `query ($idMal: Int, $search: String) { Media(idMal: $idMal, search: $search, type: ANIME) { coverImage { extraLarge large medium } bannerImage } }`;
+      const aRes = await fetch('https://graphql.anilist.co', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({ query: anilistQuery, variables: isNaN(numId) ? { search: anime.originalName || searchTitle || anime.title } : { idMal: numId } }),
+        signal: AbortSignal.timeout(3000)
+      });
+      if (aRes.ok) {
+        const aData: any = await aRes.json();
+        const coverImg = aData?.data?.Media?.coverImage?.extraLarge || aData?.data?.Media?.coverImage?.large;
+        const banner = aData?.data?.Media?.bannerImage;
+        if (banner) {
+          anime.bannerImage = banner;
+          anime.cover = banner;
         }
-      } catch (_) {}
-    }
+        if (coverImg && (isMissingImage(anime.image) || !anime.image || anime.image === PLACEHOLDER_IMAGE)) {
+          anime.image = coverImg;
+        }
+        if (coverImg && !anime.cover) {
+          anime.cover = coverImg;
+        }
+      }
+    } catch (_) {}
   } catch (err) {
     console.warn('[enrichAnimeWithKodik] Kodik metadata enrichment error:', err);
   }
