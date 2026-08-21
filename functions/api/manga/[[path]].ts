@@ -692,7 +692,7 @@ export const onRequest = async (context: any) => {
                title: chTitle || 'Глава',
                volume: path.match(/vol(\d+)/)?.[1] || '1',
                chapter: path.match(/vol\d+\/([\d.,]+)/)?.[1] || '0',
-               group: 'ReadManga',
+               group: 'KamiManga Trans',
                publishAt: new Date().toISOString()
             });
         }
