@@ -54,6 +54,16 @@ export async function onRequest(context: any) {
     });
   }
 
+  // Edge cache lookup
+  const cache = (caches as any).default;
+  const cacheKey = new Request(request.url, request);
+  try {
+    const cachedResponse = await cache.match(cacheKey);
+    if (cachedResponse) {
+      return cachedResponse;
+    }
+  } catch (_) {}
+
   const urlObj = new URL(request.url);
   let targetUrl = urlObj.searchParams.get('url');
   if (!targetUrl) {
@@ -66,30 +76,6 @@ export async function onRequest(context: any) {
   try {
     targetUrl = decodeURIComponent(targetUrl);
   } catch (_) {}
-
-  // 1. OPTIMIZATION: Check if target URL is a video segment (.ts, .m4s, .mp4, etc.)
-  // Do NOT proxy video bytes through Worker CPU/bandwidth. Redirect directly to CDN node.
-  const cleanUrlLower = targetUrl.toLowerCase();
-  const isMediaSegment = cleanUrlLower.endsWith('.ts') ||
-                         cleanUrlLower.endsWith('.m4s') ||
-                         cleanUrlLower.endsWith('.mp4') ||
-                         cleanUrlLower.endsWith('.m4a') ||
-                         cleanUrlLower.endsWith('.aac') ||
-                         cleanUrlLower.includes('.ts?') ||
-                         cleanUrlLower.includes('.m4s?') ||
-                         cleanUrlLower.includes('.mp4?');
-
-  if (isMediaSegment) {
-    return new Response(null, {
-      status: 302,
-      headers: {
-        'Location': targetUrl,
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
-        'Cache-Control': 'public, max-age=86400'
-      }
-    });
-  }
 
   try {
     const refererParam = urlObj.searchParams.get('referer');
@@ -222,10 +208,16 @@ export async function onRequest(context: any) {
       responseHeaders['Content-Length'] = res.headers.get('content-length')!;
     }
 
-    return new Response(buffer, {
+    const finalResponse = new Response(buffer, {
       status: res.status,
       headers: responseHeaders
     });
+
+    if (res.status === 200 || res.status === 206) {
+      try { context.waitUntil(cache.put(cacheKey, finalResponse.clone())); } catch (_) {}
+    }
+
+    return finalResponse;
 
   } catch (err: any) {
     return new Response(`Proxy Exception: ${err.message}`, {
