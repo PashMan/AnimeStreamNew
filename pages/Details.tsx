@@ -79,104 +79,169 @@ const formatWorkerEmbedUrl = (rawEmbedUrl: string, epNum: number) => {
   }
 };
 
-const getResolvedAniboomUrl = (t: any, epNum: number, defaultUrl?: string | null) => {
+const normalizeVoiceName = (name?: string | null): string => {
+  return (name || '')
+    .toLowerCase()
+    .replace(/\s*\((4k|1080|720|4к|1080p|720p)\)\s*/gi, '')
+    .replace(/[^a-zа-яё0-9]/gi, '')
+    .replace(/ё/g, 'е')
+    .trim();
+};
+
+const getResolvedAniboomUrl = (t: any, epNum: number, defaultUrl?: string | null, translationsList?: any[]) => {
   const num = epNum || 1;
   let target: string | null = null;
 
-  if (t?.aniboom_iframe) {
+  if (t?.aniboom_iframe && typeof t.aniboom_iframe === 'string' && t.aniboom_iframe.includes('aniboom')) {
     target = t.aniboom_iframe;
-  } else if (t?.iframe && t.iframe.includes("aniboom")) {
+  } else if (t?.iframe && typeof t.iframe === 'string' && t.iframe.includes('aniboom')) {
     target = t.iframe;
-  } else if (defaultUrl && defaultUrl.includes("aniboom")) {
+  } else if (translationsList && t?.title) {
+    const normTitle = normalizeVoiceName(t.title);
+    const matched = translationsList.find((tr: any) => {
+      const normTr = normalizeVoiceName(tr.title);
+      return (normTr === normTitle || normTr.includes(normTitle) || normTitle.includes(normTr)) && 
+        (tr.aniboom_iframe || (tr.iframe && tr.iframe.includes('aniboom')));
+    });
+    if (matched) {
+      target = matched.aniboom_iframe || (matched.iframe && matched.iframe.includes('aniboom') ? matched.iframe : null);
+    }
+  }
+
+  if (!target && defaultUrl && defaultUrl.includes('aniboom')) {
     target = defaultUrl;
   }
 
-  if (!target || !target.includes("aniboom.one/embed/")) {
+  if (!target || !target.includes('aniboom.one/embed/')) {
     return null;
   }
 
   try {
-    const url = new URL(target.startsWith("//") ? `https:${target}` : target);
-    url.searchParams.set("episode", String(num));
+    const url = new URL(target.startsWith('//') ? `https:${target}` : target);
+    url.searchParams.set('episode', String(num));
     return url.toString();
   } catch (_) {
     let result = target;
-    if (!result.includes("episode=")) {
-      result += (result.includes("?") ? "&" : "?") + `episode=${num}`;
+    if (!result.includes('episode=')) {
+      result += (result.includes('?') ? '&' : '?') + `episode=${num}`;
     }
     return result;
   }
 };
 
-const getResolvedKodikUrl = (t: any, epNum: number, defaultUrl?: string | null) => {
+const getResolvedKodikUrl = (t: any, epNum: number, defaultUrl?: string | null, translationsList?: any[]) => {
   const num = epNum || 1;
-  const target = t?.kodik_iframe || (t?.iframe && !t.iframe.includes("collaps") && !t.iframe.includes("ortified") ? t.iframe : null) || defaultUrl;
+  let target: string | null = null;
+
+  // 1. Direct kodik_iframe property
+  if (t?.kodik_iframe && typeof t.kodik_iframe === 'string' && !t.kodik_iframe.includes('aniboom') && !t.kodik_iframe.includes('collaps') && !t.kodik_iframe.includes('ortified')) {
+    target = t.kodik_iframe;
+  } 
+  // 2. Direct iframe property if it's Kodik
+  else if (t?.iframe && typeof t.iframe === 'string' && t.iframe.includes('kodik')) {
+    target = t.iframe;
+  } 
+  // 3. Find matching Kodik voice in translations list
+  else if (translationsList && t?.title) {
+    const normTitle = normalizeVoiceName(t.title);
+    const matched = translationsList.find((tr: any) => {
+      const normTr = normalizeVoiceName(tr.title);
+      return (normTr === normTitle || normTr.includes(normTitle) || normTitle.includes(normTr)) && 
+        ((tr.kodik_iframe && !tr.kodik_iframe.includes('aniboom')) || (tr.iframe && tr.iframe.includes('kodik')));
+    });
+    if (matched) {
+      target = (matched.kodik_iframe && !matched.kodik_iframe.includes('aniboom')) 
+        ? matched.kodik_iframe 
+        : (matched.iframe && matched.iframe.includes('kodik') ? matched.iframe : null);
+    }
+  } 
+  // 4. Fallback from t.iframe if not aniboom/collaps
+  else if (t?.iframe && typeof t.iframe === 'string' && !t.iframe.includes('aniboom') && !t.iframe.includes('collaps') && !t.iframe.includes('ortified')) {
+    target = t.iframe;
+  }
+
+  // 5. Final fallback to default Kodik URL from balancers
+  if (!target || target.includes('aniboom') || target.includes('collaps') || target.includes('ortified')) {
+    target = (defaultUrl && !defaultUrl.includes('aniboom') && !defaultUrl.includes('collaps') && !defaultUrl.includes('ortified')) ? defaultUrl : null;
+  }
+
   if (!target) return null;
+
   try {
-    const url = new URL(target.startsWith("//") ? `https:${target}` : target);
-    url.searchParams.set("episode", String(num));
+    const url = new URL(target.startsWith('//') ? `https:${target}` : target);
+    url.searchParams.set('episode', String(num));
     return url.toString();
   } catch (_) {
-    const sep = target.includes("?") ? "&" : "?";
+    const sep = target.includes('?') ? '&' : '?';
     return `${target}${sep}episode=${num}`;
   }
 };
 
-const getResolvedCollapsUrl = (t: any, epNum: number, defaultUrl?: string | null) => {
+const getResolvedCollapsUrl = (t: any, epNum: number, defaultUrl?: string | null, translationsList?: any[]) => {
   const num = epNum || 1;
-  const target = t?.collaps_iframe || (t?.iframe && (t.iframe.includes("collaps") || t.iframe.includes("ortified")) ? t.iframe : null) || defaultUrl;
+  let target: string | null = null;
+
+  if (t?.collaps_iframe && typeof t.collaps_iframe === 'string' && (t.collaps_iframe.includes('collaps') || t.collaps_iframe.includes('ortified'))) {
+    target = t.collaps_iframe;
+  } else if (t?.iframe && typeof t.iframe === 'string' && (t.iframe.includes('collaps') || t.iframe.includes('ortified'))) {
+    target = t.iframe;
+  } else if (translationsList && t?.title) {
+    const normTitle = normalizeVoiceName(t.title);
+    const matched = translationsList.find((tr: any) => {
+      const normTr = normalizeVoiceName(tr.title);
+      return (normTr === normTitle || normTr.includes(normTitle) || normTitle.includes(normTr)) && 
+        (tr.collaps_iframe || (tr.iframe && (tr.iframe.includes('collaps') || tr.iframe.includes('ortified'))));
+    });
+    if (matched) {
+      target = matched.collaps_iframe || (matched.iframe && (matched.iframe.includes('collaps') || matched.iframe.includes('ortified')) ? matched.iframe : null);
+    }
+  }
+
+  if (!target && defaultUrl && (defaultUrl.includes('collaps') || defaultUrl.includes('ortified'))) {
+    target = defaultUrl;
+  }
+
   if (!target) return null;
+
   try {
-    const url = new URL(target.startsWith("//") ? `https:${target}` : target);
-    url.searchParams.set("episode", String(num));
+    const url = new URL(target.startsWith('//') ? `https:${target}` : target);
+    url.searchParams.set('episode', String(num));
     return url.toString();
   } catch (_) {
-    const sep = target.includes("?") ? "&" : "?";
+    const sep = target.includes('?') ? '&' : '?';
     return `${target}${sep}episode=${num}`;
   }
 };
 
-const getResolvedIframeUrl = (t: any, epNum: number, defaultUrl?: string | null) => {
+const getResolvedIframeUrl = (t: any, epNum: number, defaultUrl?: string | null, translationsList?: any[]) => {
   const num = epNum || 1;
   if (!t) {
     if (defaultUrl) {
       try {
-        const url = new URL(defaultUrl.startsWith("//") ? `https:${defaultUrl}` : defaultUrl);
-        url.searchParams.set("episode", String(num));
+        const url = new URL(defaultUrl.startsWith('//') ? `https:${defaultUrl}` : defaultUrl);
+        url.searchParams.set('episode', String(num));
         return url.toString();
       } catch (_) {
-        const sep = defaultUrl.includes("?") ? "&" : "?";
+        const sep = defaultUrl.includes('?') ? '&' : '?';
         return `${defaultUrl}${sep}episode=${num}`;
       }
     }
     return null;
   }
 
-  if (defaultUrl && (defaultUrl.includes("collaps") || defaultUrl.includes("ortified"))) {
-    return getResolvedCollapsUrl(t, num, defaultUrl);
+  if (defaultUrl && (defaultUrl.includes('collaps') || defaultUrl.includes('ortified'))) {
+    return getResolvedCollapsUrl(t, num, defaultUrl, translationsList);
   }
 
-  if (
-    t.collaps_iframe &&
-    t.has_1080_collaps &&
-    num <= (t.collaps_episodes_count || 1)
-  ) {
-    return getResolvedCollapsUrl(t, num, defaultUrl);
+  if (defaultUrl && (defaultUrl.includes('kodik') || defaultUrl.includes('anivod'))) {
+    return getResolvedKodikUrl(t, num, defaultUrl, translationsList);
   }
 
-  const fallbackIframe = t.kodik_iframe || (t.iframe && !t.iframe.includes("collaps") && !t.iframe.includes("ortified") ? t.iframe : null) || t.collaps_iframe || defaultUrl;
-  if (fallbackIframe) {
-    try {
-      const url = new URL(fallbackIframe.startsWith("//") ? `https:${fallbackIframe}` : fallbackIframe);
-      url.searchParams.set("episode", String(num));
-      return url.toString();
-    } catch (_) {
-      const sep = fallbackIframe.includes("?") ? "&" : "?";
-      return `${fallbackIframe}${sep}episode=${num}`;
-    }
+  if (defaultUrl && defaultUrl.includes('aniboom')) {
+    return getResolvedAniboomUrl(t, num, defaultUrl, translationsList);
   }
 
-  return null;
+  return getResolvedKodikUrl(t, num, defaultUrl, translationsList);
 };
 
 const Details: React.FC = () => {
@@ -401,7 +466,7 @@ const Details: React.FC = () => {
     if (!isAniboomTranslation) {
       // Kodik translation selected (720p)
       const defaultKodik = players.find((p) => p.name === "Kodik")?.iframe;
-      const kodikIframeUrl = getResolvedKodikUrl(selectedTranslation, epNum, defaultKodik);
+      const kodikIframeUrl = getResolvedKodikUrl(selectedTranslation, epNum, defaultKodik, translations);
       if (kodikIframeUrl) {
         const streamUrl = getCleanPlaylistUrl(kodikIframeUrl, null, null, false);
         if (isCurrent) {
@@ -423,14 +488,14 @@ const Details: React.FC = () => {
     }
 
     // AniBoom translation selected (4K)
-    const embedToResolve = getResolvedAniboomUrl(selectedTranslation, epNum, defaultAniboom);
+    const embedToResolve = getResolvedAniboomUrl(selectedTranslation, epNum, defaultAniboom, translations);
 
     if (!embedToResolve) {
       if (isCurrent) {
         setIsResolvingStream(false);
         // Fallback to Kodik HLS if AniBoom embed is not available
         const defaultKodik = players.find((p) => p.name === "Kodik")?.iframe;
-        const kodikIframeUrl = getResolvedKodikUrl(selectedTranslation, epNum, defaultKodik);
+        const kodikIframeUrl = getResolvedKodikUrl(selectedTranslation, epNum, defaultKodik, translations);
         if (kodikIframeUrl) {
           const kodikHlsUrl = getCleanPlaylistUrl(kodikIframeUrl, null, null, false);
           setResolvedStream({
@@ -499,7 +564,7 @@ const Details: React.FC = () => {
             setIsResolvingStream(false);
             // Fallback to Kodik HLS in KamiPlayer if AniBoom resolve fails
             const defaultKodik = players.find((p) => p.name === "Kodik")?.iframe;
-            const kodikIframeUrl = getResolvedKodikUrl(selectedTranslation, epNum, defaultKodik);
+            const kodikIframeUrl = getResolvedKodikUrl(selectedTranslation, epNum, defaultKodik, translations);
             if (kodikIframeUrl) {
               const kodikHlsUrl = getCleanPlaylistUrl(kodikIframeUrl, null, null, false);
               setResolvedStream({
@@ -523,7 +588,7 @@ const Details: React.FC = () => {
       isCurrent = false;
       abortController.abort();
     };
-  }, [paramEpisode, selectedTranslation, id, players]);
+  }, [paramEpisode, selectedTranslation, id, players, translations]);
 
   useEffect(() => {
     const activeEp = paramEpisode || "1";
@@ -2075,7 +2140,7 @@ const Details: React.FC = () => {
                             } else {
                               const epNum = parseInt(paramEpisode || "1") || 1;
                               const defaultKodik = players.find((p) => p.name === "Kodik")?.iframe;
-                              const kodikIframeUrl = getResolvedKodikUrl(selectedTranslation, epNum, defaultKodik);
+                              const kodikIframeUrl = getResolvedKodikUrl(selectedTranslation, epNum, defaultKodik, translations);
                               if (kodikIframeUrl) {
                                 customSrc = getCleanPlaylistUrl(kodikIframeUrl, null, null, false);
                               } else {
@@ -2135,7 +2200,7 @@ const Details: React.FC = () => {
                                   if (resolvedStream?.provider === "aniboom" || (selectedTranslation as any)?.provider === "aniboom") {
                                     const epNum = parseInt(paramEpisode || "1") || 1;
                                     const defaultKodik = players.find((p) => p.name === "Kodik")?.iframe;
-                                    const kodikIframeUrl = getResolvedKodikUrl(selectedTranslation, epNum, defaultKodik);
+                                    const kodikIframeUrl = getResolvedKodikUrl(selectedTranslation, epNum, defaultKodik, translations);
                                     if (kodikIframeUrl) {
                                       const kodikHlsUrl = getCleanPlaylistUrl(kodikIframeUrl, null, null, false);
                                       setResolvedStream({
@@ -2161,10 +2226,10 @@ const Details: React.FC = () => {
                           const epNum = parseInt(paramEpisode || "1") || 1;
                           let finalIframeUrl = (
                             player.name === "Collaps" || player.name.toLowerCase().includes("collaps")
-                              ? getResolvedCollapsUrl(selectedTranslation, epNum, player.iframe)
+                              ? getResolvedCollapsUrl(selectedTranslation, epNum, player.iframe, translations)
                               : player.name === "Kodik" || player.name.toLowerCase().includes("kodik")
-                                ? getResolvedKodikUrl(selectedTranslation, epNum, player.iframe)
-                                : getResolvedIframeUrl(selectedTranslation, epNum, player.iframe)
+                                ? getResolvedKodikUrl(selectedTranslation, epNum, player.iframe, translations)
+                                : getResolvedIframeUrl(selectedTranslation, epNum, player.iframe, translations)
                           ) || player.iframe;
 
                           if (finalIframeUrl && (player.name === "Kodik" || player.name === "Collaps" || finalIframeUrl.includes("collaps") || finalIframeUrl.includes("ortified"))) {
@@ -2889,18 +2954,18 @@ const Details: React.FC = () => {
               const defaultAniboom = players.find((p) => p.name === "Aniboom")?.iframe;
               const defaultKodik = players.find((p) => p.name === "Kodik")?.iframe;
 
-              let aniboomIframe = getResolvedAniboomUrl(selectedTranslation, epNum, defaultAniboom);
+              let aniboomIframe = getResolvedAniboomUrl(selectedTranslation, epNum, defaultAniboom, translations);
               if (!aniboomIframe && resolvedStream?.provider === "aniboom" && resolvedStream?.url) {
                 aniboomIframe = resolvedStream.url;
               }
               if (!aniboomIframe) {
                 const trWithAniboom = translations.find((tr: any) => tr?.aniboom_iframe || (tr?.iframe && tr.iframe.includes("aniboom")));
                 if (trWithAniboom) {
-                  aniboomIframe = getResolvedAniboomUrl(trWithAniboom, epNum, defaultAniboom);
+                  aniboomIframe = getResolvedAniboomUrl(trWithAniboom, epNum, defaultAniboom, translations);
                 }
               }
 
-              const kodikIframe = getResolvedKodikUrl(selectedTranslation, epNum, defaultKodik);
+              const kodikIframe = getResolvedKodikUrl(selectedTranslation, epNum, defaultKodik, translations);
 
               const primaryUrl = aniboomIframe || kodikIframe || "";
               const fallbackUrl = aniboomIframe ? (kodikIframe || undefined) : undefined;

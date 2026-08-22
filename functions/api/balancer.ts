@@ -392,7 +392,7 @@ export async function onRequest(context: any) {
           provider: 'AniBoom',
           iframe: ab.url,
           aniboom_iframe: ab.url,
-          kodik_iframe: null,
+          kodik_iframe: kodik_iframe || null,
           episodes_count: ab.episodesCount || 1,
           last_episode: ab.episodesCount || 1,
           quality_label: '1080p'
