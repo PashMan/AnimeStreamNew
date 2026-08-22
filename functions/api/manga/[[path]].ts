@@ -268,11 +268,11 @@ export const onRequest = async (context: any) => {
             const ruTitleObj = attrs.altTitles.find((t: any) => t.ru);
             if (ruTitleObj) title = ruTitleObj.ru;
           }
-          if (title === 'Без названия' || !hasCyrillic(title)) return null;
+          if (title === 'Без названия') {
+            title = attrs.title?.en || attrs.title?.['ja-ro'] || attrs.title?.ja || 'Без названия';
+          }
 
-          let description = attrs.description?.ru;
-          if (!description) return null;
-
+          let description = attrs.description?.ru || attrs.description?.en || 'Описание манги KamiAnime';
           const originalTitle = attrs.title?.['ja-ro'] || attrs.title?.ja || attrs.title?.en || '';
           let cover = '';
           const coverRel = manga.relationships?.find((r: any) => r.type === 'cover_art');
@@ -302,18 +302,29 @@ export const onRequest = async (context: any) => {
         }).filter(Boolean);
       }
 
+      let shikiResults: any[] = [];
+      if (shikiRes.status === 'fulfilled' && Array.isArray(shikiRes.value)) {
+        shikiResults = shikiRes.value.map((m: any) => {
+          const title = m.russian || m.name || 'Без названия';
+          let cover = m.image?.original ? `/api/manga/page-proxy?url=${encodeURIComponent(`https://shikimori.one${m.image.original}`)}&_cb=3` : '';
+          return {
+            id: `shiki-${m.id}`,
+            title,
+            originalTitle: m.name || '',
+            rating: m.score ? parseFloat(m.score) : 8.2,
+            status: m.status === 'released' ? 'Завершен' : (m.status === 'ongoing' ? 'Онгоинг' : 'Анонс'),
+            description: m.description || `Манга «${title}» (${m.name || ''}). Читать онлайн все главы на русском языке.`,
+            cover,
+            genres: [m.kind === 'manhwa' ? 'Манхва' : (m.kind === 'manhua' ? 'Маньхуа' : 'Манга')],
+            chapters: m.chapters || m.volumes || 10
+          };
+        }).filter(Boolean);
+      }
+
       let rmResults: any[] = [];
       if (rmRes.status === 'fulfilled' && rmRes.value && rmRes.value.content) {
         rmResults = rmRes.value.content.map((m: any) => {
-          let title = m.rus_name || 'Без названия';
-          if (!hasCyrillic(title)) return null;
-
-          // Strictly filter out licensed titles in Russia or titles with 0 chapters
-          if (m.is_licensed || m.licensed || m.is_legal || m.status?.id === 4) return null;
-          if (typeof m.status?.name === 'string' && m.status.name.toLowerCase().includes('лиценз')) return null;
-          if (m.categories && Array.isArray(m.categories) && m.categories.some((c: any) => (c.name || '').toLowerCase().includes('лиценз'))) return null;
-          if (!m.count_chapters || m.count_chapters === 0) return null;
-
+          let title = m.rus_name || m.en_name || 'Без названия';
           let rmCover = m.img?.high || m.img?.mid || m.cover_high || '';
           if (rmCover.startsWith('/')) rmCover = `https://remanga.org${rmCover}`;
 
@@ -334,6 +345,7 @@ export const onRequest = async (context: any) => {
       const seenTitles = new Set();
       const interleaved: any[] = [];
       const pushIfUnique = (item: any) => {
+        if (!item || !item.title) return;
         const canonical = item.title.toLowerCase().trim();
         if (!seenTitles.has(canonical)) {
           seenTitles.add(canonical);
@@ -341,8 +353,9 @@ export const onRequest = async (context: any) => {
         }
       };
 
-      const maxLength = Math.max(mdResults.length, rmResults.length);
+      const maxLength = Math.max(shikiResults.length, rmResults.length, mdResults.length);
       for (let i = 0; i < maxLength; i++) {
+        if (i < shikiResults.length) pushIfUnique(shikiResults[i]);
         if (i < rmResults.length) pushIfUnique(rmResults[i]);
         if (i < mdResults.length) pushIfUnique(mdResults[i]);
       }
@@ -612,7 +625,7 @@ export const onRequest = async (context: any) => {
       searchTitles.push(explicitRemangaDir.replace(/-/g, ' '));
       
       try {
-        const mdSearchUrl = `https://api.mangadex.org/manga?limit=3&title=${encodeURIComponent(explicitRemangaDir.replace(/-/g, ' '))}&availableTranslatedLanguage[]=ru`;
+        const mdSearchUrl = `https://api.mangadex.org/manga?limit=5&title=${encodeURIComponent(explicitRemangaDir.replace(/-/g, ' '))}`;
         const mdRes = await fetch(mdSearchUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
         const mdData: any = mdRes.ok ? await mdRes.json() : null;
         if (mdData && mdData.data && mdData.data.length > 0) {
@@ -639,9 +652,9 @@ export const onRequest = async (context: any) => {
         }
       } catch (e) {}
 
-      for (const title of searchTitles.slice(0, 2)) {
+      for (const title of searchTitles.slice(0, 3)) {
         if (!title) continue;
-        const mdSearchUrl = `https://api.mangadex.org/manga?limit=2&title=${encodeURIComponent(title)}&availableTranslatedLanguage[]=ru`;
+        const mdSearchUrl = `https://api.mangadex.org/manga?limit=5&title=${encodeURIComponent(title)}`;
         try {
           const mdRes = await fetch(mdSearchUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
           const mdData: any = mdRes.ok ? await mdRes.json() : null;
@@ -755,17 +768,22 @@ export const onRequest = async (context: any) => {
           const res = await fetch(feedUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
           const data: any = await res.json();
           if (data?.data && Array.isArray(data.data)) {
-            return data.data.map((ch: any) => {
-              const attrs = ch.attributes || {};
-              return {
-                id: ch.id,
-                chapter: String(attrs.chapter || '0'),
-                volume: String(attrs.volume || ''),
-                title: attrs.title || `Глава ${attrs.chapter || ''}`,
-                group: 'Команда перевода',
-                publishAt: attrs.publishAt
-              };
-            });
+            return data.data
+              .filter((ch: any) => {
+                const attrs = ch.attributes || {};
+                return !attrs.externalUrl && (attrs.pages === undefined || attrs.pages > 0);
+              })
+              .map((ch: any) => {
+                const attrs = ch.attributes || {};
+                return {
+                  id: ch.id,
+                  chapter: String(attrs.chapter || '0'),
+                  volume: String(attrs.volume || ''),
+                  title: attrs.title || `Глава ${attrs.chapter || ''}`,
+                  group: 'Команда перевода',
+                  publishAt: attrs.publishAt
+                };
+              });
           }
         } catch(e) {}
         return [];
@@ -972,7 +990,8 @@ export const onRequest = async (context: any) => {
         const pathPart = rawPath.split('?')[0];
         const matchVolChap = pathPart.match(/vol(\d+)\/([\d.,]+)/);
         const targetChapNum = matchVolChap ? matchVolChap[2] : '1';
-        const cleanSlug = pathPart.split('/')[1] ? pathPart.split('/')[1].replace(/_/g, ' ') : '';
+        const rawSlug = pathPart.split('/')[1] || '';
+        const cleanSlug = rawSlug.replace(/__.*$/, '').replace(/_/g, ' ').trim();
         debugLogs.push(`[zaza-fallback] Searching alternative sources for title "${cleanSlug}" chapter ${targetChapNum}...`);
 
         if (cleanSlug) {
@@ -1043,8 +1062,8 @@ export const onRequest = async (context: any) => {
           }
         }
 
-        return new Response(JSON.stringify({ error: 'Издательская блокировка: Главы удалены правообладателем в РФ.', isLicensed: true, pages: [], debugLogs }), {
-          status: 403,
+        return new Response(JSON.stringify({ error: 'Страницы этой главы временно недоступны на данном источнике. Выберите другую главу или перевод.', isLicensed: false, pages: [], debugLogs }), {
+          status: 200,
           headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
         });
       } catch(e: any) {
@@ -1061,29 +1080,30 @@ export const onRequest = async (context: any) => {
         const res = await fetch(rmUrl, {
           headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Accept': 'application/json'
+            'Referer': 'https://remanga.org/',
+            'Accept': 'application/json, text/plain, */*'
           }
         });
         if (res.status !== 200) {
           return new Response(JSON.stringify({ pages: [], debugLogs }), { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
         }
-        const data: any = await res.json();
+        const data: any = await res.json().catch(() => null);
         const cObj = data?.content;
         if (!cObj) {
-          return new Response(JSON.stringify({ pages: [], debugLogs }), { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
+          return new Response(JSON.stringify({ pages: [], debugLogs, error: 'Не удалось получить страницы главы' }), { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
         }
 
         const servers = cObj.servers || ['https://img.remanga.org'];
-        const pageItems = cObj.pages || cObj.scans || [];
+        const pageItems = cObj.pages || cObj.scans || cObj.images || [];
         const pages = pageItems.map((page: any) => {
           let link = "";
           if (typeof page === 'string') {
             link = page;
           } else if (page && typeof page === 'object') {
             if (Array.isArray(page)) {
-              link = page[2] || "";
+              link = page[2] || page[0] || "";
             } else {
-              link = page.link || page.url || "";
+              link = page.link || page.url || page.image || page.photo || "";
             }
           }
           if (link && !link.startsWith('http')) {
@@ -1101,7 +1121,7 @@ export const onRequest = async (context: any) => {
 
         return new Response(JSON.stringify({ pages, debugLogs }), { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
       } catch (err: any) {
-        return new Response(JSON.stringify({ error: err.message, pages: [], debugLogs }), { status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
+        return new Response(JSON.stringify({ error: err.message, pages: [], debugLogs }), { status: 200, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
       }
     }
 
@@ -1114,22 +1134,24 @@ export const onRequest = async (context: any) => {
         }
       });
       if (res.status !== 200) {
-        return new Response(JSON.stringify({ pages: [], debugLogs }), { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
+        return new Response(JSON.stringify({ pages: [], debugLogs, error: 'MangaDex chapter not found' }), { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
       }
-      const data: any = await res.json();
+      const data: any = await res.json().catch(() => null);
       if (!data || !data.chapter) {
-        return new Response(JSON.stringify({ pages: [], debugLogs }), { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
+        return new Response(JSON.stringify({ pages: [], debugLogs, error: 'MangaDex chapter data is missing' }), { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
       }
       const hash = data.chapter.hash;
       const baseUrl = data.baseUrl;
-      const filenames = data.chapter.data;
+      const filenames = (data.chapter.data && data.chapter.data.length > 0) ? data.chapter.data : (data.chapter.dataSaver || []);
+      const isDataSaver = (!data.chapter.data || data.chapter.data.length === 0) && !!data.chapter.dataSaver;
+      const pathPrefix = isDataSaver ? 'data-saver' : 'data';
       const pages = filenames.map((filename: string) => {
-        const rawUrl = `${baseUrl}/data/${hash}/${filename}`;
+        const rawUrl = `${baseUrl}/${pathPrefix}/${hash}/${filename}`;
         return `/api/manga/page-proxy?url=${encodeURIComponent(rawUrl)}&chapterId=${chapterId}`;
       });
       return new Response(JSON.stringify({ pages, debugLogs }), { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
     } catch (err: any) {
-      return new Response(JSON.stringify({ error: err.message, pages: [], debugLogs }), { status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
+      return new Response(JSON.stringify({ error: err.message, pages: [], debugLogs }), { status: 200, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
     }
   }
 
