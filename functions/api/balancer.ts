@@ -333,69 +333,58 @@ export async function onRequest(context: any) {
   const normalizeVoice = (name: string) => (name || '').toLowerCase().replace(/[^a-zа-яё0-9]/gi, '').replace(/ё/g, 'е').trim();
   const cleanTitle = (raw: string) => raw.replace(/\s*\((4K|1080|720|4к|1080p|720p)\)\s*/gi, '').trim();
 
-  const matchedAnimegoVoices = new Set<string>();
   const unifiedTranslations: any[] = [];
 
-  if (kodik_translations.length > 0) {
-    kodik_translations.forEach((kt: any) => {
+  if (animego_aniboom_map.length > 0) {
+    animego_aniboom_map.forEach((ab, idx) => {
+      const baseVoice = cleanTitle(ab.voice);
+      const normAb = normalizeVoice(baseVoice);
+
+      // Find matching Kodik iframe for fallback
+      const matchedKt = kodik_translations.find((kt: any) => {
+        const normKt = normalizeVoice(cleanTitle(kt.title || ''));
+        return normKt === normAb || normKt.includes(normAb) || normAb.includes(normKt);
+      });
+
+      unifiedTranslations.push({
+        id: `aniboom_${idx}_${normAb}`,
+        title: baseVoice,
+        type: 'voice',
+        provider: 'AniBoom',
+        iframe: ab.url,
+        aniboom_iframe: ab.url,
+        kodik_iframe: matchedKt?.iframe || (kodik_iframe || null),
+        episodes_count: ab.episodesCount || matchedKt?.episodes_count || 1,
+        last_episode: ab.episodesCount || matchedKt?.last_episode || 1,
+        quality_label: '4K',
+        is_native_4k: true
+      });
+    });
+  }
+
+  // Include Kodik translations if not already matched
+  if (kodik_translations && kodik_translations.length > 0) {
+    kodik_translations.forEach((kt: any, idx: number) => {
       const baseVoice = cleanTitle(kt.title || '');
       const normKt = normalizeVoice(baseVoice);
+      const alreadyInUnified = unifiedTranslations.some((ut: any) => {
+        const normUt = normalizeVoice(ut.title);
+        return normUt === normKt || normUt.includes(normKt) || normKt.includes(normUt);
+      });
 
-      let matchedAb: any = null;
-      if (animego_aniboom_map.length > 0) {
-        matchedAb = animego_aniboom_map.find(ab => {
-          const normAb = normalizeVoice(ab.voice);
-          return normAb === normKt || normAb.includes(normKt) || normKt.includes(normAb);
-        }) || null;
-      }
-
-      if (matchedAb) {
-        matchedAnimegoVoices.add(normalizeVoice(matchedAb.voice));
+      if (!alreadyInUnified) {
         unifiedTranslations.push({
-          id: kt.id,
-          title: baseVoice,
-          type: kt.type || 'voice',
-          provider: 'AniBoom',
-          iframe: matchedAb.url,
-          aniboom_iframe: matchedAb.url,
-          kodik_iframe: kt.iframe,
-          episodes_count: kt.episodes_count || 1,
-          last_episode: kt.last_episode || 1,
-          quality_label: '1080p'
-        });
-      } else {
-        unifiedTranslations.push({
-          id: kt.id,
+          id: kt.id || `kodik_${idx}`,
           title: baseVoice,
           type: kt.type || 'voice',
           provider: 'Kodik',
           iframe: kt.iframe,
-          aniboom_iframe: aniboom_iframe || null,
+          aniboom_iframe: null,
           kodik_iframe: kt.iframe,
           episodes_count: kt.episodes_count || 1,
           last_episode: kt.last_episode || 1,
-          quality_label: '1080p'
-        });
-      }
-    });
-  }
-
-  // Добавляем AniBoom озвучки, которых нет в Kodik
-  if (animego_aniboom_map.length > 0) {
-    animego_aniboom_map.forEach((ab, idx) => {
-      const normAb = normalizeVoice(ab.voice);
-      if (!matchedAnimegoVoices.has(normAb)) {
-        unifiedTranslations.unshift({
-          id: `aniboom_${idx}`,
-          title: cleanTitle(ab.voice),
-          type: 'voice',
-          provider: 'AniBoom',
-          iframe: ab.url,
-          aniboom_iframe: ab.url,
-          kodik_iframe: kodik_iframe || null,
-          episodes_count: ab.episodesCount || 1,
-          last_episode: ab.episodesCount || 1,
-          quality_label: '1080p'
+          quality_label: '720p',
+          is_native_4k: false
         });
       }
     });
