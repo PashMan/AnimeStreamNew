@@ -125,7 +125,7 @@ const Manga: React.FC = () => {
     setDownloadProgress({ current: 0, total: 100 });
 
     try {
-      const titleQuery = manga ? `?title=${encodeURIComponent(manga.title || '')}&orig=${encodeURIComponent(manga.originalTitle || '')}` : '';
+      const titleQuery = manga ? `?title=${encodeURIComponent(manga.title || '')}&orig=${encodeURIComponent(manga.originalTitle || '')}&ch=${encodeURIComponent(ch.chapter || '')}&chTitle=${encodeURIComponent(ch.title || '')}` : '';
       const res = await fetch(`/api/manga/chapter/${ch.id}/pages${titleQuery}`);
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.pages && data.pages.length > 0) {
@@ -841,7 +841,7 @@ const Manga: React.FC = () => {
 
     console.log(`[KamiManga] Loading pages for chapter: ${chapterObj.title || 'Chapter'} (ID: ${chapterObj.id})`);
     try {
-      const titleQuery = selectedManga ? `?title=${encodeURIComponent(selectedManga.title || '')}&orig=${encodeURIComponent(selectedManga.originalTitle || '')}` : '';
+      const titleQuery = selectedManga ? `?title=${encodeURIComponent(selectedManga.title || '')}&orig=${encodeURIComponent(selectedManga.originalTitle || '')}&ch=${encodeURIComponent(chapterObj.chapter || '')}&chTitle=${encodeURIComponent(chapterObj.title || '')}` : '';
       const res = await fetch(`/api/manga/chapter/${chapterObj.id}/pages${titleQuery}`);
       const data = await res.json().catch(() => ({}));
 
