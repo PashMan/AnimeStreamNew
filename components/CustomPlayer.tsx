@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, forwardRef, useState } from "react";
+import React, { useEffect, useRef, forwardRef, useState, useCallback } from "react";
 import { openMangaPage } from "../utils/mangaNav";
 import { createPortal } from "react-dom";
 import Artplayer from "artplayer";
@@ -852,6 +852,16 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
     const webglInstanceRef = useRef<AnimeWebGL1080p | null>(null);
 
     const { isVip, openPremiumModal } = useAuth();
+    const pendingPremiumModalRef = useRef<boolean>(false);
+
+    const triggerDeferredPremiumModal = useCallback(() => {
+      if (pendingPremiumModalRef.current) {
+        pendingPremiumModalRef.current = false;
+        setTimeout(() => {
+          openPremiumModal("Просмотр в 4K качестве");
+        }, 250);
+      }
+    }, [openPremiumModal]);
 
     // Determine active stream provider for logging
     const activeProvider = (
@@ -880,6 +890,29 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
       );
     }, [src, activeProvider, episodeNumber, translationTitle, streamType]);
 
+    // Switch HLS audio track according to translationTitle / audioTrackNames
+    useEffect(() => {
+      if (!translationTitle) return;
+      const art = artInstanceRef.current;
+      if (art && (art as any).hls) {
+        const hls = (art as any).hls;
+        const tracks = hls.audioTracks || [];
+        if (tracks.length > 0) {
+          const idx = tracks.findIndex((t: any, i: number) => {
+            const name = (audioTrackNamesRef.current && audioTrackNamesRef.current[i]) || t.name || "";
+            return name && (
+              name.toLowerCase().includes(translationTitle.toLowerCase()) ||
+              translationTitle.toLowerCase().includes(name.toLowerCase())
+            );
+          });
+          if (idx !== -1 && hls.audioTrack !== idx) {
+            console.log(`[HLS Audio] Switching audio track to #${idx} (${translationTitle})`);
+            hls.audioTrack = idx;
+          }
+        }
+      }
+    }, [translationTitle]);
+
     // Settings Modal State
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [activeSubmenu, setActiveSubmenu] = useState<"main" | "quality" | "speed">("main");
@@ -900,7 +933,11 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
 
     useEffect(() => {
       const handleFullscreenChange = () => {
-        setIsFullscreen(!!document.fullscreenElement);
+        const isFs = !!document.fullscreenElement;
+        setIsFullscreen(isFs);
+        if (!isFs) {
+          triggerDeferredPremiumModal();
+        }
       };
       document.addEventListener("fullscreenchange", handleFullscreenChange);
       document.addEventListener("webkitfullscreenchange", handleFullscreenChange);
@@ -912,7 +949,14 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
         document.removeEventListener("mozfullscreenchange", handleFullscreenChange);
         document.removeEventListener("MSFullscreenChange", handleFullscreenChange);
       };
-    }, []);
+    }, [triggerDeferredPremiumModal]);
+
+    // Unmount / Player close trigger for deferred premium modal
+    useEffect(() => {
+      return () => {
+        triggerDeferredPremiumModal();
+      };
+    }, [triggerDeferredPremiumModal]);
 
     // Player Preferences (Stored in localStorage)
     const [selectedQuality, setSelectedQuality] = useState<string>(() => {
@@ -1804,13 +1848,21 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
 
         // Track Fullscreen state
         art.on("fullscreen", (state: boolean) => {
-          setIsFullscreen(state || !!document.fullscreenElement);
+          const isFs = state || !!document.fullscreenElement;
+          setIsFullscreen(isFs);
+          if (!isFs) {
+            triggerDeferredPremiumModal();
+          }
           if (state && containerRef.current && document.fullscreenElement !== containerRef.current) {
             containerRef.current.requestFullscreen?.().catch(() => {});
           }
         });
         art.on("fullscreenWeb", (state: boolean) => {
-          setIsFullscreen(state || !!document.fullscreenElement);
+          const isFs = state || !!document.fullscreenElement;
+          setIsFullscreen(isFs);
+          if (!isFs) {
+            triggerDeferredPremiumModal();
+          }
           if (state && containerRef.current && document.fullscreenElement !== containerRef.current) {
             containerRef.current.requestFullscreen?.().catch(() => {});
           }
@@ -1926,9 +1978,45 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
       if (is4K && !isVip) {
         const art = artInstanceRef.current;
         if (art && art.notice) {
-          art.notice.show = "4K качество доступно с подпиской Premium (1-й месяц бесплатно)";
+          art.notice.show = "4K доступно с Premium. Переключено на 1080p";
         }
-        openPremiumModal("Просмотр в 4K качестве");
+        // Mark pending modal to trigger after player / fullscreen is closed
+        pendingPremiumModalRef.current = true;
+
+        // Auto switch to 1080p
+        const item1080 = availableQualities.find((q) => q.html.includes("1080") || q.targetH === 1080) || {
+          html: "1080p",
+          level: 0,
+          targetH: 1080,
+          isAi: true
+        };
+
+        setSelectedQuality(item1080.html);
+        localStorage.setItem("kami_player_selected_quality", item1080.html);
+
+        if (webglInstanceRef.current) {
+          webglInstanceRef.current.setTargetResolution(1080);
+          webglInstanceRef.current.start();
+        }
+
+        if (art && (art as any).hls) {
+          const hls = (art as any).hls;
+          try {
+            let targetLvl = item1080.level >= 0 ? item1080.level : ((hls.levels && hls.levels.length > 0) ? hls.levels.length - 1 : 0);
+            hls.nextLevel = targetLvl;
+            if (hls.loadLevel !== undefined) hls.loadLevel = targetLvl;
+          } catch (_) {}
+        } else if (art && (art as any).dash) {
+          const player = (art as any).dash;
+          try {
+            const bitrates = player.getBitrateInfoListFor("video");
+            if (bitrates && bitrates.length > 0) {
+              const maxB = bitrates.length - 1;
+              player.setQualityFor("video", maxB);
+            }
+          } catch (_) {}
+        }
+
         setIsSettingsOpen(false);
         setActiveSubmenu("main");
         return;

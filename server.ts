@@ -1242,7 +1242,7 @@ app.get('/api/balancer', async (c) => {
           1
         );
 
-        // Find corresponding Kodik translation if available
+        // Find corresponding Kodik translation if available (for backup Kodik player)
         const matchedKodik = kodik_translations?.find((kt: any) => {
           const normKt = normalizeVoice(cleanTitle(kt.title || ''));
           return normKt === normAb || normKt.includes(normAb) || normAb.includes(normKt);
@@ -1266,7 +1266,7 @@ app.get('/api/balancer', async (c) => {
       });
     }
 
-    // Step 2: Parse all Kodik translations (labeled 720p)
+    // Step 2: Parse all Kodik translations (labeled 720p) if not already matched
     if (kodik_translations && kodik_translations.length > 0) {
       kodik_translations.forEach((kt: any, idx: number) => {
         const baseVoice = cleanTitle(kt.title || 'Озвучка Kodik');
@@ -1277,7 +1277,6 @@ app.get('/api/balancer', async (c) => {
           1
         );
 
-        // Check if already merged in AniBoom list
         const alreadyInUnified = unifiedTranslations.some((ut: any) => {
           const normUt = normalizeVoice(ut.title);
           return normUt === normKt || normUt.includes(normKt) || normKt.includes(normUt);

@@ -244,6 +244,36 @@ const getResolvedIframeUrl = (t: any, epNum: number, defaultUrl?: string | null,
   return getResolvedKodikUrl(t, num, defaultUrl, translationsList);
 };
 
+export const R2_4K_CONFIG: Record<string, { title: string; trackNames: string[]; streamUrl: string; maxTracks?: number }> = {
+  "50594": {
+    title: "Судзумэ, закрывающая двери",
+    trackNames: ["Crunchyroll", "Flarrow Films", "TVShows", "Leviafilm", "AniLibria", "Ю. Сербин", "Netflix КЗ.", "Оригинал + Субтитры", "Оригинал"],
+    streamUrl: "https://cdn1.kamianime.club/suzume/master.m3u8",
+    maxTracks: 5
+  },
+  "62568": {
+    title: "Судзумэ, закрывающая двери",
+    trackNames: ["Crunchyroll", "Flarrow Films", "TVShows", "Leviafilm", "AniLibria", "Ю. Сербин", "Netflix КЗ.", "Оригинал + Субтитры", "Оригинал"],
+    streamUrl: "https://cdn1.kamianime.club/suzume/master.m3u8",
+    maxTracks: 5
+  },
+  "38826": {
+    title: "Дитя погоды",
+    trackNames: ["Reanimedia (Дубляж)", "Flarrow Films", "AniLibria", "Оригинал + Субтитры", "Оригинал"],
+    streamUrl: "https://cdn1.kamianime.club/weathering/master.m3u8"
+  },
+  "16782": {
+    title: "Сад изящных слов",
+    trackNames: ["Reanimedia (Дубляж)", "AniLibria", "Оригинал + Субтитры", "Оригинал"],
+    streamUrl: "https://cdn1.kamianime.club/garden_of_words/master.m3u8"
+  },
+  "32281": {
+    title: "Твоё имя",
+    trackNames: ["Мосфильм-Мастер (Дубляж)", "Reanimedia", "AniLibria", "Оригинал + Субтитры", "Оригинал"],
+    streamUrl: "https://cdn.kamianime.club/kimi-no-na-wa/master.m3u8"
+  }
+};
+
 const Details: React.FC = () => {
   const params = useParams<{ id: string; "*": string }>();
   const paramId = params.id;
@@ -1272,12 +1302,36 @@ const Details: React.FC = () => {
               });
             }
             setPlayers(playersList);
-            setTranslations(translationsList);
-            if (translationsList.length > 0) {
-              const matchedTranslation = selectedTranslation
-                ? translationsList.find((t: any) => getCleanTitle(t.title) === getCleanTitle(selectedTranslation.title))
-                : null;
-              setSelectedTranslation(matchedTranslation || translationsList[0]);
+            const r2Config = id ? R2_4K_CONFIG[id] : null;
+            if (r2Config) {
+              const r2Translations: KodikTranslation[] = r2Config.trackNames.map((track, idx) => ({
+                id: `r2_track_${idx}`,
+                title: track,
+                type: "voice",
+                quality_label: "4K",
+                is_native_4k: true,
+                episodes_count: 1,
+                last_episode: 1,
+                provider: "Kami 4K R2",
+                iframe: "",
+                aniboom_iframe: null,
+                kodik_iframe: null
+              }));
+              setTranslations(r2Translations);
+              if (r2Translations.length > 0) {
+                const matchedTranslation = selectedTranslation
+                  ? r2Translations.find((t: any) => getCleanTitle(t.title) === getCleanTitle(selectedTranslation.title))
+                  : null;
+                setSelectedTranslation(matchedTranslation || r2Translations[0]);
+              }
+            } else {
+              setTranslations(translationsList);
+              if (translationsList.length > 0) {
+                const matchedTranslation = selectedTranslation
+                  ? translationsList.find((t: any) => getCleanTitle(t.title) === getCleanTitle(selectedTranslation.title))
+                  : null;
+                setSelectedTranslation(matchedTranslation || translationsList[0]);
+              }
             }
             setHasFetchedPlayers(true);
             const isTv = isTvDevice();
@@ -2097,44 +2151,17 @@ const Details: React.FC = () => {
                             (p) => p.name === selectedPlayer,
                           )!;
                           if (player.isCustom || player.name === "Aniboom") {
-                            const isSuzume = id === "50594" || id === "62568";
-                            const isWeathering = id === "38826";
-                            const isGardenOfWords = id === "16782";
-                            const isKimiNoNaWa = id === "32281";
+                            const r2Config = id ? R2_4K_CONFIG[id] : undefined;
 
                             let customSrc = "";
                             let maxTracks: number | undefined = undefined;
                             let audioTrackNames: string[] | undefined =
                               undefined;
 
-                            if (
-                              isSuzume ||
-                              isWeathering ||
-                              isGardenOfWords ||
-                              isKimiNoNaWa
-                            ) {
-                              const customRawSrc = isSuzume
-                                ? "https://cdn1.kamianime.club/suzume/master.m3u8"
-                                : isWeathering
-                                  ? "https://cdn1.kamianime.club/weathering/master.m3u8"
-                                  : isGardenOfWords
-                                    ? "https://cdn1.kamianime.club/garden_of_words/master.m3u8"
-                                    : "https://cdn.kamianime.club/kimi-no-na-wa/master.m3u8";
-                              customSrc = `/api/proxy-4k?url=${encodeURIComponent(customRawSrc)}`;
-                              maxTracks = isSuzume ? 5 : undefined;
-                              audioTrackNames = isSuzume
-                                ? [
-                                    "Crunchyroll",
-                                    "Flarrow Films",
-                                    "TVShows",
-                                    "Leviafilm",
-                                    "AniLibria",
-                                    "Ю. Сербин",
-                                    "Netflix КЗ.",
-                                    "Оригинал + Субтитры",
-                                    "Оригинал",
-                                  ]
-                                : undefined;
+                            if (r2Config) {
+                              customSrc = `/api/proxy-4k?url=${encodeURIComponent(r2Config.streamUrl)}`;
+                              maxTracks = r2Config.maxTracks;
+                              audioTrackNames = r2Config.trackNames;
                             } else if (resolvedStream && resolvedStream.url) {
                               customSrc = resolvedStream.url;
                             } else {
