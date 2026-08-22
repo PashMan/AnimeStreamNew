@@ -61,6 +61,8 @@ interface MangaItem {
   status: string;
   description: string;
   cover: string;
+  chapters?: number;
+  isLicensed?: boolean;
   isPremium?: boolean;
 }
 
@@ -691,6 +693,7 @@ const Manga: React.FC = () => {
 
         // Apply visual front-end filtering
         let filtered = apiResults.filter((m: MangaItem) => {
+          if (m.chapters === 0) return false;
           if (filterType !== 'all') {
             if (filterType === 'manhwa' && !m.genres.includes('Манхва')) return false;
             if (filterType === 'manhua' && !m.genres.includes('Маньхуа')) return false;

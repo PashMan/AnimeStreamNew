@@ -307,6 +307,11 @@ export const onRequest = async (context: any) => {
         rmResults = rmRes.value.content.map((m: any) => {
           let title = m.rus_name || 'Без названия';
           if (!hasCyrillic(title)) return null;
+
+          // Strictly filter out licensed titles in Russia or titles with 0 chapters
+          if (m.is_licensed || m.licensed || m.is_legal || m.status?.id === 4) return null;
+          if (typeof m.status?.name === 'string' && m.status.name.toLowerCase().includes('лиценз')) return null;
+          if (m.categories && Array.isArray(m.categories) && m.categories.some((c: any) => (c.name || '').toLowerCase().includes('лиценз'))) return null;
           if (!m.count_chapters || m.count_chapters === 0) return null;
 
           let rmCover = m.img?.high || m.img?.mid || m.cover_high || '';

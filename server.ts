@@ -489,9 +489,91 @@ interface AnimegoData {
 
 const animegoCache = new Map<string, AnimegoData>();
 
+const KNOWN_ANIMEGO_MAPPINGS: Record<string, AnimegoData> = {
+  "39535": {
+    animegoId: "1718",
+    defaultAniboomUrl: "https://aniboom.one/embed/6XvYpL45p6e?episode=1&translation=2&parent=https%3A%2F%2Fanimego.me%2Fanime%2Freinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-1718",
+    aniboomMap: [
+      { voice: "AniLibria", url: "https://aniboom.one/embed/6XvYpL45p6e?episode=1&translation=2&parent=https%3A%2F%2Fanimego.me%2Fanime%2Freinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-1718" },
+      { voice: "Studio Band", url: "https://aniboom.one/embed/6XvYpL45p6e?episode=1&translation=16&parent=https%3A%2F%2Fanimego.me%2Fanime%2Freinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-1718" }
+    ],
+    quality: "1080",
+    totalEpisodes: 11
+  },
+  "45576": {
+    animegoId: "1845",
+    defaultAniboomUrl: "https://aniboom.one/embed/M0l7qA5Wov7?episode=1&translation=2&parent=https%3A%2F%2Fanimego.me%2Fanime%2Freinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-chast-2-1845",
+    aniboomMap: [
+      { voice: "AniLibria", url: "https://aniboom.one/embed/M0l7qA5Wov7?episode=1&translation=2&parent=https%3A%2F%2Fanimego.me%2Fanime%2Freinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-chast-2-1845" },
+      { voice: "Studio Band", url: "https://aniboom.one/embed/M0l7qA5Wov7?episode=1&translation=16&parent=https%3A%2F%2Fanimego.me%2Fanime%2Freinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-chast-2-1845" }
+    ],
+    quality: "1080",
+    totalEpisodes: 12
+  },
+  "51179": {
+    animegoId: "2292",
+    defaultAniboomUrl: "https://aniboom.one/embed/N0r7wP6Qov9?episode=1&translation=2&parent=https%3A%2F%2Fanimego.me%2Fanime%2Freinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-2-2292",
+    aniboomMap: [
+      { voice: "AniLibria", url: "https://aniboom.one/embed/N0r7wP6Qov9?episode=1&translation=2&parent=https%3A%2F%2Fanimego.me%2Fanime%2Freinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-2-2292" },
+      { voice: "Studio Band", url: "https://aniboom.one/embed/N0r7wP6Qov9?episode=1&translation=16&parent=https%3A%2F%2Fanimego.me%2Fanime%2Freinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-2-2292" }
+    ],
+    quality: "1080",
+    totalEpisodes: 12
+  },
+  "55888": {
+    animegoId: "2575",
+    defaultAniboomUrl: "https://aniboom.one/embed/z68qnBAqNvg?episode=1&translation=2&parent=https%3A%2F%2Fanimego.me%2Fanime%2Freinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-2-chast-2-2575",
+    aniboomMap: [
+      { voice: "AniLibria", url: "https://aniboom.one/embed/z68qnBAqNvg?episode=1&translation=2&parent=https%3A%2F%2Fanimego.me%2Fanime%2Freinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-2-chast-2-2575" },
+      { voice: "Studio Band", url: "https://aniboom.one/embed/z68qnBAqNvg?episode=1&translation=16&parent=https%3A%2F%2Fanimego.me%2Fanime%2Freinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-2-chast-2-2575" }
+    ],
+    quality: "1080",
+    totalEpisodes: 12
+  },
+  "59193": {
+    animegoId: "2575",
+    defaultAniboomUrl: "https://aniboom.one/embed/z68qnBAqNvg?episode=1&translation=2&parent=https%3A%2F%2Fanimego.me%2Fanime%2Freinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-2-chast-2-2575",
+    aniboomMap: [
+      { voice: "AniLibria", url: "https://aniboom.one/embed/z68qnBAqNvg?episode=1&translation=2&parent=https%3A%2F%2Fanimego.me%2Fanime%2Freinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-2-chast-2-2575" },
+      { voice: "Studio Band", url: "https://aniboom.one/embed/z68qnBAqNvg?episode=1&translation=16&parent=https%3A%2F%2Fanimego.me%2Fanime%2Freinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-2-chast-2-2575" }
+    ],
+    quality: "1080",
+    totalEpisodes: 12
+  },
+  "49926": {
+    animegoId: "2035",
+    defaultAniboomUrl: "https://aniboom.one/embed/k8Rq2b08awe?episode=1&translation=16&parent=https%3A%2F%2Fanimego.me%2Fanime%2Freinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-eris-ohota-na-goblinov-2035",
+    aniboomMap: [
+      { voice: "Studio Band", url: "https://aniboom.one/embed/k8Rq2b08awe?episode=1&translation=16&parent=https%3A%2F%2Fanimego.me%2Fanime%2Freinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-eris-ohota-na-goblinov-2035" }
+    ],
+    quality: "1080",
+    totalEpisodes: 1
+  }
+};
+
+function isCandidateRelevant(candPath: string, queries: string[]): boolean {
+  const normPath = candPath.toLowerCase();
+  for (const q of queries) {
+    const qWords = q.toLowerCase().split(/[^a-z0-9а-яё]+/i).filter(w => w.length >= 3);
+    if (qWords.length === 0) continue;
+    let matched = 0;
+    for (const w of qWords) {
+      if (normPath.includes(w)) matched++;
+    }
+    if (matched >= Math.min(2, Math.ceil(qWords.length * 0.4))) {
+      return true;
+    }
+  }
+  return false;
+}
+
 async function fetchAnimegoData(shikimoriId: string, searchTitle?: string): Promise<AnimegoData | null> {
   if (!shikimoriId) return null;
   
+  if (KNOWN_ANIMEGO_MAPPINGS[shikimoriId]) {
+    return KNOWN_ANIMEGO_MAPPINGS[shikimoriId];
+  }
+
   if (animegoCache.has(shikimoriId)) {
     console.log(`[AnimeGo Scraper] Cache hit for Shikimori ID: ${shikimoriId}`);
     return animegoCache.get(shikimoriId)!;
@@ -626,9 +708,15 @@ async function fetchAnimegoData(shikimoriId: string, searchTitle?: string): Prom
     }
   }
 
+  // Only fallback if the candidate path actually relates to the queried title
   if (!matchedAnimegoId && candidates.length > 0) {
-    console.warn(`[AnimeGo Scraper] No candidate page contained Shikimori ID link. Falling back to the first search result: ${candidates[0].path}`);
-    matchedAnimegoId = candidates[0].id;
+    const relevantCandidate = candidates.find(c => isCandidateRelevant(c.path, searchQueries));
+    if (relevantCandidate) {
+      console.warn(`[AnimeGo Scraper] Using relevant candidate match: ${relevantCandidate.path}`);
+      matchedAnimegoId = relevantCandidate.id;
+    } else {
+      console.warn(`[AnimeGo Scraper] No candidates matched query keywords. Refusing random fallback.`);
+    }
   }
 
   if (!matchedAnimegoId) {
@@ -1457,6 +1545,11 @@ app.get('/api/manga/search', async (c) => {
       rmResults = rmRes.value.content.map((m: any) => {
         let title = m.rus_name || 'Без названия';
         if (!hasCyrillic(title)) return null;
+
+        // Strictly filter out licensed titles in Russia or titles with 0 chapters
+        if (m.is_licensed || m.licensed || m.is_legal || m.status?.id === 4) return null;
+        if (typeof m.status?.name === 'string' && m.status.name.toLowerCase().includes('лиценз')) return null;
+        if (m.categories && Array.isArray(m.categories) && m.categories.some((c: any) => (c.name || '').toLowerCase().includes('лиценз'))) return null;
         if (!m.count_chapters || m.count_chapters === 0) return null;
         
         let rmCover = m.img?.high || m.img?.mid || m.cover_high || '';
