@@ -2013,10 +2013,11 @@ app.get('/api/manga/:id/chapters', async (c) => {
          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
       });
       const html = await htmlRes.text();
-      const chapters: any[] = [];
+      let chapters: any[] = [];
       const regex = /href="(\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
       let match;
       const seen = new Set();
+      let zazaChapters: any[] = [];
       while ((match = regex.exec(html)) !== null) {
           if (match[2].includes('Читать')) continue;
           if (!match[1].includes('/vol')) continue;
@@ -2029,26 +2030,18 @@ app.get('/api/manga/:id/chapters', async (c) => {
 
           let chTitle = match[2].trim().replace(/<[^>]+>/g, '').trim();
           const targetUrl = zazaPath.startsWith('http') ? (new URL(zazaPath).origin + path) : path;
-          chapters.push({
+          zazaChapters.push({
              id: `zaza-${Buffer.from(targetUrl).toString('base64')}`,
              title: chTitle || 'Глава',
              volume: path.match(/vol(\d+)/)?.[1] || '1',
              chapter: path.match(/vol\d+\/([\d.,]+)/)?.[1] || '0',
-             group: 'KamiManga Trans',
+             group: 'ReadManga: Официальный / Любительский',
              publishAt: new Date().toISOString()
           });
       }
       
-      chapters.reverse();
-
-      if (chapters.length > 0) {
-        return c.json({
-          mangaId,
-          chapters,
-          total: chapters.length,
-          source: 'KamiManga DB'
-        });
-      }
+      zazaChapters.reverse();
+      chapters = zazaChapters;
     } catch (e) {
       console.error('ZazaZa chapters fetch failed', e);
     }
@@ -2074,7 +2067,7 @@ app.get('/api/manga/:id/chapters', async (c) => {
                 chapter: attrs.chapter || '0',
                 volume: attrs.volume || '',
                 title: attrs.title || `Глава ${attrs.chapter || ''}`,
-                group: `MangaDex: ${groupName} (${lang})`,
+                group: `MangaDex: ${groupName} (${lang.toUpperCase()})`,
                 publishAt: attrs.publishAt
               };
             });
@@ -2083,18 +2076,14 @@ app.get('/api/manga/:id/chapters', async (c) => {
         return [];
       };
 
-      let chaps = await getChapters('ru');
-      if (chaps.length === 0) chaps = await getChapters('en');
-      return chaps;
+      const [ru, en] = await Promise.all([getChapters('ru'), getChapters('en')]);
+      return [...ru, ...en];
     }
     return [];
   };
 
   const fetchRM = async () => {
     if (explicitRemangaDir) {
-      // Create a dummy fetchRemangaChapters call for explicit dir? No, wait. 
-      // fetchRemangaChaptersByTitle does search. We can bypass search if we extract the logic!
-      // But wait! Let's just create a quick direct fetch here because it's simpler!
       try {
         const detailRes = await fetch(`https://api.remanga.org/api/titles/${explicitRemangaDir}/`, {
           headers: { 'User-Agent': 'Mozilla/5.0' }
@@ -2134,7 +2123,7 @@ app.get('/api/manga/:id/chapters', async (c) => {
     return [];
   };
 
-  // Run both scraping vectors in parallel to co-source all available Russian chapters
+  // Run all scraping vectors in parallel to co-source all available Russian and alternative chapters
   const chapResults = await Promise.allSettled([fetchMD(), fetchRM()]);
   
   if (chapResults[0].status === 'fulfilled') {
@@ -2144,22 +2133,7 @@ app.get('/api/manga/:id/chapters', async (c) => {
     remangaChapters = chapResults[1].value;
   }
 
-  const allChapters = [...mdChapters, ...remangaChapters];
-
-  if (allChapters.length === 0) {
-    const fallbackChapters = Array.from({ length: 15 }).map((_, idx) => {
-      const chNum = (idx + 1).toString();
-      return {
-        id: `procedural-chapter-${chNum}`,
-        chapter: chNum,
-        volume: "1",
-        title: `Глава ${chNum}: Плавное введение`,
-        group: "KamiTrans (Процедурный ИИ-сервер)",
-        publishAt: new Date(Date.now() - idx * 86400000).toISOString()
-      };
-    });
-    return c.json({ chapters: fallbackChapters, isLicensed: false });
-  }
+  const allChapters = [...remangaChapters, ...mdChapters, ...chapters];
 
   // De-duplicate chapters by [chapter_number + group_name] to keep options clean and unique
   const chKeys = new Set<string>();
@@ -2183,29 +2157,6 @@ app.get('/api/manga/:id/chapters', async (c) => {
 app.get('/api/manga/chapter/:chapterId/pages', async (c) => {
   const chapterId = c.req.param('chapterId');
   
-  // Custom Procedural/AI fallback chapters resolution
-  if (chapterId.startsWith('procedural-')) {
-    const chNum = chapterId.split('-').pop() || '1';
-    console.log(`[API] Serving dynamic procedural pages for chapter: ${chNum}`);
-    // Select 12 beautiful high-resolution visual landscape/concept art images
-    const backgroundUrls = [
-      "https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=1080&auto=format&fit=crop&q=85",
-      "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=1080&auto=format&fit=crop&q=85",
-      "https://images.unsplash.com/photo-1541701494587-cb58502866ab?w=1080&auto=format&fit=crop&q=85",
-      "https://images.unsplash.com/photo-1507842217343-583bb7270b66?w=1080&auto=format&fit=crop&q=85",
-      "https://images.unsplash.com/photo-1534447677768-be436bb09401?w=1080&auto=format&fit=crop&q=85",
-      "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=1080&auto=format&fit=crop&q=85",
-      "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=1080&auto=format&fit=crop&q=85",
-      "https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?w=1080&auto=format&fit=crop&q=85",
-      "https://images.unsplash.com/photo-1540200049848-d9813ea0e120?w=1080&auto=format&fit=crop&q=85",
-      "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=1080&auto=format&fit=crop&q=85",
-      "https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=1080&auto=format&fit=crop&q=85",
-      "https://images.unsplash.com/photo-1501854140801-50d01698950b?w=1080&auto=format&fit=crop&q=85"
-    ];
-    const pages = backgroundUrls.map((url) => `/api/manga/page-proxy?url=${encodeURIComponent(url)}`);
-    return c.json({ pages });
-  }
-
   // ZazaZa chapters resolution
   if (chapterId.startsWith('zaza-')) {
     const rawPath = Buffer.from(chapterId.replace('zaza-', ''), 'base64').toString('utf8');
@@ -2226,18 +2177,83 @@ app.get('/api/manga/chapter/:chapterId/pages', async (c) => {
           if (fullUrl.includes('deleted1.png')) {
              isDeleted = true;
           }
-          // Wrap with page-proxy since ZazaZa images require a Referer
           return `/api/manga/page-proxy?url=${encodeURIComponent(fullUrl)}&_zaza=1`;
         });
         
-        if (isDeleted) {
-          return c.json({ error: 'Издательская блокировка: Главы удалены правообладателем в РФ.', isLicensed: true, pages: [] }, 403);
+        if (!isDeleted && pages.length > 0) {
+          return c.json({ pages });
         }
-
-        return c.json({ pages });
-      } else {
-        return c.json({ pages: [] });
       }
+
+      // Automatic fallback for deleted/licensed chapters on ReadManga:
+      const pathPart = rawPath.split('?')[0];
+      const matchVolChap = pathPart.match(/vol(\d+)\/([\d.,]+)/);
+      const targetChapNum = matchVolChap ? matchVolChap[2] : '1';
+      const cleanSlug = pathPart.split('/')[1] ? pathPart.split('/')[1].replace(/_/g, ' ') : '';
+
+      if (cleanSlug) {
+        // Try ReManga fallback
+        try {
+          const rmSearch = await fetch(`https://api.remanga.org/api/search/?query=${encodeURIComponent(cleanSlug)}&count=2`);
+          const rmData: any = await rmSearch.json();
+          const dir = rmData?.content?.[0]?.dir;
+          if (dir) {
+            const dtRes = await fetch(`https://api.remanga.org/api/titles/${dir}/`);
+            const dtData: any = await dtRes.json();
+            const branchId = dtData?.content?.branches?.[0]?.id;
+            if (branchId) {
+              const chRes = await fetch(`https://api.remanga.org/api/titles/chapters/?branch_id=${branchId}&limit=250&page=1`);
+              const chData: any = await chRes.json();
+              const matchedCh = chData?.content?.find((ch: any) => String(ch.chapter) === String(targetChapNum) || Math.abs(parseFloat(ch.chapter) - parseFloat(targetChapNum)) < 0.1);
+              if (matchedCh?.id) {
+                const pRes = await fetch(`https://api.remanga.org/api/titles/chapters/${matchedCh.id}/`);
+                const pData: any = await pRes.json();
+                const cObj = pData?.content;
+                if (cObj?.pages || cObj?.scans) {
+                  const servers = cObj.servers || ['https://img.remanga.org'];
+                  const pageItems = cObj.pages || cObj.scans || [];
+                  const pages = pageItems.map((page: any) => {
+                    let link = typeof page === 'string' ? page : (Array.isArray(page) ? page[2] : (page.link || page.url || ''));
+                    if (link && !link.startsWith('http')) {
+                      const mainServer = servers[0] ? servers[0].replace(/\/$/, '') : 'https://img.remanga.org';
+                      link = `${mainServer}${link.startsWith('/') ? link : '/' + link}`;
+                    }
+                    return link ? `/api/manga/page-proxy?url=${encodeURIComponent(link)}` : '';
+                  }).filter(Boolean);
+
+                  if (pages.length > 0) {
+                    return c.json({ pages, isFallback: true });
+                  }
+                }
+              }
+            }
+          }
+        } catch(e) {}
+
+        // Try MangaDex fallback
+        try {
+          const mdSearch = await fetch(`https://api.mangadex.org/manga?limit=2&title=${encodeURIComponent(cleanSlug)}`);
+          const mdData: any = await mdSearch.json();
+          const mdId = mdData?.data?.[0]?.id;
+          if (mdId) {
+            const feedRes = await fetch(`https://api.mangadex.org/manga/${mdId}/feed?limit=500`);
+            const feedData: any = await feedRes.json();
+            const matchedDex = feedData?.data?.find((ch: any) => String(ch.attributes?.chapter) === String(targetChapNum));
+            if (matchedDex?.id) {
+              const srvRes = await fetch(`https://api.mangadex.org/at-home/server/${matchedDex.id}`);
+              const srvData: any = await srvRes.json();
+              if (srvData?.chapter?.data) {
+                const hash = srvData.chapter.hash;
+                const baseUrl = srvData.baseUrl;
+                const pages = srvData.chapter.data.map((fn: string) => `/api/manga/page-proxy?url=${encodeURIComponent(`${baseUrl}/data/${hash}/${fn}`)}&chapterId=${matchedDex.id}`);
+                return c.json({ pages, isFallback: true });
+              }
+            }
+          }
+        } catch(e) {}
+      }
+
+      return c.json({ error: 'Издательская блокировка: Главы удалены правообладателем в РФ.', isLicensed: true, pages: [] }, 403);
     } catch(e) {
       console.error('ZazaZa pages fetch failed', e);
       return c.json({ pages: [] });
