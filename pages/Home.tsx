@@ -15,6 +15,7 @@ import { Anime, ScheduleItem, NewsItem, ForumTopic, CommunityCollection } from '
 import { FALLBACK_IMAGE, COLLECTIONS_DATA } from '../constants';
 import CollectionCard from '../components/CollectionCard';
 import CreateCollectionModal from '../components/CreateCollectionModal';
+import Vote4KSection from '../components/Vote4KSection';
 import { KodikRecentUpdate, fetchRecentUpdates } from '../services/kodik';
 import { fetchHighResHeroBanner } from '../services/animeImages';
 
@@ -610,6 +611,9 @@ const Home: React.FC = () => {
             ))}
           </div>
         </section>
+
+        {/* 4K Community Voting Section */}
+        <Vote4KSection />
 
         {/* 4K Anime Section (Premium Exclusive) */}
         <section>
