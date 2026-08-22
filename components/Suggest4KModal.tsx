@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Search, Plus, Loader2, Sparkles, Check } from 'lucide-react';
 import { Anime, Vote4KSeason } from '../types';
 import { fetchAnimes } from '../services/shikimori';
@@ -29,6 +30,13 @@ const Suggest4KModal: React.FC<Suggest4KModalProps> = ({ isOpen, onClose, onSucc
       setSuccessMsg(null);
       return;
     }
+
+    // Lock body scroll when modal is open
+    const originalStyle = window.getComputedStyle(document.body).overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = originalStyle;
+    };
   }, [isOpen]);
 
   // Debounced live search
@@ -96,16 +104,29 @@ const Suggest4KModal: React.FC<Suggest4KModalProps> = ({ isOpen, onClose, onSucc
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+  const modalContent = (
+    <div 
+      className="fixed inset-0 z-[99999] flex items-center justify-center p-4 sm:p-6 select-none"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClose();
+      }}
+    >
+      {/* Backdrop overlay */}
       <div 
-        className="relative w-full max-w-xl bg-[#18191d] border border-white/10 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] animate-in zoom-in-95 duration-200"
+        className="fixed inset-0 bg-black/85 backdrop-blur-md animate-in fade-in duration-200"
+        aria-hidden="true"
+      />
+
+      {/* Modal Dialog Card */}
+      <div 
+        className="relative w-full max-w-xl bg-[#141518] border border-white/10 rounded-2xl sm:rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] z-10 animate-in zoom-in-95 duration-200 select-text"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-5 border-b border-white/5 bg-gradient-to-r from-[#8B5CF6]/10 to-transparent">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-[#8B5CF6]/20 border border-[#8B5CF6]/40 flex items-center justify-center text-[#8B5CF6]">
+        <div className="flex items-center justify-between p-5 border-b border-white/5 bg-gradient-to-r from-[#8B5CF6]/15 via-[#8B5CF6]/5 to-transparent">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-[#8B5CF6]/20 border border-[#8B5CF6]/40 flex items-center justify-center text-[#8B5CF6] shrink-0">
               <Sparkles className="w-5 h-5" />
             </div>
             <div>
@@ -114,6 +135,7 @@ const Suggest4KModal: React.FC<Suggest4KModalProps> = ({ isOpen, onClose, onSucc
             </div>
           </div>
           <button 
+            type="button"
             onClick={onClose}
             className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-colors cursor-pointer"
           >
@@ -122,7 +144,7 @@ const Suggest4KModal: React.FC<Suggest4KModalProps> = ({ isOpen, onClose, onSucc
         </div>
 
         {/* Search Input Box */}
-        <div className="p-5 border-b border-white/5 bg-black/20">
+        <div className="p-5 border-b border-white/5 bg-black/30">
           <div className="relative">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
@@ -130,7 +152,7 @@ const Suggest4KModal: React.FC<Suggest4KModalProps> = ({ isOpen, onClose, onSucc
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Введите название аниме (на русском или английском)..."
-              className="w-full pl-10 pr-10 py-3 bg-[#111215] border border-white/10 rounded-xl text-sm font-medium text-white placeholder-slate-500 focus:outline-none focus:border-[#8B5CF6] transition-all"
+              className="w-full pl-10 pr-10 py-3 bg-[#0d0e11] border border-white/10 rounded-xl text-sm font-medium text-white placeholder-slate-500 focus:outline-none focus:border-[#8B5CF6] transition-all"
               autoFocus
             />
             {isSearching && (
@@ -193,8 +215,12 @@ const Suggest4KModal: React.FC<Suggest4KModalProps> = ({ isOpen, onClose, onSucc
                 </div>
 
                 <button
+                  type="button"
                   disabled={isSubmitting}
-                  onClick={() => handleSelectAndSuggest(anime)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleSelectAndSuggest(anime);
+                  }}
                   className="px-4 py-2 rounded-xl bg-[#8B5CF6] hover:bg-[#7C3AED] disabled:opacity-50 text-white text-xs font-black uppercase tracking-wider flex items-center gap-1.5 shadow-lg shadow-[#8B5CF6]/20 transition-all hover:scale-105 active:scale-95 shrink-0 cursor-pointer"
                 >
                   {isSubmitting ? (
@@ -230,8 +256,9 @@ const Suggest4KModal: React.FC<Suggest4KModalProps> = ({ isOpen, onClose, onSucc
         <div className="p-4 border-t border-white/5 bg-black/40 text-[11px] text-slate-400 flex items-center justify-between">
           <span>Правила: Топ-5 тайтлов по итогам 2 дней выйдут в финальное голосование</span>
           <button
+            type="button"
             onClick={onClose}
-            className="px-3 py-1.5 rounded-lg text-slate-400 hover:text-white transition-colors"
+            className="px-3 py-1.5 rounded-lg text-slate-400 hover:text-white transition-colors cursor-pointer"
           >
             Закрыть
           </button>
@@ -239,6 +266,8 @@ const Suggest4KModal: React.FC<Suggest4KModalProps> = ({ isOpen, onClose, onSucc
       </div>
     </div>
   );
+
+  return createPortal(modalContent, document.body);
 };
 
 export default Suggest4KModal;
