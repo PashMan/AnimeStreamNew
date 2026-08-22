@@ -808,6 +808,9 @@ const Manga: React.FC = () => {
     setActiveDebugLogs([]);
     setMangaReaderPage(0);
     setPagesLoading(true);
+    try {
+      window.scrollTo({ top: 0, behavior: 'instant' });
+    } catch (_) {}
 
     // Save item details to continuous reading feed in localStorage
     if (activeManga) {
@@ -850,14 +853,15 @@ const Manga: React.FC = () => {
 
       if (res.ok) {
         if (!data.pages || data.pages.length === 0) {
-          console.error(`[KamiManga] Warning: API returned success status 200, but pages array is empty. Review server traces above.`);
+          console.warn(`[KamiManga] API returned empty pages for chapter ${chapterObj.id}`);
+          setChapterPagesError(data.error || 'empty_pages');
         } else {
           console.log(`[KamiManga] Successfully loaded ${data.pages.length} pages.`);
+          setChapterPagesError(null);
         }
         setPages(data.pages || []);
-        setChapterPagesError(null);
       } else {
-        console.error(`[KamiManga] Server returned error response! Status: ${res.status}`, data);
+        console.warn(`[KamiManga] Server returned error response status: ${res.status}`, data);
         if (res.status === 403 || data.isLicensed) {
           setChapterPagesError('licensed');
         } else {
@@ -1032,16 +1036,18 @@ const Manga: React.FC = () => {
               <button
                 onClick={() => {
                   if (chapters.length > 0) {
-                    startReadingChapter(chapters[chapters.length - 1] || chapters[0]);
+                    const sortedChaps = [...chapters].sort((a, b) => (parseFloat(a.chapter) || 0) - (parseFloat(b.chapter) || 0));
+                    const firstCh = sortedChaps.find(c => parseFloat(c.chapter) === 1) || sortedChaps[0] || chapters[0];
+                    startReadingChapter(firstCh);
                   } else {
-                    alert('Подгрузка глав... Перейдите во вкладку «Главы» для инициализации.');
+                    alert('Подождите, идет загрузка списка глав...');
                   }
                 }}
-                disabled={chaptersLoading || isMangaLicensed}
+                disabled={chaptersLoading || chapters.length === 0}
                 className="w-full max-w-sm mx-auto py-4 bg-[#8B5CF6] text-black hover:bg-[#A855F7] disabled:opacity-50 text-xs font-black uppercase tracking-wider rounded-2xl shadow-lg shadow-[#8B5CF6]/10 transition-all flex items-center justify-center gap-2.5 cursor-pointer"
               >
                 <BookOpen className="w-4 h-4 text-black font-bold" />
-                <span>{chaptersLoading ? 'Поиск глав...' : (isMangaLicensed ? 'Удалено правообладателем' : 'Читать с первой главы')}</span>
+                <span>{chaptersLoading ? 'Поиск глав...' : (chapters.length === 0 ? (isMangaLicensed ? 'Удалено правообладателем' : 'Главы скоро появятся') : 'Читать с первой главы')}</span>
               </button>
 
               {/* Add Bookmark category layout */}
@@ -2106,8 +2112,8 @@ const Manga: React.FC = () => {
                       <Loader2 className="w-10 h-10 text-[#8B5CF6] animate-spin mb-4" />
                       <span className="text-xs font-black uppercase text-slate-400 tracking-widest animate-pulse">Загрузка страниц из API...</span>
                     </div>
-                  ) : chapterPagesError ? (
-                    /* Highly polished MangaLib-style inside-reader licensed block or error panel */
+                  ) : chapterPagesError === 'licensed' ? (
+                    /* Highly polished inside-reader licensed block */
                     <div className="m-auto w-full max-w-xl py-12 px-6 bg-[#18191d] border border-red-500/15 rounded-3xl text-center space-y-6 shadow-2xl mx-4 animate-in zoom-in-95 duration-200">
                       <div className="w-16 h-16 bg-red-550/10 border border-red-500/20 rounded-full flex items-center justify-center mx-auto">
                         <ShieldAlert className="w-8 h-8 text-red-500" />
@@ -2121,7 +2127,7 @@ const Manga: React.FC = () => {
                       </div>
                       <div className="p-3 bg-[#121316] rounded-2xl border border-white/5 text-left text-[9px] font-mono text-red-400/80 leading-snug break-all space-y-1">
                         <div>[Статус: Лицензионная защита региона]</div>
-                        <div>Chapter pages fetch returned error strike. RF censorship proxy block applied.</div>
+                        <div>Chapter pages fetch returned license status.</div>
                       </div>
                       <div className="flex flex-col sm:flex-row justify-center gap-2 pt-2">
                         <button
@@ -2148,7 +2154,7 @@ const Manga: React.FC = () => {
                         )}
                       </div>
                     </div>
-                  ) : pages.length === 0 ? (
+                  ) : (chapterPagesError || pages.length === 0) ? (
                     <div className="m-auto flex flex-col items-center justify-center p-6 text-center max-w-xl space-y-4 animate-in fade-in duration-200">
                       <div className="p-4 bg-white/5 rounded-full border border-white/5 animate-pulse">
                         <BookOpen className="w-8 h-8 text-[#7d8291]" />
@@ -2156,16 +2162,23 @@ const Manga: React.FC = () => {
                       <div className="space-y-1">
                         <h3 className="text-xs font-black uppercase text-white tracking-wider">Страницы не загрузились</h3>
                         <p className="text-[10px] text-slate-500 max-w-xs leading-normal mx-auto">
-                          Не удалось получить страницы этой главы из источника. Пожалуйста, попробуйте обновить или выбрать другой раздел.
+                          Не удалось получить страницы этой главы из источника. Пожалуйста, попробуйте обновить или выбрать другой перевод/главу.
                         </p>
                       </div>
-                      <div className="flex flex-col gap-2 w-full max-w-md items-center justify-center">
+                      <div className="flex flex-col sm:flex-row gap-2 w-full max-w-md items-center justify-center">
                         <button
                           onClick={() => activeChapter && startReadingChapter(activeChapter)}
                           className="px-5 py-2.5 bg-[#8B5CF6] hover:bg-[#A855F7] text-black text-[10px] font-black uppercase tracking-widest rounded-xl transition-all cursor-pointer flex items-center gap-1.5 font-bold"
                         >
                           <RefreshCw className="w-3.5 h-3.5" /> Повторить загрузку
                         </button>
+                        <button
+                          onClick={() => { setActiveChapter(null); setMangaReaderPage(0); }}
+                          className="px-4 py-2.5 bg-white/5 hover:bg-white/10 text-xs font-black uppercase tracking-widest text-[#a5a7b1] rounded-xl transition-all cursor-pointer"
+                        >
+                          К списку глав
+                        </button>
+                      </div>
 
                         {activeDebugLogs.length > 0 && (
                           <div className="w-full mt-4 bg-black/40 border border-white/5 rounded-xl p-3 text-left space-y-2">
@@ -2178,7 +2191,6 @@ const Manga: React.FC = () => {
                           </div>
                         )}
                       </div>
-                    </div>
                   ) : readerMode === 'scroll' ? (
                     <div 
                       className={`w-full flex flex-col items-center ${activeGapClass}`}
