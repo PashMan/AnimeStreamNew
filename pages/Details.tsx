@@ -431,7 +431,21 @@ const Details: React.FC = () => {
     if (!embedToResolve) {
       if (isCurrent) {
         setIsResolvingStream(false);
-        setResolvedStream(null);
+        // Fallback to Kodik HLS if AniBoom embed is not available
+        const defaultKodik = players.find((p) => p.name === "Kodik")?.iframe;
+        const kodikIframeUrl = getResolvedKodikUrl(selectedTranslation, epNum, defaultKodik);
+        if (kodikIframeUrl) {
+          const kodikHlsUrl = getCleanPlaylistUrl(kodikIframeUrl, null, null, false);
+          setResolvedStream({
+            url: kodikHlsUrl,
+            streamType: "hls",
+            provider: "kodik"
+          });
+          setSelectedPlayer("KamiPlayer (1080p)");
+          console.log(`🔄 [KamiPlayer] AniBoom embed отсутствует, активирован прямой поток Kodik HLS:`, kodikHlsUrl);
+        } else {
+          setResolvedStream(null);
+        }
       }
       return;
     }
@@ -486,15 +500,18 @@ const Details: React.FC = () => {
         if (err.name !== "AbortError") {
           if (isCurrent) {
             setIsResolvingStream(false);
-            // Fallback to Kodik if AniBoom resolve fails
+            // Fallback to Kodik HLS in KamiPlayer if AniBoom resolve fails
             const defaultKodik = players.find((p) => p.name === "Kodik")?.iframe;
             const kodikIframeUrl = getResolvedKodikUrl(selectedTranslation, epNum, defaultKodik);
             if (kodikIframeUrl) {
+              const kodikHlsUrl = getCleanPlaylistUrl(kodikIframeUrl, null, null, false);
               setResolvedStream({
-                url: getCleanPlaylistUrl(kodikIframeUrl, null, null, false),
+                url: kodikHlsUrl,
                 streamType: "hls",
                 provider: "kodik"
               });
+              setSelectedPlayer("KamiPlayer (1080p)");
+              console.log(`🔄 [KamiPlayer] AniBoom не найден/недоступен, переключено на прямой поток Kodik HLS:`, kodikHlsUrl);
             } else {
               setResolvedStream(null);
             }
@@ -2117,6 +2134,24 @@ const Details: React.FC = () => {
                                 onOpenDownload={() => setIsDownloadModalOpen(true)}
                                 isWatchTogetherActive={!!roomId}
                                 onPlayerError={() => {
+                                  // 1. If currently on AniBoom, first attempt falling back to Kodik direct HLS in KamiPlayer
+                                  if (resolvedStream?.provider === "aniboom" || (selectedTranslation as any)?.provider === "aniboom") {
+                                    const epNum = parseInt(paramEpisode || "1") || 1;
+                                    const defaultKodik = players.find((p) => p.name === "Kodik")?.iframe;
+                                    const kodikIframeUrl = getResolvedKodikUrl(selectedTranslation, epNum, defaultKodik);
+                                    if (kodikIframeUrl) {
+                                      const kodikHlsUrl = getCleanPlaylistUrl(kodikIframeUrl, null, null, false);
+                                      setResolvedStream({
+                                        url: kodikHlsUrl,
+                                        streamType: "hls",
+                                        provider: "kodik"
+                                      });
+                                      setSelectedPlayer("KamiPlayer (1080p)");
+                                      console.log(`🔄 [KamiPlayer] Ошибка потока AniBoom. Переключено на поток Kodik HLS:`, kodikHlsUrl);
+                                      return;
+                                    }
+                                  }
+                                  // 2. Only if both direct streams fail, fallback to raw iframe
                                   if (players.some((p) => p.name === "Kodik")) {
                                     setSelectedPlayer("Kodik");
                                   } else if (players.some((p) => p.name === "Collaps")) {

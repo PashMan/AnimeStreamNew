@@ -7,6 +7,16 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   const url = new URL(request.url);
   const action = url.searchParams.get('action');
 
+  const cache = (caches as any).default;
+  const cacheKey = new Request(request.url, request);
+
+  if (request.method === 'GET') {
+    try {
+      const cached = await cache.match(cacheKey);
+      if (cached) return cached;
+    } catch (_) {}
+  }
+
   try {
     // 1. Get Profile
     if (action === 'getProfile') {
@@ -37,9 +47,14 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         topics = await env.DB.prepare(query + " ORDER BY t.created_at DESC").all();
       }
       
-      return new Response(JSON.stringify(topics.results), {
-        headers: { 'Content-Type': 'application/json' }
+      const res = new Response(JSON.stringify(topics.results), {
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'public, max-age=300, s-maxage=600'
+        }
       });
+      try { context.waitUntil(cache.put(cacheKey, res.clone())); } catch (_) {}
+      return res;
     }
 
     // 3. Get Forum Posts
@@ -51,17 +66,27 @@ export const onRequest: PagesFunction<Env> = async (context) => {
         "SELECT p.*, pr.name as author_name, pr.avatar as author_avatar FROM forum_posts p LEFT JOIN profiles pr ON p.author_id = pr.id WHERE p.topic_id = ? ORDER BY p.created_at ASC"
       ).bind(topicId).all();
       
-      return new Response(JSON.stringify(posts.results), {
-        headers: { 'Content-Type': 'application/json' }
+      const res = new Response(JSON.stringify(posts.results), {
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'public, max-age=300, s-maxage=600'
+        }
       });
+      try { context.waitUntil(cache.put(cacheKey, res.clone())); } catch (_) {}
+      return res;
     }
 
     // 4. Get Clubs
     if (action === 'getClubs') {
       const clubs = await env.DB.prepare("SELECT * FROM clubs ORDER BY created_at DESC").all();
-      return new Response(JSON.stringify(clubs.results), {
-        headers: { 'Content-Type': 'application/json' }
+      const res = new Response(JSON.stringify(clubs.results), {
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'public, max-age=300, s-maxage=600'
+        }
       });
+      try { context.waitUntil(cache.put(cacheKey, res.clone())); } catch (_) {}
+      return res;
     }
 
     // 5. Create Forum Topic (POST)
