@@ -1808,37 +1808,47 @@ async function fetchRemangaChaptersByTitle(titles: string[]): Promise<any[]> {
   
   // Try to find the title on ReManga
   for (const title of uniqueTitles) {
-    if (!title) continue;
+    if (!title || title.trim().length < 2) continue;
     try {
-      const searchRes = await fetch(`https://api.remanga.org/api/search/?query=${encodeURIComponent(title)}&count=3`, {
+      const searchRes = await fetch(`https://api.remanga.org/api/search/?query=${encodeURIComponent(title.trim())}&count=3`, {
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Referer': 'https://remanga.org/',
+          'Accept': 'application/json, text/plain, */*'
         }
       });
-      const data = await searchRes.json();
-      if (data && Array.isArray(data.content) && data.content.length > 0) {
+      if (!searchRes.ok) continue;
+      const cType = searchRes.headers.get('content-type') || '';
+      if (!cType.includes('application/json')) continue;
+      
+      const data: any = await searchRes.json();
+      if (data && Array.isArray(data.content) && data.content.length > 0 && data.content[0]?.dir) {
         remangaMangaDir = data.content[0].dir;
         break;
       }
     } catch (e) {
-      console.error(`[ReManga] Search failed for "${title}":`, e);
+      // Ignored for non-fatal search failures
     }
   }
 
   if (!remangaMangaDir) return [];
 
-  console.log(`[ReManga] Found matching manga directory: ${remangaMangaDir}`);
-
   // Fetch branches
   try {
     const detailRes = await fetch(`https://api.remanga.org/api/titles/${remangaMangaDir}/`, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Referer': 'https://remanga.org/',
+        'Accept': 'application/json, text/plain, */*'
       }
     });
-    const detailData = await detailRes.json();
+    if (!detailRes.ok) return [];
+    const cType = detailRes.headers.get('content-type') || '';
+    if (!cType.includes('application/json')) return [];
+
+    const detailData: any = await detailRes.json();
     const content = detailData && detailData.content;
-    if (!content || !content.branches || content.branches.length === 0) {
+    if (!content || !content.branches || !Array.isArray(content.branches) || content.branches.length === 0) {
       return [];
     }
 
@@ -1851,33 +1861,35 @@ async function fetchRemangaChaptersByTitle(titles: string[]): Promise<any[]> {
       try {
         const chRes = await fetch(`https://api.remanga.org/api/titles/chapters/?branch_id=${branchId}&limit=250&page=1`, {
           headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Referer': 'https://remanga.org/',
+            'Accept': 'application/json, text/plain, */*'
           }
         });
-        const chData = await chRes.json();
+        if (!chRes.ok) return;
+        const chCType = chRes.headers.get('content-type') || '';
+        if (!chCType.includes('application/json')) return;
+
+        const chData: any = await chRes.json();
         const chList = chData && chData.content;
         if (Array.isArray(chList)) {
           chList.forEach((ch: any) => {
             const chNum = ch.chapter || '0';
-            const grName = Array.isArray(branch.names) ? branch.names.join(', ') : (branch.names || 'Переводчики ReManga');
             allChapters.push({
               id: `remanga-${ch.id}`,
               chapter: chNum.toString(),
               volume: (ch.volume || '').toString(),
               title: ch.name || `Глава ${ch.chapter || ''}`,
-              group: `ReManga: ${grName}`,
+              group: 'Команда перевода',
               publishAt: ch.pub_date || new Date().toISOString()
             });
           });
         }
-      } catch (err) {
-        console.error(`[ReManga] Fetch chapters failed for branch ${branchId}:`, err);
-      }
+      } catch (err) {}
     }));
 
     return allChapters;
   } catch (err) {
-    console.error(`[ReManga] Detail fetch failed for "${remangaMangaDir}":`, err);
     return [];
   }
 }
@@ -2021,16 +2033,23 @@ app.get('/api/manga/:id/chapters', async (c) => {
     explicitRemangaDir = mangaId.replace('remanga-', '');
     try {
       const rmRes = await fetch(`https://api.remanga.org/api/titles/${explicitRemangaDir}/`, {
-        headers: { 'User-Agent': 'Mozilla/5.0' }
+        headers: {
+          'User-Agent': 'Mozilla/5.0',
+          'Referer': 'https://remanga.org/',
+          'Accept': 'application/json, text/plain, */*'
+        }
       });
-      const rmData = await rmRes.json();
-      if (rmData && rmData.content) {
-        if (rmData.content.rus_name) searchTitles.push(rmData.content.rus_name);
-        if (rmData.content.en_name) searchTitles.push(rmData.content.en_name);
+      if (rmRes.ok) {
+        const cType = rmRes.headers.get('content-type') || '';
+        if (cType.includes('application/json')) {
+          const rmData: any = await rmRes.json();
+          if (rmData && rmData.content) {
+            if (rmData.content.rus_name) searchTitles.push(rmData.content.rus_name);
+            if (rmData.content.en_name) searchTitles.push(rmData.content.en_name);
+          }
+        }
       }
-    } catch(e) {
-      console.error('[API] ReManga details fetch failed', e);
-    }
+    } catch(e) {}
     
     if (searchTitles.length === 0 && explicitRemangaDir) {
       searchTitles.push(explicitRemangaDir.replace(/-/g, ' '));
@@ -2126,51 +2145,52 @@ app.get('/api/manga/:id/chapters', async (c) => {
     if (!title) continue;
     try {
       const suggRes = await fetch('https://a.zazaza.me/search/suggestion?query=' + encodeURIComponent(title));
-      const suggData = await suggRes.json();
-      const suggestion = suggData?.suggestions?.find((s: any) => s.link && (s.link.startsWith('/') || s.link.startsWith('http')));
-      if (suggestion) {
-        zazaPath = suggestion.link;
-        break;
+      if (suggRes.ok) {
+        const suggData: any = await suggRes.json();
+        const suggestion = suggData?.suggestions?.find((s: any) => s.link && (s.link.startsWith('/') || s.link.startsWith('http')));
+        if (suggestion) {
+          zazaPath = suggestion.link;
+          break;
+        }
       }
     } catch(e) {}
   }
 
+  let zazaChapters: any[] = [];
   if (zazaPath) {
     try {
       const fullUrl = zazaPath.startsWith('http') ? zazaPath + '?mtr=1' : 'https://a.zazaza.me' + zazaPath + '?mtr=1';
       const htmlRes = await fetch(fullUrl, {
          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
       });
-      const html = await htmlRes.text();
-      let chapters: any[] = [];
-      const regex = /href="(\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
-      let match;
-      const seen = new Set();
-      let zazaChapters: any[] = [];
-      while ((match = regex.exec(html)) !== null) {
-          if (match[2].includes('Читать')) continue;
-          if (!match[1].includes('/vol')) continue;
-          let path = match[1];
-          if (path.includes('?')) path = path.split('?')[0];
-          if (path.includes('#')) path = path.split('#')[0];
-          
-          if (seen.has(path)) continue;
-          seen.add(path);
+      if (htmlRes.ok) {
+        const html = await htmlRes.text();
+        const regex = /href="(\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
+        let match;
+        const seen = new Set();
+        while ((match = regex.exec(html)) !== null) {
+            if (match[2].includes('Читать')) continue;
+            if (!match[1].includes('/vol')) continue;
+            let path = match[1];
+            if (path.includes('?')) path = path.split('?')[0];
+            if (path.includes('#')) path = path.split('#')[0];
+            
+            if (seen.has(path)) continue;
+            seen.add(path);
 
-          let chTitle = match[2].trim().replace(/<[^>]+>/g, '').trim();
-          const targetUrl = zazaPath.startsWith('http') ? (new URL(zazaPath).origin + path) : path;
-          zazaChapters.push({
-             id: `zaza-${Buffer.from(targetUrl).toString('base64')}`,
-             title: chTitle || 'Глава',
-             volume: path.match(/vol(\d+)/)?.[1] || '1',
-             chapter: path.match(/vol\d+\/([\d.,]+)/)?.[1] || '0',
-             group: 'Команда перевода',
-             publishAt: new Date().toISOString()
-          });
+            let chTitle = match[2].trim().replace(/<[^>]+>/g, '').trim();
+            const targetUrl = zazaPath.startsWith('http') ? (new URL(zazaPath).origin + path) : path;
+            zazaChapters.push({
+               id: `zaza-${Buffer.from(targetUrl).toString('base64')}`,
+               title: chTitle || 'Глава',
+               volume: path.match(/vol(\d+)/)?.[1] || '1',
+               chapter: path.match(/vol\d+\/([\d.,]+)/)?.[1] || '0',
+               group: 'Команда перевода',
+               publishAt: new Date().toISOString()
+            });
+        }
+        zazaChapters.reverse();
       }
-      
-      zazaChapters.reverse();
-      chapters = zazaChapters;
     } catch (e) {
       console.error('ZazaZa chapters fetch failed', e);
     }
@@ -2185,21 +2205,21 @@ app.get('/api/manga/:id/chapters', async (c) => {
         const url = `https://api.mangadex.org/manga/${mangaId}/feed?translatedLanguage[]=${lang}&order[chapter]=asc&limit=500&includes[]=scanlation_group`;
         try {
           const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-          const data = await res.json();
-          if (data && data.data && data.data.length > 0) {
-            return data.data.map((ch: any) => {
-              const attrs = ch.attributes || {};
-              const sg = ch.relationships?.find((r: any) => r.type === 'scanlation_group');
-              const groupName = sg?.attributes?.name || 'Внешний переводчик';
-              return {
-                id: ch.id,
-                chapter: attrs.chapter || '0',
-                volume: attrs.volume || '',
-                title: attrs.title || `Глава ${attrs.chapter || ''}`,
-                group: `MangaDex: ${groupName} (${lang.toUpperCase()})`,
-                publishAt: attrs.publishAt
-              };
-            });
+          if (res.ok) {
+            const data: any = await res.json();
+            if (data && data.data && data.data.length > 0) {
+              return data.data.map((ch: any) => {
+                const attrs = ch.attributes || {};
+                return {
+                  id: ch.id,
+                  chapter: attrs.chapter || '0',
+                  volume: attrs.volume || '',
+                  title: attrs.title || `Глава ${attrs.chapter || ''}`,
+                  group: 'Команда перевода',
+                  publishAt: attrs.publishAt
+                };
+              });
+            }
           }
         } catch(e) {}
         return [];
@@ -2215,34 +2235,50 @@ app.get('/api/manga/:id/chapters', async (c) => {
     if (explicitRemangaDir) {
       try {
         const detailRes = await fetch(`https://api.remanga.org/api/titles/${explicitRemangaDir}/`, {
-          headers: { 'User-Agent': 'Mozilla/5.0' }
+          headers: {
+            'User-Agent': 'Mozilla/5.0',
+            'Referer': 'https://remanga.org/',
+            'Accept': 'application/json, text/plain, */*'
+          }
         });
-        const detailData = await detailRes.json();
+        if (!detailRes.ok) return [];
+        const cType = detailRes.headers.get('content-type') || '';
+        if (!cType.includes('application/json')) return [];
+
+        const detailData: any = await detailRes.json();
         const branches = detailData?.content?.branches;
-        if (!branches || !branches.length) return [];
+        if (!branches || !Array.isArray(branches) || !branches.length) return [];
         let rChapters: any[] = [];
         await Promise.allSettled(branches.map(async (branch: any) => {
-          const chRes = await fetch(`https://api.remanga.org/api/titles/chapters/?branch_id=${branch.id}&limit=250&page=1`, {
-            headers: { 'User-Agent': 'Mozilla/5.0' }
-          });
-          const chData = await chRes.json();
-          if (Array.isArray(chData?.content)) {
-            chData.content.forEach((ch: any) => {
-              const grName = Array.isArray(branch.names) ? branch.names.join(', ') : (branch.names || 'Переводчики ReManga');
-              rChapters.push({
-                id: `remanga-${ch.id}`,
-                chapter: (ch.chapter || '0').toString(),
-                volume: (ch.volume || '').toString(),
-                title: ch.name || `Глава ${ch.chapter || ''}`,
-                group: `ReManga: ${grName}`,
-                publishAt: ch.pub_date || new Date().toISOString()
-              });
+          try {
+            const chRes = await fetch(`https://api.remanga.org/api/titles/chapters/?branch_id=${branch.id}&limit=250&page=1`, {
+              headers: {
+                'User-Agent': 'Mozilla/5.0',
+                'Referer': 'https://remanga.org/',
+                'Accept': 'application/json, text/plain, */*'
+              }
             });
-          }
+            if (!chRes.ok) return;
+            const chCType = chRes.headers.get('content-type') || '';
+            if (!chCType.includes('application/json')) return;
+
+            const chData: any = await chRes.json();
+            if (Array.isArray(chData?.content)) {
+              chData.content.forEach((ch: any) => {
+                rChapters.push({
+                  id: `remanga-${ch.id}`,
+                  chapter: (ch.chapter || '0').toString(),
+                  volume: (ch.volume || '').toString(),
+                  title: ch.name || `Глава ${ch.chapter || ''}`,
+                  group: 'Команда перевода',
+                  publishAt: ch.pub_date || new Date().toISOString()
+                });
+              });
+            }
+          } catch(e) {}
         }));
         return rChapters;
       } catch(e) {
-        console.error('[API] Direct ReManga branch data fetch failed', e);
         return [];
       }
     }
@@ -2262,7 +2298,7 @@ app.get('/api/manga/:id/chapters', async (c) => {
     remangaChapters = chapResults[1].value;
   }
 
-  const allChapters = [...remangaChapters, ...mdChapters, ...chapters];
+  const allChapters = [...remangaChapters, ...mdChapters, ...zazaChapters];
 
   // De-duplicate chapters by [chapter_number + group_name] to keep options clean and unique
   const chKeys = new Set<string>();

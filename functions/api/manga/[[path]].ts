@@ -677,12 +677,18 @@ export const onRequest = async (context: any) => {
         for (const title of uniqueQueryTitles.slice(0, 3)) {
           try {
             const sRes = await fetch(`https://api.remanga.org/api/search/?query=${encodeURIComponent(title)}&count=3`, {
-              headers: { 'User-Agent': 'Mozilla/5.0' }
+              headers: {
+                'User-Agent': 'Mozilla/5.0',
+                'Referer': 'https://remanga.org/',
+                'Accept': 'application/json, text/plain, */*'
+              }
             });
-            const sData: any = await sRes.json();
-            if (sData?.content?.[0]?.dir) {
-              remangaDir = sData.content[0].dir;
-              break;
+            if (sRes.ok && sRes.headers.get('content-type')?.includes('application/json')) {
+              const sData: any = await sRes.json();
+              if (sData?.content?.[0]?.dir) {
+                remangaDir = sData.content[0].dir;
+                break;
+              }
             }
           } catch(e) {}
         }
@@ -691,8 +697,13 @@ export const onRequest = async (context: any) => {
 
       try {
         const detailRes = await fetch(`https://api.remanga.org/api/titles/${remangaDir}/`, {
-          headers: { 'User-Agent': 'Mozilla/5.0' }
+          headers: {
+            'User-Agent': 'Mozilla/5.0',
+            'Referer': 'https://remanga.org/',
+            'Accept': 'application/json, text/plain, */*'
+          }
         });
+        if (!detailRes.ok || !detailRes.headers.get('content-type')?.includes('application/json')) return [];
         const detailData: any = await detailRes.json();
         const branches = detailData?.content?.branches;
         if (!branches || !Array.isArray(branches)) return [];
@@ -701,19 +712,23 @@ export const onRequest = async (context: any) => {
         await Promise.allSettled(branches.map(async (branch: any) => {
           try {
             const chRes = await fetch(`https://api.remanga.org/api/titles/chapters/?branch_id=${branch.id}&limit=250&page=1`, {
-              headers: { 'User-Agent': 'Mozilla/5.0' }
+              headers: {
+                'User-Agent': 'Mozilla/5.0',
+                'Referer': 'https://remanga.org/',
+                'Accept': 'application/json, text/plain, */*'
+              }
             });
+            if (!chRes.ok || !chRes.headers.get('content-type')?.includes('application/json')) return;
             const chData: any = await chRes.json();
             const chList = chData?.content;
             if (Array.isArray(chList)) {
-              const grName = Array.isArray(branch.names) ? branch.names.join(', ') : (branch.names || 'ReManga');
               chList.forEach((ch: any) => {
                 rmChaps.push({
                   id: `remanga-${ch.id}`,
                   chapter: String(ch.chapter || '0'),
                   volume: String(ch.volume || ''),
                   title: ch.name || `Глава ${ch.chapter || ''}`,
-                  group: `ReManga: ${grName}`,
+                  group: 'Команда перевода',
                   publishAt: ch.pub_date || new Date().toISOString()
                 });
               });
@@ -737,14 +752,12 @@ export const onRequest = async (context: any) => {
           if (data?.data && Array.isArray(data.data)) {
             return data.data.map((ch: any) => {
               const attrs = ch.attributes || {};
-              const sg = ch.relationships?.find((r: any) => r.type === 'scanlation_group');
-              const groupName = sg?.attributes?.name || 'Внешний переводчик';
               return {
                 id: ch.id,
                 chapter: String(attrs.chapter || '0'),
                 volume: String(attrs.volume || ''),
                 title: attrs.title || `Глава ${attrs.chapter || ''}`,
-                group: `MangaDex: ${groupName} (${lang.toUpperCase()})`,
+                group: 'Команда перевода',
                 publishAt: attrs.publishAt
               };
             });
