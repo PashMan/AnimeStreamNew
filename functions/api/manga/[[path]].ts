@@ -118,33 +118,104 @@ export const onRequest = async (context: any) => {
     return highestScore >= 150 ? bestId : '';
   };
 
-  const findBestZazaSuggestion = async (searchTitles: string[]): Promise<string> => {
-    let bestLink = '';
-    let highestScore = 0;
+  const parseJsArray = (str: string): any[] | null => {
+    if (!str) return null;
+    try { return JSON.parse(str); } catch (e) {}
+    try {
+      const jsonLike = str
+        .replace(/'([^'\\]*(\\.[^'\\]*)*)'/g, (m, g1) => JSON.stringify(g1.replace(/\\'/g, "'")))
+        .replace(/,\s*([\]}])/g, "$1");
+      return JSON.parse(jsonLike);
+    } catch (e) {}
+    return null;
+  };
 
+  const extractStringUrl = (item: any): string => {
+    if (!item) return '';
+    if (typeof item === 'string') return item;
+    if (Array.isArray(item)) {
+      for (const elem of item) {
+        if (typeof elem === 'string' && (elem.startsWith('/') || elem.startsWith('http'))) return elem;
+      }
+      return typeof item[2] === 'string' ? item[2] : (typeof item[0] === 'string' ? item[0] : '');
+    }
+    if (typeof item === 'object' && item !== null) {
+      const candidate = item.link || item.url || item.image || item.photo || item.src || item.path;
+      if (typeof candidate === 'string') return candidate;
+      if (typeof candidate === 'object' && candidate !== null) return extractStringUrl(candidate);
+    }
+    return '';
+  };
+
+  const findZazaSuggestions = async (searchTitles: string[]): Promise<string[]> => {
+    const links: string[] = [];
     for (const title of searchTitles) {
       if (!title) continue;
       try {
-        const suggRes = await fetch('https://a.zazaza.me/search/suggestion?query=' + encodeURIComponent(title));
-        if (suggRes.ok && suggRes.headers.get('content-type')?.includes('application/json')) {
-          const suggData: any = await suggRes.json();
+        const res = await fetch('https://a.zazaza.me/search/suggestion?query=' + encodeURIComponent(title));
+        if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
+          const suggData: any = await res.json();
           if (suggData && Array.isArray(suggData.suggestions)) {
             for (const s of suggData.suggestions) {
-              if (!s.link || (!s.link.startsWith('/') && !s.link.startsWith('http'))) continue;
-              const candTitles = [s.value, ...(Array.isArray(s.names) ? s.names : [])];
-              const score = scoreTitleMatch(candTitles, searchTitles);
-              if (score >= 150 && score > highestScore) {
-                highestScore = score;
-                bestLink = s.link;
+              if (s.link && !links.includes(s.link)) {
+                links.push(s.link);
               }
             }
           }
         }
       } catch (e) {}
-      if (highestScore >= 1000) break;
     }
+    return links;
+  };
 
-    return highestScore >= 150 ? bestLink : '';
+  const findBestZazaSuggestion = async (searchTitles: string[]): Promise<string> => {
+    const links = await findZazaSuggestions(searchTitles);
+    return links[0] || '';
+  };
+
+  const fetchMangaChanChapters = async (searchTitles: string[]): Promise<any[]> => {
+    for (const title of searchTitles) {
+      if (!title) continue;
+      try {
+        const searchUrl = `https://manga-chan.me/?do=search&subaction=search&story=${encodeURIComponent(title)}`;
+        const searchRes = await fetch(searchUrl, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+        });
+        if (!searchRes.ok) continue;
+        const searchHtml = await searchRes.text();
+        const mangaMatches = Array.from(searchHtml.matchAll(/<h2><a href=['"](https?:\/\/(?:im\.)?manga-chan\.me\/manga\/[^'"]+)['"]/gi)).map(m => m[1]);
+
+        for (const mangaUrl of mangaMatches.slice(0, 3)) {
+          const mangaRes = await fetch(mangaUrl, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+          });
+          if (!mangaRes.ok) continue;
+          const mangaHtml = await mangaRes.text();
+          const chRegex = /href=['"](https?:\/\/(?:im\.)?manga-chan\.me\/online\/[^'"]+)['"]/gi;
+          const chMatches = Array.from(mangaHtml.matchAll(chRegex)).map(m => m[1]);
+
+          if (chMatches.length > 0) {
+            const mcChapters: any[] = [];
+            for (const chUrl of chMatches) {
+              const chNumMatch = chUrl.match(/_ch([\d.]+)\.html/) || chUrl.match(/_v\d+_ch([\d.]+)/) || chUrl.match(/ch([\d.]+)/);
+              const volMatch = chUrl.match(/_v(\d+)_/);
+              const chapterNum = chNumMatch ? chNumMatch[1] : '0';
+              const volNum = volMatch ? volMatch[1] : '1';
+              mcChapters.push({
+                id: `mc-${btoa(chUrl)}`,
+                chapter: chapterNum,
+                volume: volNum,
+                title: `Глава ${chapterNum}`,
+                group: 'Manga-Chan',
+                publishAt: new Date().toISOString()
+              });
+            }
+            return mcChapters;
+          }
+        }
+      } catch (e) {}
+    }
+    return [];
   };
 
   const resolveFallbackPages = async (
@@ -155,112 +226,177 @@ export const onRequest = async (context: any) => {
     const titles = searchTitles.filter(Boolean);
     if (!titles.length) return [];
 
-    // 1. Try ZazaZa / ReadManga
-    try {
-      const zazaLink = await findBestZazaSuggestion(titles);
-      if (zazaLink) {
+    // 1. Try ZazaZa / ReadManga suggestions
+    const zazaLinks = await findZazaSuggestions(titles);
+    for (const zazaLink of zazaLinks.slice(0, 5)) {
+      try {
         const domain = zazaLink.startsWith('http') ? new URL(zazaLink).origin : 'https://a.zazaza.me';
         const path = zazaLink.startsWith('http') ? new URL(zazaLink).pathname : zazaLink;
         const mangaUrl = `${domain}${path}`;
         const res = await fetch(mangaUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-        if (res.ok) {
-          const html = await res.text();
-          const linkRegex = new RegExp(`href=["'](${path.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&')}[^"']+)["']`, 'gi');
-          const matches = Array.from(html.matchAll(linkRegex)).map(m => m[1]);
+        if (!res.ok) continue;
+        const html = await res.text();
 
-          let matchedLink = '';
-          for (const link of matches) {
-            const chMatch = link.match(/\/vol\d+\/([\d.,]+)/) || link.match(/_v\d+\/([\d.,]+)/) || link.match(/\/([\d.,]+)$/);
-            if (chMatch) {
-              const num = chMatch[1];
-              if (String(num) === String(targetChapNum) || Math.abs(parseFloat(num) - parseFloat(targetChapNum)) < 0.01) {
-                matchedLink = link;
-                break;
+        const hrefRegex = /href=["']([^"']+)["']/gi;
+        const links = Array.from(html.matchAll(hrefRegex)).map(m => m[1]);
+
+        let matchedLink = '';
+        for (const link of links) {
+          const chMatch = link.match(/\/vol\d+\/([\d.,]+)/) || link.match(/_v\d+\/([\d.,]+)/) || link.match(/\/([\d.,]+)$/);
+          if (chMatch) {
+            const num = chMatch[1];
+            if (String(num) === String(targetChapNum) || Math.abs(parseFloat(num) - parseFloat(targetChapNum)) < 0.01) {
+              matchedLink = link;
+              break;
+            }
+          }
+        }
+
+        if (matchedLink) {
+          const chUrl = matchedLink.startsWith('http')
+            ? (matchedLink.includes('?') ? `${matchedLink}&mtr=1` : `${matchedLink}?mtr=1`)
+            : `${domain}${matchedLink.includes('?') ? matchedLink + '&mtr=1' : matchedLink + '?mtr=1'}`;
+          const chRes = await fetch(chUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+          if (chRes.ok) {
+            const chHtml = await chRes.text();
+            const pagesMatch = chHtml.match(/rm_h\.readerInit\([^,]*,\s*(\[\[.*?\]\])/);
+            if (pagesMatch) {
+              const rawPages = parseJsArray(pagesMatch[1]);
+              if (Array.isArray(rawPages) && rawPages.length > 0) {
+                let isDeleted = false;
+                const pages = rawPages.map((p: any) => {
+                  let host = Array.isArray(p) ? (typeof p[0] === 'string' ? p[0] : '') : '';
+                  let pPath = Array.isArray(p) ? (typeof p[2] === 'string' ? p[2] : (typeof p[1] === 'string' ? p[1] : '')) : extractStringUrl(p);
+                  let fullUrl = host && pPath ? `${host.replace(/\/$/, '')}/${pPath.replace(/^\//, '')}` : (pPath || host);
+                  if (fullUrl.includes('deleted1.png')) isDeleted = true;
+                  return fullUrl ? `/api/manga/page-proxy?url=${encodeURIComponent(fullUrl)}&_zaza=1` : '';
+                }).filter(Boolean);
+
+                if (!isDeleted && pages.length > 0) {
+                  if (debugLogs) debugLogs.push(`[fallback] Loaded ${pages.length} pages from ZazaZa`);
+                  return pages;
+                }
               }
             }
           }
+        }
+      } catch (e: any) {
+        if (debugLogs) debugLogs.push(`[fallback] ZazaZa error: ${e.message}`);
+      }
+    }
 
-          if (matchedLink) {
-            const chUrl = matchedLink.startsWith('http') ? matchedLink : `${domain}${matchedLink.includes('?') ? matchedLink + '&mtr=1' : matchedLink + '?mtr=1'}`;
-            const chRes = await fetch(chUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-            if (chRes.ok) {
-              const chHtml = await chRes.text();
-              const pagesMatch = chHtml.match(/rm_h\.readerInit\([^,]*,\s*(\[\[.*?\]\])/);
-              if (pagesMatch) {
-                const rawPagesArray = new Function("return " + pagesMatch[1])();
-                if (Array.isArray(rawPagesArray) && rawPagesArray.length > 0) {
-                  let isDeleted = false;
-                  const pages = rawPagesArray.map((p: any) => {
-                    let url = "";
-                    if (Array.isArray(p)) {
-                      const host = p[0] || "";
-                      const pathPart = p[2] || p[1] || "";
-                      url = host && pathPart ? `${host}${pathPart}` : pathPart;
-                    } else if (typeof p === 'string') {
-                      url = p;
-                    } else if (p && typeof p === 'object') {
-                      url = p.url || p.link || p.src || "";
+    // 2. Try Manga-Chan (Unrestricted Russian manga source)
+    for (const title of titles) {
+      try {
+        const searchUrl = `https://manga-chan.me/?do=search&subaction=search&story=${encodeURIComponent(title)}`;
+        const searchRes = await fetch(searchUrl, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+        });
+        if (searchRes.ok) {
+          const searchHtml = await searchRes.text();
+          const mangaMatches = Array.from(searchHtml.matchAll(/<h2><a href=['"](https?:\/\/(?:im\.)?manga-chan\.me\/manga\/[^'"]+)['"]/gi)).map(m => m[1]);
+          for (const mangaUrl of mangaMatches.slice(0, 3)) {
+            const mangaRes = await fetch(mangaUrl, {
+              headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+            });
+            if (!mangaRes.ok) continue;
+            const mangaHtml = await mangaRes.text();
+            const chRegex = /href=['"](https?:\/\/(?:im\.)?manga-chan\.me\/online\/[^'"]+)['"]/gi;
+            const chMatches = Array.from(mangaHtml.matchAll(chRegex)).map(m => m[1]);
+
+            let matchedChUrl = '';
+            for (const chUrl of chMatches) {
+              const chNumMatch = chUrl.match(/_ch([\d.]+)\.html/) || chUrl.match(/_v\d+_ch([\d.]+)/) || chUrl.match(/ch([\d.]+)/);
+              if (chNumMatch) {
+                const num = chNumMatch[1];
+                if (String(num) === String(targetChapNum) || Math.abs(parseFloat(num) - parseFloat(targetChapNum)) < 0.01) {
+                  matchedChUrl = chUrl;
+                  break;
+                }
+              }
+            }
+
+            if (matchedChUrl) {
+              const chRes = await fetch(matchedChUrl, {
+                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+              });
+              if (chRes.ok) {
+                const chHtml = await chRes.text();
+                const imgArrayMatches = chHtml.match(/\[[^\]]*https?:\/\/[^'\"\r\n]*?\.(?:jpg|png|webp|jpeg)[^\]]*\]/gi);
+                if (imgArrayMatches) {
+                  for (const arrStr of imgArrayMatches) {
+                    if (!arrStr.includes('thumbs') && (arrStr.includes('img') || arrStr.includes('manga'))) {
+                      try {
+                        const pagesArr = JSON.parse(arrStr);
+                        if (Array.isArray(pagesArr) && pagesArr.length > 0) {
+                          const pages = pagesArr.map((imgUrl: string) => `/api/manga/page-proxy?url=${encodeURIComponent(imgUrl)}`);
+                          if (debugLogs) debugLogs.push(`[fallback] Loaded ${pages.length} pages from Manga-Chan`);
+                          return pages;
+                        }
+                      } catch (e) {}
                     }
-                    if (url.includes('deleted1.png')) isDeleted = true;
-                    return url ? `/api/manga/page-proxy?url=${encodeURIComponent(url)}&_zaza=1` : '';
-                  }).filter(Boolean);
-
-                  if (!isDeleted && pages.length > 0) {
-                    if (debugLogs) debugLogs.push(`[fallback] Loaded ${pages.length} pages from ZazaZa`);
-                    return pages;
                   }
                 }
               }
             }
           }
         }
+      } catch (e: any) {
+        if (debugLogs) debugLogs.push(`[fallback] Manga-Chan error: ${e.message}`);
       }
-    } catch(e: any) {
-      if (debugLogs) debugLogs.push(`[fallback] ZazaZa error: ${e.message}`);
     }
 
     // 2. Try MangaDex
-    try {
-      const mdId = await findBestMangaDexMatch(titles);
-      if (mdId) {
-        const feedRes = await fetch(`https://api.mangadex.org/manga/${mdId}/feed?translatedLanguage[]=ru&translatedLanguage[]=en&limit=500&order[chapter]=asc`);
-        if (feedRes.ok && feedRes.headers.get('content-type')?.includes('application/json')) {
-          const feedData: any = await feedRes.json();
-          if (feedData && feedData.data && Array.isArray(feedData.data)) {
-            const isNumMatch = (chNum: any) => String(chNum) === String(targetChapNum) || Math.abs(parseFloat(chNum || '0') - parseFloat(targetChapNum)) < 0.01;
-            const validChaps = feedData.data.filter((ch: any) => isNumMatch(ch.attributes?.chapter) && (ch.attributes?.pages > 0 || !ch.attributes?.externalUrl));
+    for (const title of titles) {
+      try {
+        const searchRes = await fetch(`https://api.mangadex.org/manga?title=${encodeURIComponent(title)}&limit=5`);
+        if (searchRes.ok) {
+          const sJson: any = await searchRes.json();
+          if (sJson.data && Array.isArray(sJson.data)) {
+            for (const mangaItem of sJson.data) {
+              const mdId = mangaItem.id;
+              const feedRes = await fetch(`https://api.mangadex.org/manga/${mdId}/feed?translatedLanguage[]=ru&translatedLanguage[]=en&limit=500&order[chapter]=asc`);
+              if (feedRes.ok) {
+                const feedData: any = await feedRes.json();
+                if (feedData.data && Array.isArray(feedData.data)) {
+                  const isNumMatch = (chNum: any) => String(chNum) === String(targetChapNum) || Math.abs(parseFloat(chNum || '0') - parseFloat(targetChapNum)) < 0.01;
+                  const validChaps = feedData.data.filter((ch: any) => isNumMatch(ch.attributes?.chapter) && (ch.attributes?.pages > 0 && !ch.attributes?.externalUrl));
 
-            let matchedDex = validChaps.find((ch: any) => ch.attributes?.translatedLanguage === 'ru');
-            if (!matchedDex) matchedDex = validChaps.find((ch: any) => ch.attributes?.translatedLanguage === 'en');
-            if (!matchedDex) matchedDex = validChaps[0];
+                  let matchedDex = validChaps.find((ch: any) => ch.attributes?.translatedLanguage === 'ru');
+                  if (!matchedDex) matchedDex = validChaps.find((ch: any) => ch.attributes?.translatedLanguage === 'en');
 
-            if (matchedDex?.id) {
-              const srvRes = await fetch(`https://api.mangadex.org/at-home/server/${matchedDex.id}`);
-              if (srvRes.ok && srvRes.headers.get('content-type')?.includes('application/json')) {
-                const srvData: any = await srvRes.json();
-                if (srvData && srvData.chapter) {
-                  const hash = srvData.chapter.hash;
-                  const baseUrl = srvData.baseUrl;
-                  const filenames = (srvData.chapter.data && srvData.chapter.data.length > 0) ? srvData.chapter.data : (srvData.chapter.dataSaver || []);
-                  const pathPrefix = (srvData.chapter.data && srvData.chapter.data.length > 0) ? 'data' : 'data-saver';
-                  const pages = filenames.map((fn: string) => `/api/manga/page-proxy?url=${encodeURIComponent(`${baseUrl}/${pathPrefix}/${hash}/${fn}`)}&chapterId=${matchedDex.id}`);
-                  if (pages.length > 0) {
-                    if (debugLogs) debugLogs.push(`[fallback] Loaded ${pages.length} pages from MangaDex`);
-                    return pages;
+                  if (matchedDex?.id) {
+                    const srvRes = await fetch(`https://api.mangadex.org/at-home/server/${matchedDex.id}`);
+                    if (srvRes.ok) {
+                      const srvData: any = await srvRes.json();
+                      if (srvData && srvData.chapter) {
+                        const hash = srvData.chapter.hash;
+                        const baseUrl = srvData.baseUrl;
+                        const filenames = (srvData.chapter.data && srvData.chapter.data.length > 0) ? srvData.chapter.data : (srvData.chapter.dataSaver || []);
+                        const pathPrefix = (srvData.chapter.data && srvData.chapter.data.length > 0) ? 'data' : 'data-saver';
+                        const pages = filenames.map((fn: string) => `/api/manga/page-proxy?url=${encodeURIComponent(`${baseUrl}/${pathPrefix}/${hash}/${fn}`)}`);
+                        if (pages.length > 0) {
+                          if (debugLogs) debugLogs.push(`[fallback] Loaded ${pages.length} pages from MangaDex`);
+                          return pages;
+                        }
+                      }
+                    }
                   }
                 }
               }
             }
           }
         }
+      } catch (e: any) {
+        if (debugLogs) debugLogs.push(`[fallback] MangaDex error: ${e.message}`);
       }
-    } catch(e: any) {
-      if (debugLogs) debugLogs.push(`[fallback] MangaDex error: ${e.message}`);
     }
 
     // 3. Try ReManga
     try {
-      const rmSearch = await fetch(`https://api.remanga.org/api/search/?query=${encodeURIComponent(titles[0])}&count=5`);
+      const rmSearch = await fetch(`https://api.remanga.org/api/search/?query=${encodeURIComponent(titles[0])}&count=5`, {
+        headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://remanga.org/' }
+      });
       if (rmSearch.ok && rmSearch.headers.get('content-type')?.includes('application/json')) {
         const rmData: any = await rmSearch.json();
         if (rmData && Array.isArray(rmData.content)) {
@@ -295,7 +431,7 @@ export const onRequest = async (context: any) => {
                         const servers = cObj.servers || ['https://img.remanga.org'];
                         const pageItems = cObj.pages || cObj.scans || [];
                         const pages = pageItems.map((page: any) => {
-                          let link = typeof page === 'string' ? page : (Array.isArray(page) ? page[2] : (page.link || page.url || ''));
+                          let link = extractStringUrl(page);
                           if (link && !link.startsWith('http')) {
                             const mainServer = servers[0] ? servers[0].replace(/\/$/, '') : 'https://img.remanga.org';
                             link = `${mainServer}${link.startsWith('/') ? link : '/' + link}`;
@@ -481,6 +617,8 @@ export const onRequest = async (context: any) => {
         referer = 'https://shikimori.one/';
       } else if (url.searchParams.get('_zaza') || targetUrl.includes('rmr.rocks') || targetUrl.includes('one-way.work') || targetUrl.includes('zazaza.me')) {
         referer = 'https://a.zazaza.me/';
+      } else if (targetUrl.includes('manga-chan.me') || targetUrl.includes('img7.manga-chan.me') || targetUrl.includes('im.manga-chan.me')) {
+        referer = 'https://manga-chan.me/';
       }
       
       let res = await fetch(targetUrl, {
@@ -1181,13 +1319,14 @@ export const onRequest = async (context: any) => {
     };
 
     // Execute in parallel
-    const [rmList, mdList, zazaList] = await Promise.all([
+    const [rmList, mdList, zazaList, mcList] = await Promise.all([
       fetchRemangaChapters(),
       fetchMangaDexChapters(),
-      fetchZazaChapters()
+      fetchZazaChapters(),
+      fetchMangaChanChapters(searchTitles)
     ]);
 
-    const allChapters = [...rmList, ...mdList, ...zazaList];
+    const allChapters = [...mcList, ...rmList, ...mdList, ...zazaList];
 
     const filteredChapters = mergeAndDeduplicateChapters(allChapters);
 
@@ -1200,6 +1339,42 @@ export const onRequest = async (context: any) => {
   const chapterPagesMatch = pathname.match(/^\/chapter\/(.+)\/pages\/?$/);
   if (chapterPagesMatch) {
     const chapterId = chapterPagesMatch[1];
+
+    if (chapterId.startsWith('mc-')) {
+      const rawUrl = atob(chapterId.replace('mc-', ''));
+      const debugLogs: string[] = [];
+      try {
+        const pageRes = await fetch(rawUrl, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+        });
+        if (pageRes.ok) {
+          const pageHtml = await pageRes.text();
+          const imgArrayMatches = pageHtml.match(/\[[^\]]*https?:\/\/[^'\"\r\n]*?\.(?:jpg|png|webp|jpeg)[^\]]*\]/gi);
+          if (imgArrayMatches) {
+            for (const arrStr of imgArrayMatches) {
+              if (!arrStr.includes('thumbs') && (arrStr.includes('img') || arrStr.includes('manga'))) {
+                try {
+                  const pagesArr = JSON.parse(arrStr);
+                  if (Array.isArray(pagesArr) && pagesArr.length > 0) {
+                    const pages = pagesArr.map((imgUrl: string) => `/api/manga/page-proxy?url=${encodeURIComponent(imgUrl)}`);
+                    return new Response(JSON.stringify({ pages, debugLogs, isLicensed: false }), { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
+                  }
+                } catch (e) {}
+              }
+            }
+          }
+        }
+      } catch (e) {}
+
+      const reqTitle = url.searchParams.get('title') || '';
+      const reqOrig = url.searchParams.get('orig') || '';
+      const reqCh = url.searchParams.get('ch') || '';
+      const reqChTitle = url.searchParams.get('chTitle') || '';
+      const targetChapNum = reqCh || (reqChTitle.match(/([\d.,]+)/)?.[1] || '1');
+      const fallbackTitles = [reqTitle, reqOrig].filter(Boolean);
+      const fallbackPages = await resolveFallbackPages(fallbackTitles, targetChapNum, debugLogs);
+      return new Response(JSON.stringify({ pages: fallbackPages, debugLogs, isLicensed: false }), { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
+    }
 
     if (chapterId.startsWith('zaza-')) {
       const rawPath = fromBase64(chapterId.replace('zaza-', ''));
