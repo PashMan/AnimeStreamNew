@@ -475,6 +475,126 @@ export const onRequest = async (context: any) => {
     }
   }
 
+  // 2.5 RELATED & SIMILAR: /api/manga/:id/related-similar or /api/manga/related-similar
+  const relSimMatch = pathname.match(/^\/([a-zA-Z0-9\-_]+)\/related-similar\/?$/) || (pathname === '/related-similar' ? [null, ''] : null);
+  if (relSimMatch || pathname === '/related-similar') {
+    const mangaId = relSimMatch ? relSimMatch[1] : (url.searchParams.get('id') || '');
+    const titleHint = url.searchParams.get('title') || '';
+    const altTitleHint = url.searchParams.get('altTitle') || '';
+    
+    let shikiId: string | number = '';
+    if (mangaId && mangaId.startsWith('shiki-')) {
+      shikiId = mangaId.replace('shiki-', '');
+    } else {
+      const searchTerms: string[] = [];
+      if (titleHint) searchTerms.push(titleHint);
+      if (altTitleHint) searchTerms.push(altTitleHint);
+      if (mangaId && mangaId.startsWith('remanga-')) {
+        const cleanDir = mangaId.replace('remanga-', '');
+        searchTerms.push(cleanDir.replace(/_/g, ' '));
+      }
+      for (const term of searchTerms) {
+        if (!term || term.length < 2) continue;
+        try {
+          const sRes = await fetch(`https://shikimori.one/api/mangas?search=${encodeURIComponent(term)}&limit=1`, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+          });
+          if (sRes.ok) {
+            const sData: any = await sRes.json();
+            if (Array.isArray(sData) && sData.length > 0 && sData[0].id) {
+              shikiId = sData[0].id;
+              break;
+            }
+          }
+        } catch (e) {}
+      }
+    }
+
+    if (!shikiId) {
+      return new Response(JSON.stringify({ success: true, related: [], similar: [] }), {
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+      });
+    }
+
+    try {
+      const [relRes, simRes] = await Promise.all([
+        fetch(`https://shikimori.one/api/mangas/${shikiId}/related`, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+        }),
+        fetch(`https://shikimori.one/api/mangas/${shikiId}/similar`, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+        })
+      ]);
+
+      const relData: any = relRes.ok ? await relRes.json() : [];
+      const simData: any = simRes.ok ? await simRes.json() : [];
+
+      const related = Array.isArray(relData) ? relData.map((item: any) => {
+        const relName = item.relation_russian || item.relation || 'Связанное';
+        if (item.anime) {
+          const a = item.anime;
+          const imgUrl = a.image ? (a.image.original || a.image.preview || '') : '';
+          const fullImg = imgUrl.startsWith('http') ? imgUrl : `https://shikimori.one${imgUrl}`;
+          return {
+            relation: relName,
+            type: 'anime',
+            anime: {
+              id: a.id,
+              title: a.russian || a.name,
+              originalTitle: a.name,
+              cover: imgUrl ? `/api/manga/page-proxy?url=${encodeURIComponent(fullImg)}&_cb=3` : '',
+              kind: a.kind,
+              year: a.aired_on ? a.aired_on.slice(0, 4) : '',
+              score: a.score
+            }
+          };
+        } else if (item.manga) {
+          const m = item.manga;
+          const imgUrl = m.image ? (m.image.original || m.image.preview || '') : '';
+          const fullImg = imgUrl.startsWith('http') ? imgUrl : `https://shikimori.one${imgUrl}`;
+          return {
+            relation: relName,
+            type: 'manga',
+            manga: {
+              id: `shiki-${m.id}`,
+              title: m.russian || m.name,
+              originalTitle: m.name,
+              cover: imgUrl ? `/api/manga/page-proxy?url=${encodeURIComponent(fullImg)}&_cb=3` : '',
+              kind: m.kind,
+              score: m.score,
+              status: m.status === 'released' ? 'Завершен' : 'Онгоинг'
+            }
+          };
+        }
+        return null;
+      }).filter(Boolean) : [];
+
+      const similar = Array.isArray(simData) ? simData.map((m: any) => {
+        const imgUrl = m.image ? (m.image.original || m.image.preview || '') : '';
+        const fullImg = imgUrl.startsWith('http') ? imgUrl : `https://shikimori.one${imgUrl}`;
+        const kindLabel = m.kind === 'manhwa' ? 'Манхва' : (m.kind === 'manhua' ? 'Маньхуа' : 'Манга');
+        return {
+          id: `shiki-${m.id}`,
+          title: m.russian || m.name,
+          originalTitle: m.name,
+          cover: imgUrl ? `/api/manga/page-proxy?url=${encodeURIComponent(fullImg)}&_cb=3` : '',
+          rating: m.score ? parseFloat(m.score) : 8.0,
+          status: m.status === 'released' ? 'Завершен' : 'Онгоинг',
+          genres: [kindLabel],
+          chapters: m.chapters || 0
+        };
+      }) : [];
+
+      return new Response(JSON.stringify({ success: true, related, similar }), {
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+      });
+    } catch (e: any) {
+      return new Response(JSON.stringify({ success: true, related: [], similar: [] }), {
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+      });
+    }
+  }
+
   // 3. CHAPTERS LIST: /api/manga/:id/chapters
   const chaptersMatch = pathname.match(/^\/([a-zA-Z0-9\-_]+)\/chapters\/?$/);
   if (chaptersMatch) {
@@ -681,7 +801,7 @@ export const onRequest = async (context: any) => {
                title: chTitle || 'Глава',
                volume: path.match(/vol(\d+)/)?.[1] || '1',
                chapter: path.match(/vol\d+\/([\d.,]+)/)?.[1] || '0',
-               group: 'ReadManga: Официальный / Любительский',
+               group: 'Команда перевода',
                publishAt: new Date().toISOString()
             });
         }

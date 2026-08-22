@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { 
   BookOpen, Star, ArrowLeft, ChevronRight, ChevronLeft, Heart, 
   Search, Loader2, ShieldAlert, BookX, ChevronDown, Layers, Settings, 
   Sliders, Eye, MessageSquare, Clock, Filter, ThumbsUp, 
   Calendar, Flame, Compass, RefreshCw, X, Download, HardDriveDownload, 
-  CheckCircle2, Trash2, WifiOff
+  CheckCircle2, Trash2, WifiOff, Film, Sparkles, Play, ExternalLink
 } from 'lucide-react';
 import SEO from '../components/SEO';
 import { useAuth } from '../context/AuthContext';
@@ -17,6 +17,40 @@ import {
   deleteOfflineChapter, 
   OfflineChapter 
 } from '../services/offlineManga';
+
+export interface MangaRelatedItem {
+  relation: string;
+  type: 'anime' | 'manga';
+  anime?: {
+    id: number;
+    title: string;
+    originalTitle?: string;
+    cover?: string;
+    kind?: string;
+    year?: string;
+    score?: string;
+  };
+  manga?: {
+    id: string;
+    title: string;
+    originalTitle?: string;
+    cover?: string;
+    kind?: string;
+    score?: string;
+    status?: string;
+  };
+}
+
+export interface MangaSimilarItem {
+  id: string;
+  title: string;
+  originalTitle?: string;
+  cover: string;
+  rating: number;
+  status: string;
+  genres: string[];
+  chapters: number;
+}
 
 interface MangaItem {
   id: string;
@@ -230,13 +264,16 @@ const Manga: React.FC = () => {
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterGenre, setFilterGenre] = useState<string>('all');
 
-  // --- Selected Manga Deep Page States ---
+  const navigate = useNavigate();
   const [selectedManga, setSelectedManga] = useState<MangaItem | null>(null);
   const [chapters, setChapters] = useState<ChapterItem[]>([]);
   const uniqueChaptersCount = React.useMemo(() => new Set(chapters.map((ch) => ch.chapter)).size, [chapters]);
   const [chaptersLoading, setChaptersLoading] = useState<boolean>(false);
   const [selectedTranslationGroup, setSelectedTranslationGroup] = useState<string>('');
-  const [activeDetailTab, setActiveDetailTab] = useState<'info' | 'chapters' | 'comments'>('info');
+  const [activeDetailTab, setActiveDetailTab] = useState<'info' | 'chapters' | 'related' | 'similar' | 'comments'>('info');
+  const [relatedManga, setRelatedManga] = useState<MangaRelatedItem[]>([]);
+  const [similarManga, setSimilarManga] = useState<MangaSimilarItem[]>([]);
+  const [loadingRelatedSimilar, setLoadingRelatedSimilar] = useState<boolean>(false);
   const [chapterSearchQuery, setChapterSearchQuery] = useState<string>('');
   const [isMangaLicensed, setIsMangaLicensed] = useState<boolean>(false);
   const [animeBridgeData, setAnimeBridgeData] = useState<{
@@ -833,12 +870,38 @@ const Manga: React.FC = () => {
     }
   };
 
+  // Fetch related and similar titles for selected manga
+  const fetchRelatedAndSimilar = async (manga: MangaItem) => {
+    setLoadingRelatedSimilar(true);
+    try {
+      const titleParam = encodeURIComponent(manga.title || manga.originalTitle || '');
+      const altParam = encodeURIComponent(manga.originalTitle || '');
+      const res = await fetch(`/api/manga/${manga.id}/related-similar?title=${titleParam}&altTitle=${altParam}`);
+      if (res.ok) {
+        const data = await res.json();
+        setRelatedManga(data.related || []);
+        setSimilarManga(data.similar || []);
+      } else {
+        setRelatedManga([]);
+        setSimilarManga([]);
+      }
+    } catch (e) {
+      console.error("Related/Similar load error", e);
+      setRelatedManga([]);
+      setSimilarManga([]);
+    } finally {
+      setLoadingRelatedSimilar(false);
+    }
+  };
+
   // Fetch chapters for selected manga
   const selectMangaItem = async (manga: MangaItem, targetChapterNum?: string | number | null, autoLaunch = false) => {
     setChaptersLoading(true);
     setChapters([]);
     setIsMangaLicensed(false);
     setSelectedTranslationGroup('');
+    fetchRelatedAndSimilar(manga);
+
     try {
       const res = await fetch(`/api/manga/${manga.id}/chapters?_t=${Date.now()}`);
       if (res.ok) {
@@ -849,20 +912,33 @@ const Manga: React.FC = () => {
 
         // Group by translator name to find scanlator with most chapters
         if (chList.length > 0) {
+          const sanitizeGrp = (name: string) => {
+            if (!name) return "Команда перевода";
+            const lower = name.toLowerCase();
+            if (lower.includes("readmanga") || lower.includes("mangaread") || lower.includes("zazaza")) {
+              return "Команда перевода";
+            }
+            return name;
+          };
+
           const groupsMap: Record<string, number> = {};
           chList.forEach((ch) => {
-            const grp = ch.group || "Внешний переводчик";
+            const grp = sanitizeGrp(ch.group);
             groupsMap[grp] = (groupsMap[grp] || 0) + 1;
           });
           
           let maxGroup = "";
           let maxCount = -1;
-          Object.entries(groupsMap).forEach(([gName, count]) => {
-            if (count > maxCount) {
-              maxCount = count;
-              maxGroup = gName;
-            }
-          });
+          if (groupsMap["Команда перевода"] && groupsMap["Команда перевода"] > 0) {
+            maxGroup = "Команда перевода";
+          } else {
+            Object.entries(groupsMap).forEach(([gName, count]) => {
+              if (count > maxCount) {
+                maxCount = count;
+                maxGroup = gName;
+              }
+            });
+          }
           setSelectedTranslationGroup(maxGroup);
 
           // Auto open chapter if target chapter is specified
@@ -1131,11 +1207,13 @@ const Manga: React.FC = () => {
               )}
 
                {/* Tab Selector bar */}
-              <div className="flex border-b border-white/5 select-none overflow-x-auto">
+              <div className="flex border-b border-white/5 select-none overflow-x-auto custom-scrollbar">
                 {[
-                  { id: 'info', label: 'Описание произведения' },
+                  { id: 'info', label: 'Описание' },
                   { id: 'chapters', label: (isMangaLicensed || chapters.length === 0) ? 'Список глав' : `Список глав (${chaptersLoading ? '...' : uniqueChaptersCount})` },
-                  { id: 'comments', label: `Отзывы и Обсуждения (${(mangaComments[selectedManga.id] || []).length})` }
+                  { id: 'related', label: `Связанное (${loadingRelatedSimilar ? '...' : relatedManga.length})` },
+                  { id: 'similar', label: `Похожее (${loadingRelatedSimilar ? '...' : similarManga.length})` },
+                  { id: 'comments', label: `Отзывы (${(mangaComments[selectedManga.id] || []).length})` }
                 ].map((tab) => (
                   <button
                     key={tab.id}
@@ -1161,6 +1239,250 @@ const Manga: React.FC = () => {
                         {selectedManga.description || "У этого тайтла пока нет детального описания."}
                       </p>
                     </div>
+
+                    {/* Quick Preview of Related & Similar */}
+                    {relatedManga.length > 0 && (
+                      <div className="space-y-2.5 pt-4 border-t border-white/5">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-[10px] font-black text-[#8B5CF6] uppercase tracking-widest flex items-center gap-1.5">
+                            <Film className="w-3.5 h-3.5" /> Связанные адаптации ({relatedManga.length})
+                          </h4>
+                          <button
+                            type="button"
+                            onClick={() => setActiveDetailTab('related')}
+                            className="text-[10px] font-bold text-slate-400 hover:text-white transition-colors cursor-pointer"
+                          >
+                            Смотреть все ➔
+                          </button>
+                        </div>
+                        <div className="flex gap-2.5 overflow-x-auto pb-2 custom-scrollbar">
+                          {relatedManga.slice(0, 6).map((item, idx) => {
+                            const data = item.type === 'anime' ? item.anime : item.manga;
+                            if (!data) return null;
+                            return (
+                              <div
+                                key={`prev-rel-${idx}`}
+                                onClick={() => {
+                                  if (item.type === 'anime' && item.anime) {
+                                    navigate(`/anime/${item.anime.id}`);
+                                  } else if (item.manga) {
+                                    const nextM: MangaItem = {
+                                      id: String(item.manga.id),
+                                      title: item.manga.title,
+                                      originalTitle: item.manga.originalTitle || '',
+                                      cover: item.manga.cover || '',
+                                      rating: parseFloat(item.manga.score || '8.0'),
+                                      genres: [item.manga.kind === 'manhwa' ? 'Манхва' : 'Манга'],
+                                      status: item.manga.status || 'Завершен',
+                                      description: ''
+                                    };
+                                    setSelectedManga(nextM);
+                                    selectMangaItem(nextM);
+                                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                                  }
+                                }}
+                                className="w-28 shrink-0 bg-[#18191d] border border-white/5 hover:border-[#8B5CF6]/50 rounded-xl p-2 cursor-pointer transition-all space-y-1.5 group"
+                              >
+                                <div className="aspect-[2/3] rounded-lg overflow-hidden relative bg-black/40">
+                                  <img 
+                                    src={data.cover || FALLBACK_COVER} 
+                                    alt={data.title}
+                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform" 
+                                    referrerPolicy="no-referrer"
+                                    onError={(e) => { e.currentTarget.src = FALLBACK_COVER; }}
+                                  />
+                                  <span className="absolute top-1 left-1 px-1 py-0.5 bg-black/80 rounded text-[7px] font-black text-[#A78BFA] uppercase">
+                                    {item.type === 'anime' ? 'Аниме' : 'Манга'}
+                                  </span>
+                                </div>
+                                <p className="text-[10px] font-bold text-white truncate group-hover:text-[#A78BFA] transition-colors">{data.title}</p>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {activeDetailTab === 'related' && (
+                  <div className="space-y-4 animate-in fade-in duration-200">
+                    {loadingRelatedSimilar ? (
+                      <div className="py-16 flex flex-col items-center justify-center">
+                        <Loader2 className="w-8 h-8 text-[#8B5CF6] animate-spin mb-3" />
+                        <span className="text-xs font-black uppercase text-slate-500 tracking-widest">Загрузка связанных произведений...</span>
+                      </div>
+                    ) : relatedManga.length === 0 ? (
+                      <div className="py-16 text-center text-slate-500 font-extrabold text-xs uppercase tracking-widest border border-white/5 border-dashed rounded-3xl p-6">
+                        Связанных аниме или манги не найдено в базе данных
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                        {relatedManga.map((item, idx) => {
+                          const isAnime = item.type === 'anime' && item.anime;
+                          const isMangaType = item.type === 'manga' && item.manga;
+                          const data = isAnime ? item.anime : item.manga;
+                          if (!data) return null;
+
+                          return (
+                            <div
+                              key={`rel-${idx}`}
+                              className="p-3 bg-[#18191d] border border-white/5 hover:border-[#8B5CF6]/40 rounded-2xl flex items-start gap-3 transition-all group"
+                            >
+                              <div className="w-16 h-22 rounded-xl overflow-hidden bg-black/40 shrink-0 border border-white/5 relative">
+                                {data.cover ? (
+                                  <img 
+                                    src={data.cover} 
+                                    alt={data.title} 
+                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                    referrerPolicy="no-referrer"
+                                    onError={(e) => { e.currentTarget.src = FALLBACK_COVER; }}
+                                  />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center bg-white/5 text-slate-600">
+                                    <BookOpen className="w-6 h-6" />
+                                  </div>
+                                )}
+                                <span className="absolute bottom-1 right-1 px-1 py-0.5 bg-black/80 rounded text-[7.5px] font-black text-amber-300">
+                                  ⭐ {data.score || '8.0'}
+                                </span>
+                              </div>
+
+                              <div className="min-w-0 flex-1 flex flex-col justify-between self-stretch py-0.5">
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="px-1.5 py-0.5 rounded bg-[#8B5CF6]/20 text-[#A78BFA] font-black text-[8px] uppercase tracking-wider">
+                                      {item.relation}
+                                    </span>
+                                    <span className="px-1.5 py-0.5 rounded bg-white/5 text-slate-400 font-bold text-[8px] uppercase">
+                                      {isAnime ? 'Аниме' : 'Манга'}
+                                    </span>
+                                  </div>
+                                  <h4 className="text-xs font-bold text-white line-clamp-2 leading-snug group-hover:text-[#A78BFA] transition-colors">
+                                    {data.title}
+                                  </h4>
+                                  {data.originalTitle && (
+                                    <p className="text-[10px] text-slate-500 truncate font-medium">
+                                      {data.originalTitle}
+                                    </p>
+                                  )}
+                                </div>
+
+                                <div className="pt-2">
+                                  {isAnime ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => navigate(`/anime/${data.id}`)}
+                                      className="w-full px-2.5 py-1.5 bg-[#8B5CF6] hover:bg-[#7C3AED] text-white font-black text-[10px] uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                                    >
+                                      <Play className="w-3 h-3 fill-current" />
+                                      <span>Смотреть аниме</span>
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const nextManga: MangaItem = {
+                                          id: String(data.id),
+                                          title: data.title,
+                                          originalTitle: data.originalTitle || '',
+                                          cover: data.cover || '',
+                                          rating: parseFloat(data.score || '8.0'),
+                                          genres: [data.kind === 'manhwa' ? 'Манхва' : 'Манга'],
+                                          status: (data as any).status || 'Завершен',
+                                          description: ''
+                                        };
+                                        setSelectedManga(nextManga);
+                                        selectMangaItem(nextManga);
+                                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                                      }}
+                                      className="w-full px-2.5 py-1.5 bg-white/5 hover:bg-white/10 text-slate-200 hover:text-white font-black text-[10px] uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer border border-white/5"
+                                    >
+                                      <BookOpen className="w-3 h-3" />
+                                      <span>Читать мангу</span>
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {activeDetailTab === 'similar' && (
+                  <div className="space-y-4 animate-in fade-in duration-200">
+                    {loadingRelatedSimilar ? (
+                      <div className="py-16 flex flex-col items-center justify-center">
+                        <Loader2 className="w-8 h-8 text-[#8B5CF6] animate-spin mb-3" />
+                        <span className="text-xs font-black uppercase text-slate-500 tracking-widest">Подбор похожих тайтлов...</span>
+                      </div>
+                    ) : similarManga.length === 0 ? (
+                      <div className="py-16 text-center text-slate-500 font-extrabold text-xs uppercase tracking-widest border border-white/5 border-dashed rounded-3xl p-6">
+                        Похожих тайтлов пока не найдено
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5">
+                        {similarManga.map((m) => (
+                          <div
+                            key={m.id}
+                            onClick={() => {
+                              const nextManga: MangaItem = {
+                                id: m.id,
+                                title: m.title,
+                                originalTitle: m.originalTitle || '',
+                                cover: m.cover,
+                                rating: m.rating,
+                                genres: m.genres || ['Манга'],
+                                status: m.status,
+                                description: ''
+                              };
+                              setSelectedManga(nextManga);
+                              selectMangaItem(nextManga);
+                              window.scrollTo({ top: 0, behavior: 'smooth' });
+                            }}
+                            className="bg-[#18191d] border border-white/5 hover:border-[#8B5CF6]/50 rounded-2xl p-2.5 space-y-2 cursor-pointer transition-all hover:scale-[1.02] group flex flex-col justify-between"
+                          >
+                            <div className="space-y-2">
+                              <div className="aspect-[2/3] rounded-xl overflow-hidden bg-black/40 relative border border-white/5">
+                                <img
+                                  src={m.cover}
+                                  alt={m.title}
+                                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                  referrerPolicy="no-referrer"
+                                  onError={(e) => { e.currentTarget.src = FALLBACK_COVER; }}
+                                />
+                                <div className="absolute top-1.5 right-1.5 px-1.5 py-0.5 bg-black/80 rounded text-[8px] font-black text-amber-300 flex items-center gap-0.5">
+                                  <Star className="w-2.5 h-2.5 fill-amber-300 text-amber-300" />
+                                  <span>{m.rating}</span>
+                                </div>
+                                <div className="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 bg-black/80 rounded text-[7.5px] font-black text-[#A78BFA] uppercase">
+                                  {m.genres[0] || 'Манга'}
+                                </div>
+                              </div>
+
+                              <div className="space-y-0.5 px-1">
+                                <h4 className="text-xs font-bold text-white line-clamp-2 leading-snug group-hover:text-[#A78BFA] transition-colors">
+                                  {m.title}
+                                </h4>
+                                {m.originalTitle && (
+                                  <p className="text-[10px] text-slate-500 truncate font-medium">
+                                    {m.originalTitle}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="px-1 pt-1 flex items-center justify-between text-[9px] text-slate-400 font-semibold border-t border-white/5">
+                              <span>{m.status}</span>
+                              <span className="text-[#8B5CF6] font-bold">Читать ➔</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
 
