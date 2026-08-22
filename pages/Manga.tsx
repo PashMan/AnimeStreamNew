@@ -1469,6 +1469,21 @@ const Manga: React.FC = () => {
 
                 {activeDetailTab === 'chapters' && (
                   <div className="space-y-4 animate-in fade-in duration-200">
+                    {/* RED License / Publisher Notice Banner - ONLY in chapter list */}
+                    {isMangaLicensed && (
+                      <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/30 text-red-400 flex items-center gap-3.5 shadow-lg">
+                        <ShieldAlert className="w-6 h-6 text-red-500 shrink-0" />
+                        <div className="space-y-0.5">
+                          <div className="text-xs font-black uppercase tracking-wider text-red-400">
+                            Издательская блокировка
+                          </div>
+                          <div className="text-[11px] text-red-300/80 font-medium leading-tight">
+                            По требованию правообладателя главы этого произведения могут быть ограничены для свободного просмотра.
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
                     <div className="relative">
                       <input 
                         type="text" 
@@ -1486,10 +1501,23 @@ const Manga: React.FC = () => {
                         <span className="text-xs font-black uppercase text-slate-500 tracking-widest">Инициализация структуры глав...</span>
                       </div>
                     ) : (() => {
+                      // Helper to strip out unwanted license labels
+                      const cleanText = (str: string) => {
+                        if (!str) return '';
+                        return str
+                          .replace(/\(?\[?лицензия\]?\)?/gi, '')
+                          .replace(/официальный релиз/gi, '')
+                          .replace(/защита авторских прав/gi, '')
+                          .replace(/\s+/g, ' ')
+                          .trim();
+                      };
+
                       // Filter chapters by chapter search query
                       const filtered = chapters.filter((ch) => {
-                        const matchSearch = ch.chapter.toLowerCase().includes(chapterSearchQuery.toLowerCase()) || 
-                          (ch.title && ch.title.toLowerCase().includes(chapterSearchQuery.toLowerCase()));
+                        const cleanCh = cleanText(ch.chapter);
+                        const cleanTi = cleanText(ch.title || '');
+                        const matchSearch = cleanCh.toLowerCase().includes(chapterSearchQuery.toLowerCase()) || 
+                          cleanTi.toLowerCase().includes(chapterSearchQuery.toLowerCase());
                         return matchSearch;
                       });
 
@@ -1497,11 +1525,11 @@ const Manga: React.FC = () => {
                         <div className="space-y-4">
                           {filtered.length === 0 ? (
                             isMangaLicensed ? (
-                              <div className="py-8 px-5 text-center border border-red-500/15 bg-red-500/5 text-slate-300 rounded-3xl flex flex-col items-center gap-2">
+                              <div className="py-8 px-5 text-center border border-red-500/20 bg-red-500/10 text-slate-300 rounded-3xl flex flex-col items-center gap-2">
                                 <ShieldAlert className="w-8 h-8 text-red-500" />
                                 <div className="font-black text-red-500 text-xs uppercase tracking-widest">Издательская блокировка</div>
-                                <div className="text-[10px] text-slate-500 max-w-sm font-semibold">
-                                  По требованию дистрибьютора в регионе главы закрыты для свободного просмотра. Пожалуйста, обратитесь к правообладателю.
+                                <div className="text-[10px] text-slate-400 max-w-sm font-semibold">
+                                  По требованию дистрибьютора в регионе главы закрыты для свободного просмотра.
                                 </div>
                               </div>
                             ) : (
@@ -1514,6 +1542,8 @@ const Manga: React.FC = () => {
                               {filtered.map((ch) => {
                                 const isDownloaded = downloadedChapterIds.includes(ch.id);
                                 const isDownloading = downloadingChapterId === ch.id;
+                                const cleanedChapterNum = cleanText(ch.chapter);
+                                const cleanedTitle = cleanText(ch.title || '');
 
                                 return (
                                   <div
@@ -1531,9 +1561,11 @@ const Manga: React.FC = () => {
                                         )}
                                       </div>
                                       <h4 className="text-xs font-black mt-0.5 text-white">
-                                        Глава {ch.chapter}
+                                        Глава {cleanedChapterNum}
                                       </h4>
-                                      <p className="text-[10px] text-slate-400 font-semibold truncate mt-0.5">{ch.title || `Раздел`}</p>
+                                      {cleanedTitle && (
+                                        <p className="text-[10px] text-slate-400 font-semibold truncate mt-0.5">{cleanedTitle}</p>
+                                      )}
                                     </div>
 
                                     <div className="flex items-center gap-2 shrink-0">
@@ -2123,10 +2155,9 @@ const Manga: React.FC = () => {
                         <ShieldAlert className="w-8 h-8 text-red-500" />
                       </div>
                       <div className="space-y-2">
-                        <h4 className="text-xs font-black text-red-500 uppercase tracking-widest">ДОСТУП ОГРАНИЧЕН: РФ ПРАВООБЛАДАТЕЛЬ</h4>
+                        <h4 className="text-xs font-black text-red-500 uppercase tracking-widest">ДОСТУП ОГРАНИЧЕН: ИЗДАТЕЛЬСКАЯ БЛОКИРОВКА</h4>
                         <p className="text-[11px] text-[#7d8291] max-w-sm mx-auto leading-relaxed font-semibold">
-                          По требованию дистрибьютора в регионе главы закрыты для свободного просмотра. 
-                          Главы этого произведения удалены правообладателем в РФ или заблокированы.
+                          По требованию дистрибьютора главы этого произведения ограничены для просмотра.
                         </p>
                       </div>
                       <div className="p-3 bg-[#121316] rounded-2xl border border-white/5 text-left text-[9px] font-mono text-red-400/80 leading-snug break-all space-y-1">
