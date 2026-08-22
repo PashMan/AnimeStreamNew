@@ -47,7 +47,7 @@ export const onRequest = async (context: any) => {
   };
 
   // Safe timeout-controlled fetch utility to prevent node thread lock-ups on dead/firewalled mirrors in RF
-  const fetchWithTimeout = async (url: string, options: any = {}, timeoutMs: number = 3800) => {
+  const fetchWithTimeout = async (url: string, options: any = {}, timeoutMs: number = 4000) => {
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), timeoutMs);
     try {
@@ -63,86 +63,46 @@ export const onRequest = async (context: any) => {
     }
   };
 
-  // Helper function to fetch ReManga chapters by titles
-  const fetchRemangaChaptersByTitle = async (titles: string[]) => {
-    const uniqueTitles = Array.from(new Set(titles.filter(Boolean)));
-    let remangaMangaDir = "";
-    
-    // Try to find the title on ReManga
-    for (const title of uniqueTitles) {
-      if (!title) continue;
-      try {
-        const searchRes = await fetch(`https://api.remanga.org/api/search/?query=${encodeURIComponent(title)}&count=3`, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-          }
-        });
-        const data: any = await searchRes.json();
-        if (data && Array.isArray(data.content) && data.content.length > 0) {
-          remangaMangaDir = data.content[0].dir;
-          break;
-        }
-      } catch (e) {
-        console.error(`[ReManga Search] failed for "${title}":`, e);
-      }
-    }
+  // 0. ANIME BRIDGE: /api/manga/anime-bridge
+  if (pathname === '/anime-bridge' || pathname === 'anime-bridge') {
+    const title = url.searchParams.get('title') || url.searchParams.get('q') || url.searchParams.get('search') || '';
+    const altTitle = url.searchParams.get('altTitle') || '';
+    const episode = parseInt(url.searchParams.get('episode') || url.searchParams.get('ep') || '1', 10);
+    const season = url.searchParams.get('season') || undefined;
 
-    if (!remangaMangaDir) return [];
-
-    // Fetch branches
-    try {
-      const detailRes = await fetch(`https://api.remanga.org/api/titles/${remangaMangaDir}/`, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
+    if (!title.trim() && !altTitle.trim()) {
+      return new Response(JSON.stringify({ error: 'Anime title is required' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
       });
-      const detailData: any = await detailRes.json();
-      const content = detailData && detailData.content;
-      if (!content || !content.branches || content.branches.length === 0) {
-        return [];
-      }
-
-      const branches = content.branches;
-      let allChapters: any[] = [];
-
-      // Fetch chapters for each branch in parallel
-      await Promise.allSettled(branches.map(async (branch: any) => {
-        const branchId = branch.id;
-        try {
-          const chRes = await fetch(`https://api.remanga.org/api/titles/chapters/?branch_id=${branchId}&limit=250&page=1`, {
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            }
-          });
-          const chData: any = await chRes.json();
-          const chList = chData && chData.content;
-          if (Array.isArray(chList)) {
-            chList.forEach((ch: any) => {
-              const chNum = ch.chapter || '0';
-              const grName = Array.isArray(branch.names) ? branch.names.join(', ') : (branch.names || 'Переводчики ReManga');
-              allChapters.push({
-                id: `remanga-${ch.id}`,
-                chapter: chNum.toString(),
-                volume: (ch.volume || '').toString(),
-                title: ch.name || `Глава ${ch.chapter || ''}`,
-                group: `ReManga: ${grName}`,
-                publishAt: ch.pub_date || new Date().toISOString()
-              });
-            });
-          }
-        } catch (err) {
-          console.error(`[ReManga] Fetch chapters failed for branch ${branchId}:`, err);
-        }
-      }));
-
-      return allChapters;
-    } catch (err) {
-      console.error(`[ReManga] Detail fetch failed for "${remangaMangaDir}":`, err);
-      return [];
     }
-  };
 
-  // 0. PAGE PROXY: /api/manga/page-proxy
+    const queryTerm = title || altTitle;
+    const epNum = Math.max(1, isNaN(episode) ? 1 : episode);
+    const mappedChapter = Math.max(1, Math.round(epNum * 2));
+
+    const bridgeResult = {
+      success: true,
+      animeTitle: queryTerm,
+      episode: epNum,
+      season: season ? parseInt(season, 10) : 1,
+      mappedChapter,
+      chapterRange: `${mappedChapter}`,
+      recommendedChapter: mappedChapter,
+      adaptationSummary: `${epNum} серия приблизительно соответствует ${mappedChapter} главе манги.`,
+      source: 'algorithmic'
+    };
+
+    return new Response(JSON.stringify(bridgeResult), {
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'public, max-age=3600'
+      }
+    });
+  }
+
+  // 0.1 PAGE PROXY: /api/manga/page-proxy
   if (pathname === '/page-proxy' || pathname === 'page-proxy') {
     const targetUrl = url.searchParams.get('url');
     if (!targetUrl) {
@@ -154,7 +114,7 @@ export const onRequest = async (context: any) => {
         referer = 'https://mangadex.org/';
       } else if (targetUrl.includes('shikimori.one') || targetUrl.includes('shikimori.org')) {
         referer = 'https://shikimori.one/';
-      } else if (url.searchParams.get('_zaza') || targetUrl.includes('rmr.rocks') || targetUrl.includes('one-way.work')) {
+      } else if (url.searchParams.get('_zaza') || targetUrl.includes('rmr.rocks') || targetUrl.includes('one-way.work') || targetUrl.includes('zazaza.me')) {
         referer = 'https://a.zazaza.me/';
       }
       
@@ -433,83 +393,32 @@ export const onRequest = async (context: any) => {
         }
       } catch (err: any) {}
 
-      if (!mangaResponse) {
-        try {
-          const mdSearchUrl = `https://api.mangadex.org/manga?limit=3&title=${encodeURIComponent(rawId.replace(/-/g, ' '))}&availableTranslatedLanguage[]=ru&includes[]=cover_art`;
-          const mdRes = await fetch(mdSearchUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-          const mdData: any = await mdRes.json();
-          if (mdData && mdData.data && mdData.data.length > 0) {
-             const m = mdData.data[0];
-             const attrs = m.attributes;
-             const title = attrs.title?.ru || attrs.title?.en || attrs.title?.['ja-ro'] || 'Без названия';
-             const originalTitle = attrs.title?.['ja-ro'] || '';
-             let cover = 'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=600&auto=format&fit=crop&q=80';
-             const coverRel = m.relationships?.find((r: any) => r.type === 'cover_art');
-             if (coverRel && coverRel.attributes?.fileName) {
-               cover = `/api/manga/page-proxy?url=${encodeURIComponent(`https://uploads.mangadex.org/covers/${m.id}/${coverRel.attributes.fileName}.512.jpg`)}&_cb=3`;
-             }
-             mangaResponse = {
-               id: mangaId,
-               title,
-               originalTitle,
-               rating: 8.0,
-               status: attrs.status || 'Статус неизвестен',
-               description: attrs.description?.ru || attrs.description?.en || 'Описание отсутствует.',
-               cover,
-               genres: attrs.tags?.filter((t: any) => t.attributes?.group === 'genre').map((t: any) => t.attributes?.name?.ru || t.attributes?.name?.en).filter(Boolean).slice(0, 3) || ["Манга"]
-             };
-          }
-        } catch(e) {}
-      }
-
       if (mangaResponse) {
-        return new Response(JSON.stringify({ manga: mangaResponse }), {
-          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-        });
-      } else {
-        return new Response(JSON.stringify({ error: 'Manga not found' }), {
-          status: 404,
-          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-        });
+        return new Response(JSON.stringify({ manga: mangaResponse }), { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
       }
     }
 
     if (mangaId.startsWith('shiki-')) {
       const rawId = mangaId.replace('shiki-', '');
-      const shikiUrl = `https://shikimori.one/api/mangas/${rawId}`;
       try {
-        const res = await fetch(shikiUrl, {
+        const res = await fetch(`https://shikimori.one/api/mangas/${rawId}`, {
           headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Referer': 'https://shikimori.one/',
-            'Accept': 'application/json'
+            'Referer': 'https://shikimori.one/'
           }
         });
         const m: any = await res.json();
-        if (!m || m.error) {
-          return new Response(JSON.stringify({ error: 'Manga not found on Shikimori' }), { status: 404, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
-        }
-        const title = m.russian || m.name || 'Без названия';
-        const originalTitle = m.name || '';
-        let cover = '';
-        if (m.image?.original) {
-          const cleanPath = m.image.original.replace(/^\//, '');
-          cover = `/api/image/${cleanPath}`;
-        } else {
-          cover = `https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=600&auto=format&fit=crop&q=80`;
-        }
-        const description = m.description || 'Описание отсутствует.';
-        const genres = m.genres?.map((g: any) => g.russian || g.name) || ["Манга"];
+        const cover = m.image?.original ? `/api/manga/page-proxy?url=${encodeURIComponent(`https://shikimori.one${m.image.original}`)}&_cb=3` : 'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=600&auto=format&fit=crop&q=80';
         return new Response(JSON.stringify({
           manga: {
             id: mangaId,
-            title,
-            originalTitle,
-            rating: m.score ? parseFloat(m.score) : Number((8.1 + Math.random() * 1.6).toFixed(1)),
-            status: m.status === 'released' ? 'Завершен' : (m.status === 'ongoing' ? 'Онгоинг' : 'Анонсирован'),
-            description,
+            title: m.russian || m.name,
+            originalTitle: m.name,
+            rating: m.score ? parseFloat(m.score) : 8.0,
+            status: m.status === 'released' ? 'Завершен' : 'Онгоинг',
+            description: m.description || 'Описание отсутствует.',
             cover,
-            genres: genres.slice(0, 3)
+            genres: m.genres ? m.genres.map((g: any) => g.russian || g.name).slice(0, 3) : ["Манга"]
           }
         }), { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
       } catch (err: any) {
@@ -517,32 +426,25 @@ export const onRequest = async (context: any) => {
       }
     }
 
-    // Default MangaDex details fetch
-    const dexUrl = `https://api.mangadex.org/manga/${mangaId}?includes[]=cover_art`;
+    // Default MangaDex single details
     try {
-      const res = await fetch(dexUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0',
-          'Accept': 'application/json'
-        }
+      const res = await fetch(`https://api.mangadex.org/manga/${mangaId}?includes[]=cover_art`, {
+        headers: { 'User-Agent': 'Mozilla/5.0' }
       });
       const data: any = await res.json();
       if (!data || !data.data) {
         return new Response(JSON.stringify({ error: 'Manga not found' }), { status: 404, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
       }
-      const manga = data.data;
-      const attrs = manga.attributes || {};
-      let title = attrs.title?.ru || 'Без названия';
-      if (title === 'Без названия' && attrs.altTitles && Array.isArray(attrs.altTitles)) {
-        const ruTitleObj = attrs.altTitles.find((t: any) => t.ru);
-        if (ruTitleObj) title = ruTitleObj.ru;
-      }
-      if (title === 'Без названия') {
-         title = attrs.title?.en || attrs.title?.['ja-ro'] || attrs.title?.ja || 'Без названия';
+      const m = data.data;
+      const attrs = m.attributes;
+      let title = attrs.title?.ru || attrs.title?.en || attrs.title?.['ja-ro'] || 'Без названия';
+      if (attrs.altTitles && Array.isArray(attrs.altTitles)) {
+        const ruTitle = attrs.altTitles.find((t: any) => t.ru);
+        if (ruTitle) title = ruTitle.ru;
       }
       const originalTitle = attrs.title?.['ja-ro'] || attrs.title?.ja || attrs.title?.en || '';
       let cover = '';
-      const coverRel = manga.relationships?.find((r: any) => r.type === 'cover_art');
+      const coverRel = m.relationships?.find((r: any) => r.type === 'cover_art');
       if (coverRel && coverRel.attributes?.fileName) {
         const fileName = coverRel.attributes.fileName;
         cover = `/api/manga/page-proxy?url=${encodeURIComponent(`https://uploads.mangadex.org/covers/${mangaId}/${fileName}.512.jpg`)}&_cb=3`;
@@ -578,10 +480,9 @@ export const onRequest = async (context: any) => {
   if (chaptersMatch) {
     let mangaId = chaptersMatch[1];
     let searchTitles: string[] = [];
-    let isRemangaOrigin = false;
+    let mdMangaId = mangaId;
 
     if (mangaId.startsWith('remanga-')) {
-      isRemangaOrigin = true;
       const explicitRemangaDir = mangaId.replace('remanga-', '');
       searchTitles.push(explicitRemangaDir.replace(/-/g, ' '));
       
@@ -590,7 +491,7 @@ export const onRequest = async (context: any) => {
         const mdRes = await fetch(mdSearchUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
         const mdData: any = mdRes.ok ? await mdRes.json() : null;
         if (mdData && mdData.data && mdData.data.length > 0) {
-          mangaId = mdData.data[0].id;
+          mdMangaId = mdData.data[0].id;
         }
       } catch(e) {}
     } else if (mangaId.startsWith('shiki-')) {
@@ -620,7 +521,7 @@ export const onRequest = async (context: any) => {
           const mdRes = await fetch(mdSearchUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
           const mdData: any = mdRes.ok ? await mdRes.json() : null;
           if (mdData && mdData.data && mdData.data.length > 0) {
-            mangaId = mdData.data[0].id;
+            mdMangaId = mdData.data[0].id;
             break;
           }
         } catch (err) {}
@@ -633,6 +534,7 @@ export const onRequest = async (context: any) => {
         const mdData: any = await mdRes.json();
         if (mdData && mdData.data) {
           const attrs = mdData.data.attributes || {};
+          if (attrs.title?.ru) searchTitles.push(attrs.title.ru);
           if (attrs.title?.en) searchTitles.push(attrs.title.en);
           if (attrs.title?.ja) searchTitles.push(attrs.title.ja);
           if (attrs.title?.['ja-ro']) searchTitles.push(attrs.title['ja-ro']);
@@ -646,26 +548,112 @@ export const onRequest = async (context: any) => {
       } catch(e) {}
     }
 
-    let zazaPath = '';
-    const uniqueQueryTitles = Array.from(new Set(searchTitles.filter(Boolean))).slice(0, 3);
-    
-    try {
-      const suggPromises = uniqueQueryTitles.map(async (title) => {
+    const uniqueQueryTitles = Array.from(new Set(searchTitles.filter(Boolean)));
+
+    // 1. Fetch ReManga Chapters
+    const fetchRemangaChapters = async (): Promise<any[]> => {
+      let remangaDir = mangaId.startsWith('remanga-') ? mangaId.replace('remanga-', '') : '';
+      if (!remangaDir) {
+        for (const title of uniqueQueryTitles.slice(0, 3)) {
+          try {
+            const sRes = await fetch(`https://api.remanga.org/api/search/?query=${encodeURIComponent(title)}&count=3`, {
+              headers: { 'User-Agent': 'Mozilla/5.0' }
+            });
+            const sData: any = await sRes.json();
+            if (sData?.content?.[0]?.dir) {
+              remangaDir = sData.content[0].dir;
+              break;
+            }
+          } catch(e) {}
+        }
+      }
+      if (!remangaDir) return [];
+
+      try {
+        const detailRes = await fetch(`https://api.remanga.org/api/titles/${remangaDir}/`, {
+          headers: { 'User-Agent': 'Mozilla/5.0' }
+        });
+        const detailData: any = await detailRes.json();
+        const branches = detailData?.content?.branches;
+        if (!branches || !Array.isArray(branches)) return [];
+
+        const rmChaps: any[] = [];
+        await Promise.allSettled(branches.map(async (branch: any) => {
+          try {
+            const chRes = await fetch(`https://api.remanga.org/api/titles/chapters/?branch_id=${branch.id}&limit=250&page=1`, {
+              headers: { 'User-Agent': 'Mozilla/5.0' }
+            });
+            const chData: any = await chRes.json();
+            const chList = chData?.content;
+            if (Array.isArray(chList)) {
+              const grName = Array.isArray(branch.names) ? branch.names.join(', ') : (branch.names || 'ReManga');
+              chList.forEach((ch: any) => {
+                rmChaps.push({
+                  id: `remanga-${ch.id}`,
+                  chapter: String(ch.chapter || '0'),
+                  volume: String(ch.volume || ''),
+                  title: ch.name || `Глава ${ch.chapter || ''}`,
+                  group: `ReManga: ${grName}`,
+                  publishAt: ch.pub_date || new Date().toISOString()
+                });
+              });
+            }
+          } catch(e) {}
+        }));
+        return rmChaps;
+      } catch(e) {
+        return [];
+      }
+    };
+
+    // 2. Fetch MangaDex Chapters
+    const fetchMangaDexChapters = async (): Promise<any[]> => {
+      if (!mdMangaId || mdMangaId.startsWith('shiki-') || mdMangaId.startsWith('remanga-')) return [];
+      const getFeed = async (lang: string) => {
+        const feedUrl = `https://api.mangadex.org/manga/${mdMangaId}/feed?translatedLanguage[]=${lang}&order[chapter]=asc&limit=500&includes[]=scanlation_group`;
+        try {
+          const res = await fetch(feedUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+          const data: any = await res.json();
+          if (data?.data && Array.isArray(data.data)) {
+            return data.data.map((ch: any) => {
+              const attrs = ch.attributes || {};
+              const sg = ch.relationships?.find((r: any) => r.type === 'scanlation_group');
+              const groupName = sg?.attributes?.name || 'Внешний переводчик';
+              return {
+                id: ch.id,
+                chapter: String(attrs.chapter || '0'),
+                volume: String(attrs.volume || ''),
+                title: attrs.title || `Глава ${attrs.chapter || ''}`,
+                group: `MangaDex: ${groupName} (${lang.toUpperCase()})`,
+                publishAt: attrs.publishAt
+              };
+            });
+          }
+        } catch(e) {}
+        return [];
+      };
+
+      const [ru, en] = await Promise.all([getFeed('ru'), getFeed('en')]);
+      return [...ru, ...en];
+    };
+
+    // 3. Fetch ReadManga / Zaza Chapters
+    const fetchZazaChapters = async (): Promise<any[]> => {
+      let zazaPath = '';
+      for (const title of uniqueQueryTitles.slice(0, 3)) {
         try {
           const suggRes = await fetch('https://a.zazaza.me/search/suggestion?query=' + encodeURIComponent(title));
           const suggData: any = await suggRes.json();
           const suggestion = suggData?.suggestions?.find((s: any) => s.link && (s.link.startsWith('/') || s.link.startsWith('http')));
-          return suggestion ? suggestion.link : null;
-        } catch(e) {
-          return null;
-        }
-      });
-      const suggResults = await Promise.all(suggPromises);
-      zazaPath = suggResults.find(Boolean) || '';
-    } catch(e) {}
+          if (suggestion?.link) {
+            zazaPath = suggestion.link;
+            break;
+          }
+        } catch(e) {}
+      }
 
-    let zazaChapters: any[] = [];
-    if (zazaPath) {
+      if (!zazaPath) return [];
+
       try {
         const fullUrl = zazaPath.startsWith('http') ? zazaPath + '?mtr=1' : 'https://a.zazaza.me' + zazaPath + '?mtr=1';
         const htmlRes = await fetch(fullUrl, {
@@ -675,6 +663,7 @@ export const onRequest = async (context: any) => {
         const regex = /href="(\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
         let match;
         const seen = new Set();
+        const chaps: any[] = [];
         while ((match = regex.exec(html)) !== null) {
             if (match[2].includes('Читать')) continue;
             if (!match[1].includes('/vol')) continue;
@@ -686,74 +675,32 @@ export const onRequest = async (context: any) => {
             seen.add(path);
 
             let chTitle = match[2].trim().replace(/<[^>]+>/g, '').trim();
-            const targetUrl = zazaPath.startsWith('http' ) ? (new URL(zazaPath).origin + path) : path;
-            zazaChapters.push({
+            const targetUrl = zazaPath.startsWith('http') ? (new URL(zazaPath).origin + path) : path;
+            chaps.push({
                id: `zaza-${toBase64(targetUrl)}`,
                title: chTitle || 'Глава',
                volume: path.match(/vol(\d+)/)?.[1] || '1',
                chapter: path.match(/vol\d+\/([\d.,]+)/)?.[1] || '0',
-               group: 'KamiManga Trans',
+               group: 'ReadManga: Официальный / Любительский',
                publishAt: new Date().toISOString()
             });
         }
-        
-        zazaChapters.reverse();
-      } catch (e) {
-        console.error('ZazaZa chapters edge fetch failed', e);
-      }
-    }
-
-    let mdChapters: any[] = [];
-    if (mangaId && !mangaId.startsWith('shiki-') && !mangaId.startsWith('remanga-')) {
-      const getChapters = async (lang: string) => {
-        const feedUrl = `https://api.mangadex.org/manga/${mangaId}/feed?translatedLanguage[]=${lang}&order[chapter]=asc&limit=500&includes[]=scanlation_group`;
-        try {
-          const res = await fetch(feedUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-          const data: any = await res.json();
-          if (data && data.data && data.data.length > 0) {
-            return data.data.map((ch: any) => {
-              const attrs = ch.attributes || {};
-              const sg = ch.relationships?.find((r: any) => r.type === 'scanlation_group');
-              const groupName = sg?.attributes?.name || 'Внешний переводчик';
-              return {
-                id: ch.id,
-                chapter: attrs.chapter || '0',
-                volume: attrs.volume || '',
-                title: attrs.title || `Глава ${attrs.chapter || ''}`,
-                group: `MangaDex: ${groupName} (${lang})`,
-                publishAt: attrs.publishAt
-              };
-            });
-          }
-        } catch(e) {}
+        return chaps.reverse();
+      } catch(e) {
         return [];
-      };
+      }
+    };
 
-      try {
-        let chaps = await getChapters('ru');
-        if (chaps.length === 0) chaps = await getChapters('en');
-        mdChapters = chaps;
-      } catch(e) {}
-    }
+    // Execute in parallel
+    const [rmList, mdList, zazaList] = await Promise.all([
+      fetchRemangaChapters(),
+      fetchMangaDexChapters(),
+      fetchZazaChapters()
+    ]);
 
-    // Exclusively return ReadManga (Zaza) chapters if found
-    const allChapters = zazaChapters.length > 0 ? zazaChapters : mdChapters;
+    const allChapters = [...rmList, ...mdList, ...zazaList];
 
-    if (allChapters.length === 0) {
-      const fallbackChapters = Array.from({ length: 15 }).map((_, idx) => {
-        const chNum = (idx + 1).toString();
-        return {
-          id: `procedural-chapter-${chNum}`,
-          chapter: chNum,
-          volume: "1",
-          title: `Глава ${chNum}: Плавное введение`,
-          group: "KamiTrans (Процедурный ИИ-сервер)",
-          publishAt: new Date(Date.now() - idx * 86400000).toISOString()
-        };
-      });
-      return new Response(JSON.stringify({ chapters: fallbackChapters, isLicensed: false }), { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
-    }
-
+    // De-duplicate chapters by [chapter_number + group_name]
     const chKeys = new Set();
     const filteredChapters = allChapters.filter((ch: any) => {
       const key = `${ch.chapter}-${ch.group}`;
@@ -768,32 +715,15 @@ export const onRequest = async (context: any) => {
       return numA - numB;
     });
 
-    return new Response(JSON.stringify({ chapters: filteredChapters, isLicensed: false }), { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
+    return new Response(JSON.stringify({ chapters: filteredChapters, isLicensed: false }), {
+      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+    });
   }
 
   // 2. PAGES FOR CHAPTER: /api/manga/chapter/:chapterId/pages
   const chapterPagesMatch = pathname.match(/^\/chapter\/(.+)\/pages\/?$/);
   if (chapterPagesMatch) {
     const chapterId = chapterPagesMatch[1];
-
-    if (chapterId.startsWith('procedural-')) {
-      const backgroundUrls = [
-        "https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=1080&auto=format&fit=crop&q=85",
-        "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=1080&auto=format&fit=crop&q=85",
-        "https://images.unsplash.com/photo-1541701494587-cb58502866ab?w=1080&auto=format&fit=crop&q=85",
-        "https://images.unsplash.com/photo-1507842217343-583bb7270b66?w=1080&auto=format&fit=crop&q=85",
-        "https://images.unsplash.com/photo-1534447677768-be436bb09401?w=1080&auto=format&fit=crop&q=85",
-        "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=1080&auto=format&fit=crop&q=85",
-        "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=1080&auto=format&fit=crop&q=85",
-        "https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?w=1080&auto=format&fit=crop&q=85",
-        "https://images.unsplash.com/photo-1540200049848-d9813ea0e120?w=1080&auto=format&fit=crop&q=85",
-        "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=1080&auto=format&fit=crop&q=85",
-        "https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=1080&auto=format&fit=crop&q=85",
-        "https://images.unsplash.com/photo-1501854140801-50d01698950b?w=1080&auto=format&fit=crop&q=85"
-      ];
-      const pages = backgroundUrls.map((url) => `/api/manga/page-proxy?url=${encodeURIComponent(url)}`);
-      return new Response(JSON.stringify({ pages, debugLogs: ["[procedural] Mapped mock images successfully."] }), { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
-    }
 
     if (chapterId.startsWith('zaza-')) {
       const rawPath = fromBase64(chapterId.replace('zaza-', ''));
@@ -823,8 +753,6 @@ export const onRequest = async (context: any) => {
           urlsToTry.push(`https://selfmanga.live${cleanPath}?mtr=1`);
         }
 
-        debugLogs.push(`[zaza] Candidate URLs list: ${JSON.stringify(urlsToTry)}`);
-
         let pagesMatch: any = null;
         let pageHtml = "";
         let finalSuccessUrl = "";
@@ -833,7 +761,6 @@ export const onRequest = async (context: any) => {
           debugLogs.push(`[zaza] Iterating candidate URL: ${targetUrl}`);
           for (let attempt = 1; attempt <= 2; attempt++) {
             try {
-              debugLogs.push(`[zaza] Attempt ${attempt} query starting...`);
               const res = await fetchWithTimeout(targetUrl, {
                 headers: {
                   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -841,29 +768,16 @@ export const onRequest = async (context: any) => {
                   'Accept-Language': 'ru,en-US;q=0.9,en;q=0.8'
                 }
               }, 3500);
-              debugLogs.push(`[zaza] Got response status: ${res.status}`);
               pageHtml = await res.text().catch(() => "");
-              debugLogs.push(`[zaza] Received payload size: ${pageHtml.length} characters.`);
-              const containsReaderInit = pageHtml.includes("readerInit");
-              debugLogs.push(`[zaza] Page text contains "readerInit" substring? ${containsReaderInit}`);
               
-              // Safe multiline matching for readerInit
               pagesMatch = pageHtml.match(/rm_h\.readerInit\s*\(\s*[^,]*\s*,\s*(\[\[[\s\S]*?\]\])/);
               if (pagesMatch) {
-                debugLogs.push(`[zaza] Regex scanner: SUCCESS! Extracted array characters length: ${pagesMatch[1].length}`);
+                debugLogs.push(`[zaza] Regex scanner: SUCCESS! Extracted array length: ${pagesMatch[1].length}`);
                 finalSuccessUrl = targetUrl;
                 break; 
-              } else {
-                debugLogs.push(`[zaza] Regex scanner: FAILED. Check if different layout or blocks exist.`);
-                // Fallback: check if we see raw image elements in files
-                const pathFallback = pageHtml.match(/['"]((?:https?:)?\/\/.*?\/auto\/.*?\.(?:png|jpg|jpeg|webp))['"]/gi);
-                if (pathFallback) {
-                  debugLogs.push(`[zaza] Potential fallback elements found in text: ${pathFallback.length} items`);
-                }
               }
             } catch (err: any) {
-              console.error(`Attempt ${attempt} failed for ${targetUrl}:`, err);
-              debugLogs.push(`[zaza] Attempt ${attempt} fetch/regex exception: ${err.message || err}`);
+              debugLogs.push(`[zaza] Attempt ${attempt} exception: ${err.message || err}`);
             }
             if (attempt < 2 && !pagesMatch) {
               await new Promise(r => setTimeout(r, 200));
@@ -878,19 +792,15 @@ export const onRequest = async (context: any) => {
           const arrayText = pagesMatch[1];
           let parsedArray: any[] = [];
           try {
-            // Replace single quotes with double quotes and make valid JSON
             let jsonText = arrayText
               .replace(/'/g, '"')
               .replace(/,\s*\]/g, ']')
               .replace(/,\s*\}/g, '}');
             parsedArray = JSON.parse(jsonText);
-            debugLogs.push(`[zaza] Parsed block elements count via JSON.parse: ${parsedArray.length}`);
           } catch (jsonErr: any) {
-            debugLogs.push(`[zaza] JSON.parse failed: ${jsonErr.message || jsonErr}. Attempting custom RegExp parser...`);
             const innerBracketMatches = arrayText.match(/\[\s*[^\]]*\s*\]/g);
             if (innerBracketMatches) {
               for (const innerStr of innerBracketMatches) {
-                // Extract strings either in single quotes or double quotes
                 const stringMatches = Array.from(innerStr.matchAll(/(?:'([^']*)'|"([^"]*)")/g)).map(m => m[1] || m[2] || '');
                 if (stringMatches.length >= 3) {
                   parsedArray.push([
@@ -900,35 +810,105 @@ export const onRequest = async (context: any) => {
                   ]);
                 }
               }
-              debugLogs.push(`[zaza] Regex manually extracted items: ${parsedArray.length}`);
             }
           }
 
-          debugLogs.push(`[zaza] Parsed block elements count: ${parsedArray.length}`);
-          
           let isDeleted = false;
-          const pages = parsedArray.map((item: any, idx: number) => {
+          const pages = parsedArray.map((item: any) => {
             const fullUrl = `${item[0] || ''}${item[2] || ''}`;
             if (fullUrl.includes('deleted1.png')) {
                isDeleted = true;
             }
-            if (idx === 0) {
-              debugLogs.push(`[zaza] First computed index URL: ${fullUrl}`);
-            }
             return `/api/manga/page-proxy?url=${encodeURIComponent(fullUrl)}&_zaza=1`;
           });
           
-          if (isDeleted) {
-            debugLogs.push(`[zaza] Detected RF publisher deletion mask (deleted1.png).`);
-            return new Response(JSON.stringify({ error: 'Издательская блокировка: Главы удалены правообладателем в РФ.', isLicensed: true, pages: [], debugLogs }), { status: 403, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
+          if (!isDeleted && pages.length > 0) {
+            debugLogs.push(`[zaza] Successfully extracted ${pages.length} pages.`);
+            return new Response(JSON.stringify({ pages, debugLogs, successUrl: finalSuccessUrl }), { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
+          } else {
+            debugLogs.push(`[zaza] Chapter is licensed/deleted on ReadManga (deleted1.png). Starting auto-fallback to MangaDex / ReManga...`);
+          }
+        }
+
+        // Automatic fallback: extract chapter number & slug to find chapter on MangaDex or ReManga
+        const pathPart = rawPath.split('?')[0];
+        const matchVolChap = pathPart.match(/vol(\d+)\/([\d.,]+)/);
+        const targetChapNum = matchVolChap ? matchVolChap[2] : '1';
+        const cleanSlug = pathPart.split('/')[1] ? pathPart.split('/')[1].replace(/_/g, ' ') : '';
+        debugLogs.push(`[zaza-fallback] Searching alternative sources for title "${cleanSlug}" chapter ${targetChapNum}...`);
+
+        if (cleanSlug) {
+          // 1. Try ReManga
+          try {
+            const rmSearch = await fetch(`https://api.remanga.org/api/search/?query=${encodeURIComponent(cleanSlug)}&count=2`);
+            const rmData: any = await rmSearch.json();
+            const dir = rmData?.content?.[0]?.dir;
+            if (dir) {
+              const dtRes = await fetch(`https://api.remanga.org/api/titles/${dir}/`);
+              const dtData: any = await dtRes.json();
+              const branchId = dtData?.content?.branches?.[0]?.id;
+              if (branchId) {
+                const chRes = await fetch(`https://api.remanga.org/api/titles/chapters/?branch_id=${branchId}&limit=250&page=1`);
+                const chData: any = await chRes.json();
+                const matchedCh = chData?.content?.find((c: any) => String(c.chapter) === String(targetChapNum) || Math.abs(parseFloat(c.chapter) - parseFloat(targetChapNum)) < 0.1);
+                if (matchedCh?.id) {
+                  const pagesRes = await fetch(`https://api.remanga.org/api/titles/chapters/${matchedCh.id}/`);
+                  const pagesData: any = await pagesRes.json();
+                  const cObj = pagesData?.content;
+                  if (cObj?.pages || cObj?.scans) {
+                    const servers = cObj.servers || ['https://img.remanga.org'];
+                    const pageItems = cObj.pages || cObj.scans || [];
+                    const pages = pageItems.map((page: any) => {
+                      let link = typeof page === 'string' ? page : (Array.isArray(page) ? page[2] : (page.link || page.url || ''));
+                      if (link && !link.startsWith('http')) {
+                        const mainServer = servers[0] ? servers[0].replace(/\/$/, '') : 'https://img.remanga.org';
+                        link = `${mainServer}${link.startsWith('/') ? link : '/' + link}`;
+                      }
+                      return link ? `/api/manga/page-proxy?url=${encodeURIComponent(link)}` : '';
+                    }).filter(Boolean);
+
+                    if (pages.length > 0) {
+                      debugLogs.push(`[zaza-fallback] Successfully loaded ${pages.length} real pages via ReManga fallback!`);
+                      return new Response(JSON.stringify({ pages, debugLogs, isFallback: true }), { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
+                    }
+                  }
+                }
+              }
+            }
+          } catch(e: any) {
+            debugLogs.push(`[zaza-fallback] ReManga fallback error: ${e.message}`);
           }
 
-          debugLogs.push(`[zaza] Done. Output files count: ${pages.length}`);
-          return new Response(JSON.stringify({ pages, debugLogs, successUrl: finalSuccessUrl }), { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
-        } else {
-          debugLogs.push(`[zaza] End of candidate queue reached but regex never loaded successfully.`);
-          return new Response(JSON.stringify({ pages: [], debugLogs }), { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
+          // 2. Try MangaDex
+          try {
+            const mdSearch = await fetch(`https://api.mangadex.org/manga?limit=2&title=${encodeURIComponent(cleanSlug)}`);
+            const mdData: any = await mdSearch.json();
+            const mdId = mdData?.data?.[0]?.id;
+            if (mdId) {
+              const feedRes = await fetch(`https://api.mangadex.org/manga/${mdId}/feed?limit=500`);
+              const feedData: any = await feedRes.json();
+              const matchedDex = feedData?.data?.find((c: any) => String(c.attributes?.chapter) === String(targetChapNum));
+              if (matchedDex?.id) {
+                const srvRes = await fetch(`https://api.mangadex.org/at-home/server/${matchedDex.id}`);
+                const srvData: any = await srvRes.json();
+                if (srvData?.chapter?.data) {
+                  const hash = srvData.chapter.hash;
+                  const baseUrl = srvData.baseUrl;
+                  const pages = srvData.chapter.data.map((fn: string) => `/api/manga/page-proxy?url=${encodeURIComponent(`${baseUrl}/data/${hash}/${fn}`)}&chapterId=${matchedDex.id}`);
+                  debugLogs.push(`[zaza-fallback] Successfully loaded ${pages.length} real pages via MangaDex fallback!`);
+                  return new Response(JSON.stringify({ pages, debugLogs, isFallback: true }), { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
+                }
+              }
+            }
+          } catch(e: any) {
+            debugLogs.push(`[zaza-fallback] MangaDex fallback error: ${e.message}`);
+          }
         }
+
+        return new Response(JSON.stringify({ error: 'Издательская блокировка: Главы удалены правообладателем в РФ.', isLicensed: true, pages: [], debugLogs }), {
+          status: 403,
+          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+        });
       } catch(e: any) {
         debugLogs.push(`[zaza] Outer handler exception: ${e.message || e}`);
         return new Response(JSON.stringify({ pages: [], debugLogs }), { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
@@ -940,29 +920,23 @@ export const onRequest = async (context: any) => {
       const rmUrl = `https://api.remanga.org/api/titles/chapters/${rawChId}/`;
       const debugLogs: string[] = [`[remanga] Starting fetch for Chapter: ${rawChId}`];
       try {
-        debugLogs.push(`[remanga] Querying ${rmUrl}`);
         const res = await fetch(rmUrl, {
           headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
             'Accept': 'application/json'
           }
         });
-        debugLogs.push(`[remanga] Status: ${res.status}`);
         if (res.status !== 200) {
-          const errText = await res.text().catch(() => "");
-          debugLogs.push(`[remanga] Body excerpt: ${errText.slice(0, 300)}`);
           return new Response(JSON.stringify({ pages: [], debugLogs }), { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
         }
         const data: any = await res.json();
-        const cObj = data && data.content;
+        const cObj = data?.content;
         if (!cObj) {
-          debugLogs.push(`[remanga] Result format incorrect: missing "content" block.`);
           return new Response(JSON.stringify({ pages: [], debugLogs }), { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
         }
 
         const servers = cObj.servers || ['https://img.remanga.org'];
         const pageItems = cObj.pages || cObj.scans || [];
-        debugLogs.push(`[remanga] Server CDN hosters count ${servers.length}. Items found: ${pageItems.length}`);
         const pages = pageItems.map((page: any) => {
           let link = "";
           if (typeof page === 'string') {
@@ -987,10 +961,8 @@ export const onRequest = async (context: any) => {
           return '';
         }).filter(Boolean);
 
-        debugLogs.push(`[remanga] Successfully processed ${pages.length} remote visual elements.`);
         return new Response(JSON.stringify({ pages, debugLogs }), { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
       } catch (err: any) {
-        debugLogs.push(`[remanga] Crash: ${err.message || err}`);
         return new Response(JSON.stringify({ error: err.message, pages: [], debugLogs }), { status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
       }
     }
@@ -998,34 +970,27 @@ export const onRequest = async (context: any) => {
     const dexUrl = `https://api.mangadex.org/at-home/server/${chapterId}`;
     const debugLogs: string[] = [`[mangadex] Preparing fetch for DexChapterId ${chapterId}`];
     try {
-      debugLogs.push(`[mangadex] Querying metadata index: ${dexUrl}`);
       const res = await fetch(dexUrl, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         }
       });
-      debugLogs.push(`[mangadex] Status response code: ${res.status}`);
       if (res.status !== 200) {
-        const errText = await res.text().catch(() => "");
-        debugLogs.push(`[mangadex] Error details: ${errText.slice(0, 300)}`);
         return new Response(JSON.stringify({ pages: [], debugLogs }), { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
       }
       const data: any = await res.json();
       if (!data || !data.chapter) {
-        debugLogs.push(`[mangadex] JSON elements invalid or missing "chapter" container.`);
         return new Response(JSON.stringify({ pages: [], debugLogs }), { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
       }
       const hash = data.chapter.hash;
       const baseUrl = data.baseUrl;
       const filenames = data.chapter.data;
-      debugLogs.push(`[mangadex] CDN baseUrl: ${baseUrl}. Target index elements: ${filenames.length}`);
       const pages = filenames.map((filename: string) => {
         const rawUrl = `${baseUrl}/data/${hash}/${filename}`;
         return `/api/manga/page-proxy?url=${encodeURIComponent(rawUrl)}&chapterId=${chapterId}`;
       });
       return new Response(JSON.stringify({ pages, debugLogs }), { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
     } catch (err: any) {
-      debugLogs.push(`[mangadex] Global load failure: ${err.message || err}`);
       return new Response(JSON.stringify({ error: err.message, pages: [], debugLogs }), { status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
     }
   }
