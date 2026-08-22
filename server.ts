@@ -157,10 +157,11 @@ app.post('/api/clear-server-cache', (c) => {
   return c.json({ status: 'ok', message: 'Серверный кэш успешно сброшен!' });
 });
 
-// API Routes for 4K Community Voting
-app.get('/api/vote4k', (c) => {
+// API Routes for 4K Community Voting (Supports Cloudflare D1 and Local Fallback)
+app.get('/api/vote4k', async (c) => {
   try {
-    const state = getVote4KState();
+    const db = (c.env as any)?.DB || null;
+    const state = await getVote4KState(db);
     return c.json(state);
   } catch (err: any) {
     console.error('[API] /api/vote4k error:', err);
@@ -170,8 +171,9 @@ app.get('/api/vote4k', (c) => {
 
 app.post('/api/vote4k/suggest', async (c) => {
   try {
+    const db = (c.env as any)?.DB || null;
     const body = await c.req.json();
-    const result = suggestAnimeFor4K(body);
+    const result = await suggestAnimeFor4K(body, db);
     return c.json(result);
   } catch (err: any) {
     console.error('[API] /api/vote4k/suggest error:', err);
@@ -181,8 +183,9 @@ app.post('/api/vote4k/suggest', async (c) => {
 
 app.post('/api/vote4k/upvote', async (c) => {
   try {
+    const db = (c.env as any)?.DB || null;
     const { suggestionId, userEmail } = await c.req.json();
-    const result = upvoteSuggestion(suggestionId, userEmail);
+    const result = await upvoteSuggestion(suggestionId, userEmail, db);
     return c.json(result);
   } catch (err: any) {
     console.error('[API] /api/vote4k/upvote error:', err);
@@ -192,8 +195,9 @@ app.post('/api/vote4k/upvote', async (c) => {
 
 app.post('/api/vote4k/vote-final', async (c) => {
   try {
+    const db = (c.env as any)?.DB || null;
     const { candidateId, userEmail } = await c.req.json();
-    const result = voteFinalCandidate(candidateId, userEmail);
+    const result = await voteFinalCandidate(candidateId, userEmail, db);
     return c.json(result);
   } catch (err: any) {
     console.error('[API] /api/vote4k/vote-final error:', err);

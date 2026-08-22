@@ -21,7 +21,7 @@ import { Image } from './Image';
 import Suggest4KModal from './Suggest4KModal';
 
 export const Vote4KSection: React.FC = () => {
-  const { user, openAuthModal } = useAuth();
+  const { user, isVip, openAuthModal } = useAuth();
   const [seasonData, setSeasonData] = useState<Vote4KSeason | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSuggestModalOpen, setIsSuggestModalOpen] = useState<boolean>(false);
@@ -32,6 +32,8 @@ export const Vote4KSection: React.FC = () => {
     minutes: 0,
     seconds: 0
   });
+
+  const hasPremium = Boolean(isVip || user?.isPremium);
 
   const loadData = useCallback(async () => {
     try {
@@ -45,12 +47,14 @@ export const Vote4KSection: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    if (hasPremium) {
+      loadData();
+    }
+  }, [hasPremium, loadData]);
 
   // Real-time Countdown Timer
   useEffect(() => {
-    if (!seasonData) return;
+    if (!hasPremium || !seasonData) return;
 
     const updateTimer = () => {
       const diff = Math.max(0, seasonData.stageEndTime - Date.now());
@@ -72,7 +76,7 @@ export const Vote4KSection: React.FC = () => {
     updateTimer();
     const interval = setInterval(updateTimer, 1000);
     return () => clearInterval(interval);
-  }, [seasonData, loadData]);
+  }, [hasPremium, seasonData, loadData]);
 
   const handleUpvoteSuggestion = async (suggestion: Vote4KSuggestion) => {
     if (!user) {
@@ -117,6 +121,11 @@ export const Vote4KSection: React.FC = () => {
     if (!seasonData || !seasonData.finalCandidates) return 0;
     return seasonData.finalCandidates.reduce((acc, c) => acc + c.votes, 0);
   }, [seasonData]);
+
+  // If user does not have Premium / VIP, hide the 4K voting section completely
+  if (!hasPremium) {
+    return null;
+  }
 
   if (isLoading && !seasonData) {
     return (
@@ -268,10 +277,10 @@ export const Vote4KSection: React.FC = () => {
                 </button>
               </div>
 
-              {/* Suggestions Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {suggestions && suggestions.length > 0 ? (
-                  [...suggestions]
+              {/* Suggestions Grid (Rendered when suggestions exist) */}
+              {suggestions && suggestions.length > 0 && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  {[...suggestions]
                     .sort((a, b) => b.votes - a.votes)
                     .map((sug, idx) => {
                       const hasVoted = userEmail ? sug.voters.includes(userEmail) : false;
@@ -348,19 +357,9 @@ export const Vote4KSection: React.FC = () => {
                           </div>
                         </div>
                       );
-                    })
-                ) : (
-                  <div className="col-span-full py-12 text-center text-slate-500">
-                    <p className="text-sm font-bold text-slate-400 mb-2">Пока нет предложений</p>
-                    <button
-                      onClick={() => setIsSuggestModalOpen(true)}
-                      className="px-4 py-2 rounded-xl bg-[#8B5CF6] text-white text-xs font-bold"
-                    >
-                      Станьте первым, кто предложит тайтл!
-                    </button>
-                  </div>
-                )}
-              </div>
+                    })}
+                </div>
+              )}
             </div>
           )}
 

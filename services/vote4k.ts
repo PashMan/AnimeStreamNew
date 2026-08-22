@@ -1,5 +1,43 @@
 import { Vote4KSeason } from '../types';
 
+const STORAGE_KEY = 'kamianime_vote4k_state_cache_v2';
+
+function getCachedState(): Vote4KSeason | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed.stageEndTime === 'number') {
+      return parsed;
+    }
+  } catch (_) {}
+  return null;
+}
+
+function setCachedState(state: Vote4KSeason) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch (_) {}
+}
+
+function getFallbackState(): Vote4KSeason {
+  const cached = getCachedState();
+  if (cached) return cached;
+
+  const now = Date.now();
+  return {
+    seasonNumber: 1,
+    stage: 'suggestions',
+    cycleStartTime: now,
+    stageStartTime: now,
+    stageEndTime: now + 2 * 24 * 60 * 60 * 1000,
+    suggestions: [], // STRICT: No fake anime, only real user submissions
+    finalCandidates: [],
+    winner: null,
+    historyWinners: []
+  };
+}
+
 export const Vote4KService = {
   async getState(): Promise<Vote4KSeason> {
     try {
@@ -12,14 +50,17 @@ export const Vote4KService = {
       
       const contentType = res.headers.get('content-type') || '';
       if (!res.ok || !contentType.includes('application/json')) {
-        const text = await res.text();
-        console.warn('[Vote4K] Received non-JSON response from server, using fallback state:', text.slice(0, 100));
         return getFallbackState();
       }
 
-      return await res.json();
+      const data: Vote4KSeason = await res.json();
+      if (data && typeof data.seasonNumber === 'number') {
+        setCachedState(data);
+        return data;
+      }
+      return getFallbackState();
     } catch (e) {
-      console.warn('[Vote4K] Error fetching state, returning fallback:', e);
+      console.warn('[Vote4K] Error fetching state, returning cached/fallback:', e);
       return getFallbackState();
     }
   },
@@ -48,7 +89,11 @@ export const Vote4KService = {
       if (!contentType.includes('application/json')) {
         throw new Error('Сервер вернул некорректный ответ');
       }
-      return await res.json();
+      const result = await res.json();
+      if (result?.state) {
+        setCachedState(result.state);
+      }
+      return result;
     } catch (err: any) {
       return {
         success: false,
@@ -75,7 +120,11 @@ export const Vote4KService = {
       if (!contentType.includes('application/json')) {
         throw new Error('Сервер вернул некорректный ответ');
       }
-      return await res.json();
+      const result = await res.json();
+      if (result?.state) {
+        setCachedState(result.state);
+      }
+      return result;
     } catch (err: any) {
       return {
         success: false,
@@ -102,7 +151,11 @@ export const Vote4KService = {
       if (!contentType.includes('application/json')) {
         throw new Error('Сервер вернул некорректный ответ');
       }
-      return await res.json();
+      const result = await res.json();
+      if (result?.state) {
+        setCachedState(result.state);
+      }
+      return result;
     } catch (err: any) {
       return {
         success: false,
@@ -112,103 +165,3 @@ export const Vote4KService = {
     }
   }
 };
-
-function getFallbackState(): Vote4KSeason {
-  const now = Date.now();
-  return {
-    seasonNumber: 1,
-    stage: 'suggestions',
-    cycleStartTime: now,
-    stageStartTime: now,
-    stageEndTime: now + 2 * 24 * 60 * 60 * 1000,
-    suggestions: [
-      {
-        id: 'shiki_5114',
-        animeId: '5114',
-        title: 'Стальной алхимик: Братство',
-        originalName: 'Fullmetal Alchemist: Brotherhood',
-        image: 'https://desu.shikimori.one/system/animes/original/5114.jpg',
-        year: '2009',
-        genres: ['Экшен', 'Приключения', 'Фэнтези', 'Драма'],
-        suggestedBy: {
-          email: 'kami.admin@kamianime.club',
-          name: 'KamiAnime Community',
-          avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'
-        },
-        votes: 4,
-        voters: ['user1@demo.com', 'user2@demo.com', 'user3@demo.com', 'user4@demo.com'],
-        createdAt: now - 3600000 * 5
-      },
-      {
-        id: 'shiki_40748',
-        animeId: '40748',
-        title: 'Магическая битва',
-        originalName: 'Jujutsu Kaisen',
-        image: 'https://desu.shikimori.one/system/animes/original/40748.jpg',
-        year: '2020',
-        genres: ['Экшен', 'Сверхъестественное', 'Фэнтези'],
-        suggestedBy: {
-          email: 'satoru@kami.club',
-          name: 'Gojo Satoru',
-          avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100'
-        },
-        votes: 3,
-        voters: ['user1@demo.com', 'user2@demo.com', 'user5@demo.com'],
-        createdAt: now - 3600000 * 4
-      },
-      {
-        id: 'shiki_38000',
-        animeId: '38000',
-        title: 'Клинок, рассекающий демонов',
-        originalName: 'Kimetsu no Yaiba',
-        image: 'https://desu.shikimori.one/system/animes/original/38000.jpg',
-        year: '2019',
-        genres: ['Экшен', 'Демоны', 'Исторический'],
-        suggestedBy: {
-          email: 'tanjiro@kami.club',
-          name: 'Kamado',
-          avatar: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=100'
-        },
-        votes: 3,
-        voters: ['user3@demo.com', 'user4@demo.com', 'user6@demo.com'],
-        createdAt: now - 3600000 * 3
-      },
-      {
-        id: 'shiki_16498',
-        animeId: '16498',
-        title: 'Атака титанов',
-        originalName: 'Shingeki no Kyojin',
-        image: 'https://desu.shikimori.one/system/animes/original/16498.jpg',
-        year: '2013',
-        genres: ['Экшен', 'Драма', 'Военное'],
-        suggestedBy: {
-          email: 'eren@kami.club',
-          name: 'Eren Jaeger',
-          avatar: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=100'
-        },
-        votes: 4,
-        voters: ['user1@demo.com', 'user2@demo.com', 'user7@demo.com', 'user8@demo.com'],
-        createdAt: now - 3600000 * 2
-      }
-    ],
-    finalCandidates: [],
-    winner: null,
-    historyWinners: [
-      {
-        seasonNumber: 0,
-        winner: {
-          id: 'shiki_50594',
-          animeId: '50594',
-          title: 'Судзумэ, закрывающая двери',
-          originalName: 'Suzume no Tojimari',
-          image: 'https://desu.shikimori.one/system/animes/original/50594.jpg',
-          year: '2022',
-          genres: ['Приключения', 'Фэнтези'],
-          votes: 142,
-          voters: []
-        },
-        endedAt: now - 3600000 * 24 * 7
-      }
-    ]
-  };
-}

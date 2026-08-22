@@ -11,79 +11,7 @@ export const STAGE_VOTING_MS = 3 * 24 * 60 * 60 * 1000;      // 3 days
 export const STAGE_WINNER_MS = 2 * 24 * 60 * 60 * 1000;      // 2 days
 export const STAGE_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;    // 7 days (1 week)
 
-// Seed suggestions for initial launch
-const INITIAL_SEEDS: Vote4KSuggestion[] = [
-  {
-    id: 'shiki_5114',
-    animeId: '5114',
-    title: 'Стальной алхимик: Братство',
-    originalName: 'Fullmetal Alchemist: Brotherhood',
-    image: 'https://desu.shikimori.one/system/animes/original/5114.jpg',
-    year: '2009',
-    genres: ['Экшен', 'Приключения', 'Фэнтези', 'Драма'],
-    suggestedBy: {
-      email: 'kami.admin@kamianime.club',
-      name: 'KamiAnime Community',
-      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'
-    },
-    votes: 4,
-    voters: ['user1@demo.com', 'user2@demo.com', 'user3@demo.com', 'user4@demo.com'],
-    createdAt: Date.now() - 3600000 * 5
-  },
-  {
-    id: 'shiki_40748',
-    animeId: '40748',
-    title: 'Магическая битва',
-    originalName: 'Jujutsu Kaisen',
-    image: 'https://desu.shikimori.one/system/animes/original/40748.jpg',
-    year: '2020',
-    genres: ['Экшен', 'Сверхъестественное', 'Фэнтези'],
-    suggestedBy: {
-      email: 'satoru@kami.club',
-      name: 'Gojo Satoru',
-      avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100'
-    },
-    votes: 3,
-    voters: ['user1@demo.com', 'user2@demo.com', 'user5@demo.com'],
-    createdAt: Date.now() - 3600000 * 4
-  },
-  {
-    id: 'shiki_38000',
-    animeId: '38000',
-    title: 'Клинок, рассекающий демонов',
-    originalName: 'Kimetsu no Yaiba',
-    image: 'https://desu.shikimori.one/system/animes/original/38000.jpg',
-    year: '2019',
-    genres: ['Экшен', 'Демоны', 'Исторический'],
-    suggestedBy: {
-      email: 'tanjiro@kami.club',
-      name: 'Kamado',
-      avatar: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=100'
-    },
-    votes: 3,
-    voters: ['user3@demo.com', 'user4@demo.com', 'user6@demo.com'],
-    createdAt: Date.now() - 3600000 * 3
-  },
-  {
-    id: 'shiki_16498',
-    animeId: '16498',
-    title: 'Атака титанов',
-    originalName: 'Shingeki no Kyojin',
-    image: 'https://desu.shikimori.one/system/animes/original/16498.jpg',
-    year: '2013',
-    genres: ['Экшен', 'Драма', 'Военное'],
-    suggestedBy: {
-      email: 'eren@kami.club',
-      name: 'Eren Jaeger',
-      avatar: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=100'
-    },
-    votes: 4,
-    voters: ['user1@demo.com', 'user2@demo.com', 'user7@demo.com', 'user8@demo.com'],
-    createdAt: Date.now() - 3600000 * 2
-  }
-];
-
-let state: Vote4KSeason | null = null;
+let inMemoryState: Vote4KSeason | null = null;
 
 function ensureDataDir() {
   try {
@@ -95,58 +23,69 @@ function ensureDataDir() {
   }
 }
 
-function loadState(): Vote4KSeason {
-  ensureDataDir();
-  if (state) return state;
-
+/**
+ * Initialize Cloudflare D1 table for 4K community voting if D1 is present
+ */
+export async function initD1Vote4K(db: any): Promise<void> {
+  if (!db) return;
   try {
-    if (fs.existsSync(STATE_FILE)) {
-      const raw = fs.readFileSync(STATE_FILE, 'utf-8');
-      state = JSON.parse(raw);
-      if (state) {
-        return checkAndAdvanceStage(state);
-      }
-    }
-  } catch (e) {
-    console.error('[Vote4K] Error loading state file:', e);
+    await db.prepare(`
+      CREATE TABLE IF NOT EXISTS vote4k_state (
+        id TEXT PRIMARY KEY,
+        season_number INTEGER NOT NULL,
+        stage TEXT NOT NULL,
+        cycle_start_time INTEGER NOT NULL,
+        stage_start_time INTEGER NOT NULL,
+        stage_end_time INTEGER NOT NULL,
+        data_json TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+    `).run();
+  } catch (e: any) {
+    console.warn('[Vote4K D1 Init Warning]:', e?.message || e);
   }
+}
 
-  // Create initial season
+function createInitialSeason(): Vote4KSeason {
   const now = Date.now();
-  state = {
+  return {
     seasonNumber: 1,
     stage: 'suggestions',
     cycleStartTime: now,
     stageStartTime: now,
     stageEndTime: now + STAGE_SUGGESTIONS_MS,
-    suggestions: INITIAL_SEEDS,
+    suggestions: [], // Start empty - ONLY real user suggestions will appear!
     finalCandidates: [],
     winner: null,
-    historyWinners: [
-      {
-        seasonNumber: 0,
-        winner: {
-          id: 'shiki_50594',
-          animeId: '50594',
-          title: 'Судзумэ, закрывающая двери',
-          originalName: 'Suzume no Tojimari',
-          image: 'https://desu.shikimori.one/system/animes/original/50594.jpg',
-          year: '2022',
-          genres: ['Приключения', 'Фэнтези'],
-          votes: 142,
-          voters: []
-        },
-        endedAt: now - 3600000 * 24 * 7
-      }
-    ]
+    historyWinners: []
   };
-
-  saveState(state);
-  return state;
 }
 
-function saveState(s: Vote4KSeason) {
+function loadFromFile(): Vote4KSeason {
   ensureDataDir();
+  if (inMemoryState) return inMemoryState;
+
+  try {
+    if (fs.existsSync(STATE_FILE)) {
+      const raw = fs.readFileSync(STATE_FILE, 'utf-8');
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed.seasonNumber === 'number') {
+        inMemoryState = parsed;
+        return inMemoryState!;
+      }
+    }
+  } catch (e) {
+    console.error('[Vote4K] Error reading state file:', e);
+  }
+
+  inMemoryState = createInitialSeason();
+  saveToFile(inMemoryState);
+  return inMemoryState;
+}
+
+function saveToFile(s: Vote4KSeason) {
+  ensureDataDir();
+  inMemoryState = s;
   try {
     fs.writeFileSync(STATE_FILE, JSON.stringify(s, null, 2), 'utf-8');
   } catch (e) {
@@ -154,11 +93,56 @@ function saveState(s: Vote4KSeason) {
   }
 }
 
+async function loadFromD1(db: any): Promise<Vote4KSeason | null> {
+  if (!db) return null;
+  try {
+    await initD1Vote4K(db);
+    const row = await db.prepare('SELECT data_json FROM vote4k_state WHERE id = ?').bind('active_season').first();
+    if (row && row.data_json) {
+      const parsed = JSON.parse(row.data_json);
+      return parsed;
+    }
+  } catch (e: any) {
+    console.warn('[Vote4K D1 Read Warning]:', e?.message || e);
+  }
+  return null;
+}
+
+async function saveToD1(db: any, s: Vote4KSeason): Promise<void> {
+  if (!db) return;
+  try {
+    await initD1Vote4K(db);
+    const now = Date.now();
+    await db.prepare(`
+      INSERT INTO vote4k_state (id, season_number, stage, cycle_start_time, stage_start_time, stage_end_time, data_json, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        season_number = excluded.season_number,
+        stage = excluded.stage,
+        cycle_start_time = excluded.cycle_start_time,
+        stage_start_time = excluded.stage_start_time,
+        stage_end_time = excluded.stage_end_time,
+        data_json = excluded.data_json,
+        updated_at = excluded.updated_at
+    `).bind(
+      'active_season',
+      s.seasonNumber,
+      s.stage,
+      s.cycleStartTime,
+      s.stageStartTime,
+      s.stageEndTime,
+      JSON.stringify(s),
+      now
+    ).run();
+  } catch (e: any) {
+    console.warn('[Vote4K D1 Save Warning]:', e?.message || e);
+  }
+}
+
 export function checkAndAdvanceStage(currentState: Vote4KSeason): Vote4KSeason {
   const now = Date.now();
   let modified = false;
 
-  // We loop in case multiple stages have elapsed (e.g. server was off or long gap)
   let loopCount = 0;
   while (loopCount < 10) {
     loopCount++;
@@ -169,7 +153,7 @@ export function checkAndAdvanceStage(currentState: Vote4KSeason): Vote4KSeason {
       if (isTimeOver) {
         // Transition from suggestions to voting after 2 days
         // Pick Top 5 by votes
-        const sorted = [...currentState.suggestions].sort((a, b) => b.votes - a.votes);
+        const sorted = [...(currentState.suggestions || [])].sort((a, b) => b.votes - a.votes);
         const top5 = sorted.slice(0, 5);
 
         currentState.finalCandidates = top5.map((s) => ({
@@ -197,7 +181,7 @@ export function checkAndAdvanceStage(currentState: Vote4KSeason): Vote4KSeason {
     if (currentState.stage === 'voting') {
       if (now >= currentState.stageEndTime) {
         // Transition from voting to winner
-        const sortedCandidates = [...currentState.finalCandidates].sort(
+        const sortedCandidates = [...(currentState.finalCandidates || [])].sort(
           (a, b) => b.votes - a.votes
         );
         const winningCandidate = sortedCandidates[0] || null;
@@ -237,7 +221,7 @@ export function checkAndAdvanceStage(currentState: Vote4KSeason): Vote4KSeason {
 
     if (currentState.stage === 'cooldown') {
       if (now >= currentState.stageEndTime) {
-        // Transition from cooldown to new suggestions season!
+        // Transition from cooldown to new suggestions season
         currentState.seasonNumber += 1;
         currentState.stage = 'suggestions';
         currentState.suggestions = [];
@@ -256,19 +240,33 @@ export function checkAndAdvanceStage(currentState: Vote4KSeason): Vote4KSeason {
     break;
   }
 
-  if (modified) {
-    saveState(currentState);
-  }
-
   return currentState;
 }
 
-export function getVote4KState(): Vote4KSeason {
-  const current = loadState();
-  return checkAndAdvanceStage(current);
+export async function getVote4KState(db?: any): Promise<Vote4KSeason> {
+  let current: Vote4KSeason | null = null;
+
+  if (db) {
+    current = await loadFromD1(db);
+  }
+
+  if (!current) {
+    current = loadFromFile();
+    if (db) {
+      await saveToD1(db, current);
+    }
+  }
+
+  const advanced = checkAndAdvanceStage(current);
+  saveToFile(advanced);
+  if (db) {
+    await saveToD1(db, advanced);
+  }
+
+  return advanced;
 }
 
-export function suggestAnimeFor4K(params: {
+export async function suggestAnimeFor4K(params: {
   animeId: string;
   title: string;
   originalName?: string;
@@ -278,8 +276,8 @@ export function suggestAnimeFor4K(params: {
   userEmail: string;
   userName: string;
   userAvatar?: string;
-}): { success: boolean; message: string; state: Vote4KSeason } {
-  const current = getVote4KState();
+}, db?: any): Promise<{ success: boolean; message: string; state: Vote4KSeason }> {
+  const current = await getVote4KState(db);
 
   if (current.stage !== 'suggestions') {
     return {
@@ -295,6 +293,10 @@ export function suggestAnimeFor4K(params: {
       message: 'Не указан ID или название аниме.',
       state: current
     };
+  }
+
+  if (!current.suggestions) {
+    current.suggestions = [];
   }
 
   const existing = current.suggestions.find(
@@ -332,7 +334,11 @@ export function suggestAnimeFor4K(params: {
   }
 
   const updated = checkAndAdvanceStage(current);
-  saveState(updated);
+  saveToFile(updated);
+  if (db) {
+    await saveToD1(db, updated);
+  }
+
   return {
     success: true,
     message: existing ? 'Голос за предложенный тайтл добавлен!' : 'Тайтл успешно предложен на 4K!',
@@ -340,11 +346,12 @@ export function suggestAnimeFor4K(params: {
   };
 }
 
-export function upvoteSuggestion(
+export async function upvoteSuggestion(
   suggestionId: string,
-  userEmail: string
-): { success: boolean; message: string; state: Vote4KSeason } {
-  const current = getVote4KState();
+  userEmail: string,
+  db?: any
+): Promise<{ success: boolean; message: string; state: Vote4KSeason }> {
+  const current = await getVote4KState(db);
 
   if (current.stage !== 'suggestions') {
     return {
@@ -354,7 +361,7 @@ export function upvoteSuggestion(
     };
   }
 
-  const sug = current.suggestions.find((s) => s.id === suggestionId || s.animeId === suggestionId);
+  const sug = (current.suggestions || []).find((s) => s.id === suggestionId || s.animeId === suggestionId);
   if (!sug) {
     return {
       success: false,
@@ -375,7 +382,11 @@ export function upvoteSuggestion(
   }
 
   const updated = checkAndAdvanceStage(current);
-  saveState(updated);
+  saveToFile(updated);
+  if (db) {
+    await saveToD1(db, updated);
+  }
+
   return {
     success: true,
     message: 'Ваш голос обновлен!',
@@ -383,11 +394,12 @@ export function upvoteSuggestion(
   };
 }
 
-export function voteFinalCandidate(
+export async function voteFinalCandidate(
   candidateId: string,
-  userEmail: string
-): { success: boolean; message: string; state: Vote4KSeason } {
-  const current = getVote4KState();
+  userEmail: string,
+  db?: any
+): Promise<{ success: boolean; message: string; state: Vote4KSeason }> {
+  const current = await getVote4KState(db);
 
   if (current.stage !== 'voting') {
     return {
@@ -400,7 +412,7 @@ export function voteFinalCandidate(
   const voterId = userEmail || 'anonymous';
 
   // Remove previous vote from any candidate
-  current.finalCandidates.forEach((c) => {
+  (current.finalCandidates || []).forEach((c) => {
     if (c.voters.includes(voterId)) {
       c.voters = c.voters.filter((v) => v !== voterId);
       c.votes = Math.max(0, c.votes - 1);
@@ -408,7 +420,7 @@ export function voteFinalCandidate(
   });
 
   // Find candidate and cast vote
-  const target = current.finalCandidates.find((c) => c.id === candidateId || c.animeId === candidateId);
+  const target = (current.finalCandidates || []).find((c) => c.id === candidateId || c.animeId === candidateId);
   if (!target) {
     return {
       success: false,
@@ -421,7 +433,11 @@ export function voteFinalCandidate(
   target.votes += 1;
 
   const updated = checkAndAdvanceStage(current);
-  saveState(updated);
+  saveToFile(updated);
+  if (db) {
+    await saveToD1(db, updated);
+  }
+
   return {
     success: true,
     message: `Вы успешно проголосовали за «${target.title}»!`,
