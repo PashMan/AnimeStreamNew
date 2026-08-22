@@ -98,15 +98,12 @@ const getResolvedAniboomUrl = (t: any, epNum: number, defaultUrl?: string | null
   try {
     const url = new URL(target.startsWith("//") ? `https:${target}` : target);
     url.searchParams.set("episode", String(num));
-    const resolved = url.toString();
-    console.log(`🔥 [Aniboom Resolver] TARGET: ${resolved} | Ep: ${num} | Voice: ${t?.title || 'Default'}`);
-    return resolved;
+    return url.toString();
   } catch (_) {
     let result = target;
     if (!result.includes("episode=")) {
       result += (result.includes("?") ? "&" : "?") + `episode=${num}`;
     }
-    console.log(`🔥 [Aniboom Resolver] TARGET (STRING): ${result}`);
     return result;
   }
 };
