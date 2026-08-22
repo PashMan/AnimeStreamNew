@@ -13,6 +13,12 @@ import * as os from 'node:os';
 import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
 import { resolveAnimeEpisodeWithD1 } from './server/animeBridge';
+import {
+  getVote4KState,
+  suggestAnimeFor4K,
+  upvoteSuggestion,
+  voteFinalCandidate
+} from './server/vote4k';
 
 const execAsync = promisify(exec);
 
@@ -149,6 +155,50 @@ app.post('/api/clear-server-cache', (c) => {
   console.log('[API] POST /api/clear-server-cache');
   jikanImageCache.clear();
   return c.json({ status: 'ok', message: 'Серверный кэш успешно сброшен!' });
+});
+
+// API Routes for 4K Community Voting
+app.get('/api/vote4k', (c) => {
+  try {
+    const state = getVote4KState();
+    return c.json(state);
+  } catch (err: any) {
+    console.error('[API] /api/vote4k error:', err);
+    return c.json({ error: err.message || 'Ошибка сервера' }, 500);
+  }
+});
+
+app.post('/api/vote4k/suggest', async (c) => {
+  try {
+    const body = await c.req.json();
+    const result = suggestAnimeFor4K(body);
+    return c.json(result);
+  } catch (err: any) {
+    console.error('[API] /api/vote4k/suggest error:', err);
+    return c.json({ success: false, message: err.message || 'Ошибка при предложении тайтла' }, 500);
+  }
+});
+
+app.post('/api/vote4k/upvote', async (c) => {
+  try {
+    const { suggestionId, userEmail } = await c.req.json();
+    const result = upvoteSuggestion(suggestionId, userEmail);
+    return c.json(result);
+  } catch (err: any) {
+    console.error('[API] /api/vote4k/upvote error:', err);
+    return c.json({ success: false, message: err.message || 'Ошибка при голосовании' }, 500);
+  }
+});
+
+app.post('/api/vote4k/vote-final', async (c) => {
+  try {
+    const { candidateId, userEmail } = await c.req.json();
+    const result = voteFinalCandidate(candidateId, userEmail);
+    return c.json(result);
+  } catch (err: any) {
+    console.error('[API] /api/vote4k/vote-final error:', err);
+    return c.json({ success: false, message: err.message || 'Ошибка при финальном голосовании' }, 500);
+  }
 });
 
 // API Route for AI Anime Recommendation (Supports DeepSeek and Gemini API)

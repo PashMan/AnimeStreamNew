@@ -257,3 +257,51 @@ export interface MangaItem {
 }
 
 export type StreamProvider = 'aniboom' | 'kodik' | 'anilibria';
+
+export type Vote4KStage = 'suggestions' | 'voting' | 'winner' | 'cooldown';
+
+export interface Vote4KSuggestion {
+  id: string;
+  animeId: string;
+  title: string;
+  originalName?: string;
+  image: string;
+  year?: string | number;
+  genres?: string[];
+  suggestedBy: {
+    email: string;
+    name: string;
+    avatar?: string;
+  };
+  votes: number;
+  voters: string[];
+  createdAt: number;
+}
+
+export interface Vote4KFinalCandidate {
+  id: string;
+  animeId: string;
+  title: string;
+  originalName?: string;
+  image: string;
+  year?: string | number;
+  genres?: string[];
+  votes: number;
+  voters: string[];
+}
+
+export interface Vote4KSeason {
+  seasonNumber: number;
+  stage: Vote4KStage;
+  cycleStartTime: number;
+  stageStartTime: number;
+  stageEndTime: number;
+  suggestions: Vote4KSuggestion[];
+  finalCandidates: Vote4KFinalCandidate[];
+  winner: Vote4KFinalCandidate | null;
+  historyWinners?: {
+    seasonNumber: number;
+    winner: Vote4KFinalCandidate;
+    endedAt: number;
+  }[];
+}
