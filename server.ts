@@ -2570,6 +2570,21 @@ app.get('/api/proxy-4k', async (c) => {
 
   if (!targetUrl) return c.text('Missing url parameter', 400);
 
+  // OPTIMIZATION: Do not proxy video segment bytes through server CPU/RAM. Direct 302 redirect.
+  const cleanUrlLower = targetUrl.toLowerCase();
+  const isMediaSegment = cleanUrlLower.endsWith('.ts') ||
+                         cleanUrlLower.endsWith('.m4s') ||
+                         cleanUrlLower.endsWith('.mp4') ||
+                         cleanUrlLower.endsWith('.m4a') ||
+                         cleanUrlLower.endsWith('.aac') ||
+                         cleanUrlLower.includes('.ts?') ||
+                         cleanUrlLower.includes('.m4s?') ||
+                         cleanUrlLower.includes('.mp4?');
+
+  if (isMediaSegment) {
+    return c.redirect(targetUrl, 302);
+  }
+
   try {
     const refererParam = c.req.query('referer');
     const isAniboomHost = targetUrl.includes('ya-ligh') || targetUrl.includes('aniboom') || targetUrl.includes('boom-img') || targetUrl.includes('.m4s') || targetUrl.includes('.ts') || targetUrl.includes('.mpd');
@@ -3864,9 +3879,15 @@ app.get('/api/media/aniboom/resolve', handleAniboomResolve);
 app.post('/api/media/aniboom/resolve', handleAniboomResolve);
 
 // In-memory 4-hour cache for direct AniBoom Master HLS links
-const playlistCache = new Map<string, { streamUrl: string; rawUrl: string; exp: number }>();
+const playlistCache = new Map<string, { streamUrl?: string; rawUrl?: string; result?: any; exp: number }>();
 
 async function extractKodikStream(iframeUrl: string, requestedQuality?: string, resolveOnly?: boolean, c?: any) {
+  const cacheKey = `kodik_${iframeUrl}_${requestedQuality}_${resolveOnly}`;
+  const cached = playlistCache.get(cacheKey);
+  if (cached && cached.exp > Date.now()) {
+    return cached.result;
+  }
+
   let normalizedIframe = iframeUrl.startsWith('//') ? `https:${iframeUrl}` : iframeUrl;
   
   // Extract base domain and test candidate mirror domains
@@ -4018,7 +4039,7 @@ async function extractKodikStream(iframeUrl: string, requestedQuality?: string, 
   if (resolveOnly) {
     const highestQ = qualities[0];
     const directSrc = resolvedLinks[String(highestQ)];
-    return {
+    const resObj = {
       type: 'json',
       data: {
         success: true,
@@ -4029,14 +4050,18 @@ async function extractKodikStream(iframeUrl: string, requestedQuality?: string, 
         url: `/api/proxy-4k?url=${encodeURIComponent(directSrc)}`
       }
     };
+    playlistCache.set(cacheKey, { result: resObj, exp: Date.now() + 1800000 });
+    return resObj;
   }
 
   if (requestedQuality && resolvedLinks[requestedQuality]) {
     const targetSrc = resolvedLinks[requestedQuality];
-    return {
+    const resObj = {
       type: 'redirect',
       url: `/api/proxy-4k?url=${encodeURIComponent(targetSrc)}`
     };
+    playlistCache.set(cacheKey, { result: resObj, exp: Date.now() + 1800000 });
+    return resObj;
   }
 
   // Master playlist
@@ -4056,11 +4081,13 @@ async function extractKodikStream(iframeUrl: string, requestedQuality?: string, 
     masterLines.push(`/api/proxy-4k?url=${encodeURIComponent(qSrc)}`);
   }
 
-  return {
+  const resObj = {
     type: 'text',
     contentType: 'application/vnd.apple.mpegurl; charset=utf-8',
     data: masterLines.join('\n')
   };
+  playlistCache.set(cacheKey, { result: resObj, exp: Date.now() + 1800000 });
+  return resObj;
 }
 
 app.get('/api/media/playlist', async (c) => {
@@ -4501,66 +4528,8 @@ app.get('/api/media/segment', async (c) => {
     return c.json({ error: 'No segment URL provided' }, 400);
   }
 
-  try {
-    const segmentUrlObj = new URL(segmentUrl);
-    const referer = `https://${segmentUrlObj.host}/` || 'https://kodik.info/';
-
-    let response: Response | undefined;
-    let attempts = 3;
-    let baseDelay = 300;
-    let lastError: any = null;
-
-    for (let attempt = 1; attempt <= attempts; attempt++) {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 7000);
-
-      try {
-        response = await fetch(segmentUrl, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-            'Referer': referer,
-            'Accept': '*/*'
-          },
-          signal: controller.signal
-        });
-        clearTimeout(timeoutId);
-        if (response.ok) {
-          break;
-        } else {
-          lastError = new Error(`Status ${response.status}`);
-        }
-      } catch (err: any) {
-        clearTimeout(timeoutId);
-        lastError = err;
-      }
-
-      if (attempt < attempts) {
-        await new Promise(resolve => setTimeout(resolve, baseDelay));
-        baseDelay *= 1.5;
-      }
-    }
-
-    if (!response || !response.ok) {
-      const errMsg = lastError ? lastError.message : 'Unknown error';
-      return new Response(`Error fetching segment after retries: ${errMsg}`, { status: response ? response.status : 502 });
-    }
-
-    const bodyData = response.body || await response.arrayBuffer();
-
-    return new Response(bodyData, {
-      status: 200,
-      headers: {
-        'Content-Type': response.headers.get('content-type') || 'video/mp2t',
-        'Cache-Control': 'public, max-age=86400',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, OPTIONS',
-        'Access-Control-Allow-Headers': '*'
-      }
-    });
-  } catch (e: any) {
-    console.error('[KODIK SEGMENT PROXY EXCEPTION]', e);
-    return c.json({ error: 'Segment proxy fetch failed: ' + e.message }, 500);
-  }
+  // OPTIMIZATION: Redirect directly to CDN segment URL
+  return c.redirect(segmentUrl, 302);
 });
 
 interface DownloadTask {

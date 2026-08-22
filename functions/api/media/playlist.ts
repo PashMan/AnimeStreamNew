@@ -98,6 +98,16 @@ export async function onRequest(context: any) {
     });
   }
 
+  // 1. DONOR STREAM EDGE CACHE: Check if parsed manifest/stream is cached
+  const cache = (caches as any).default;
+  const cacheKey = new Request(request.url, request);
+  try {
+    const cachedResponse = await cache.match(cacheKey);
+    if (cachedResponse) {
+      return cachedResponse;
+    }
+  } catch (_) {}
+
   const reqUrl = new URL(request.url);
   const urlParam = reqUrl.searchParams.get('url') || '';
   const fallbackUrl = reqUrl.searchParams.get('fallback_url') || '';
@@ -195,7 +205,7 @@ export async function onRequest(context: any) {
           const proxiedRelative = `/api/proxy-4k?url=${encodeURIComponent(rawStreamUrl)}&referer=${encodeURIComponent('https://aniboom.one/')}`;
 
           if (resolveOnly) {
-            return new Response(JSON.stringify({
+            const resData = new Response(JSON.stringify({
               success: true,
               streamType: 'hls',
               qualities: [1080, 720, 480, 360],
@@ -204,8 +214,14 @@ export async function onRequest(context: any) {
               url: proxiedRelative
             }), {
               status: 200,
-              headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+              headers: {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*',
+                'Cache-Control': 'public, max-age=1800, s-maxage=1800'
+              }
             });
+            try { context.waitUntil(cache.put(cacheKey, resData.clone())); } catch (_) {}
+            return resData;
           }
 
           // Абсолютный URL для Response.redirect в Cloudflare Workers
@@ -221,93 +237,149 @@ export async function onRequest(context: any) {
   // -------------------------------------------------------------
   // 2. РЕЗЕРВНОЕ ИЗВЛЕЧЕНИЕ ПОТОКА KODIK
   // -------------------------------------------------------------
-  const kodikTarget = fallbackUrl || (cleanTarget.includes('kodik') ? cleanTarget : '');
+  const kodikTarget = fallbackUrl || (cleanTarget.includes('kodik') || cleanTarget.includes('anivod') || cleanTarget.includes('/seria/') || cleanTarget.includes('/video/') ? cleanTarget : '');
 
   if (kodikTarget) {
     try {
-      let iframeUrl = kodikTarget.startsWith('//') ? `https:${kodikTarget}` : kodikTarget;
-      iframeUrl = iframeUrl.replace(/(kodik\.info|kodik\.cc|kodik\.biz|kodik\.net|kodik\.tv|kodik\.club|kodik\.site|kodik\.space|kodik\.ru|kodikonline\.com|kodikhd\.club|kodik-api\.com)/g, 'kodikplayer.com');
+      let normalizedIframe = kodikTarget.startsWith('//') ? `https:${kodikTarget}` : kodikTarget;
+      
+      let targetDomains: string[] = [];
+      try {
+        const u = new URL(normalizedIframe);
+        if (u.hostname) targetDomains.push(u.hostname);
+      } catch (_) {}
 
-      const iframeRes = await fetch(iframeUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-          'Referer': 'https://shikimori.one/'
-        }
-      });
-      const html = await iframeRes.text();
+      const mirrorFallbacks = ['kodik.info', 'kodik.biz', 'kodik.cc', 'kodikplayer.com', 'kodikonline.com', 'anivod.com'];
+      for (const m of mirrorFallbacks) {
+        if (!targetDomains.includes(m)) targetDomains.push(m);
+      }
 
-      const urlParamsMatch = html.match(/urlParams\s*=\s*'([^']+)'/) || html.match(/urlParams\s*=\s*"([^"]+)"/);
-      const hashMatch = html.match(/\.hash\s*=\s*'([^']+)'/) || html.match(/\.hash\s*=\s*"([^"]+)"/);
-      const idMatch = html.match(/\.id\s*=\s*'([^']+)'/) || html.match(/\.id\s*=\s*"([^"]+)"/);
-      const typeMatch = html.match(/\.type\s*=\s*'([^']+)'/) || html.match(/\.type\s*=\s*"([^"]+)"/);
+      let html = '';
+      let successfulIframe = normalizedIframe;
 
-      if (urlParamsMatch && hashMatch && idMatch && typeMatch) {
-        const urlParams = JSON.parse(urlParamsMatch[1]);
-        const baseUrlObj = new URL(iframeUrl);
-        const scriptAbsoluteUrl = `${baseUrlObj.protocol}//${baseUrlObj.host}/assets/js/app.serial.js`;
-
-        const scriptRes = await fetch(scriptAbsoluteUrl, {
-          headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': iframeUrl }
-        });
-        const scriptHtml = await scriptRes.text();
-        const ajaxMatch = scriptHtml.match(/\$.ajax\([\s\S]*?url:\s*atob\("([^"]+)"\)/) || scriptHtml.match(/atob\("([^"'\(\)]+)"\)/);
-
-        if (ajaxMatch) {
-          const gboxPath = atob(ajaxMatch[1]);
-          const gboxUrl = `${baseUrlObj.protocol}//${baseUrlObj.host}${gboxPath}`;
-
-          const payload = new URLSearchParams({
-            hash: hashMatch[1],
-            id: idMatch[1],
-            type: typeMatch[1],
-            d: urlParams.d || 'kodik.info',
-            d_sign: urlParams.d_sign || '',
-            pd: urlParams.pd || '',
-            pd_sign: urlParams.pd_sign || '',
-            ref: decodeURIComponent(urlParams.ref || ''),
-            ref_sign: urlParams.ref_sign || '',
-            bad_user: 'true',
-            cdn_is_working: 'true'
-          });
-
-          const gboxRes = await fetch(gboxUrl, {
-            method: 'POST',
+      for (const domain of targetDomains) {
+        try {
+          const candidateUrl = normalizedIframe.replace(/(kodik\.info|kodik\.cc|kodik\.biz|kodik\.net|kodik\.tv|kodik\.club|kodik\.site|kodik\.space|kodik\.ru|kodikonline\.com|kodikhd\.club|kodik-api\.com|kodikplayer\.com|anivod\.com)/g, domain);
+          const iframeRes = await fetch(candidateUrl, {
             headers: {
-              'Content-Type': 'application/x-www-form-urlencoded',
-              'User-Agent': 'Mozilla/5.0',
-              'Referer': iframeUrl
-            },
-            body: payload.toString()
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+              'Referer': 'https://shikimori.one/'
+            }
           });
+          if (iframeRes.ok) {
+            const text = await iframeRes.text();
+            if (text.includes('urlParams') || text.includes('.hash') || text.includes('videoInfo')) {
+              html = text;
+              successfulIframe = candidateUrl;
+              break;
+            }
+          }
+        } catch (_) {}
+      }
 
-          const gboxData = await gboxRes.json() as any;
-          if (gboxData?.links) {
-            const qualities = Object.keys(gboxData.links).map(Number).sort((a, b) => b - a);
-            const bestQuality = qualities[0] || 720;
-            const rawSrc = gboxData.links[String(bestQuality)]?.[0]?.src;
+      if (html) {
+        const urlParamsMatch = html.match(/urlParams\s*=\s*'([^']+)'/) || html.match(/urlParams\s*=\s*"([^"]+)"/) || html.match(/urlParams\s*=\s*({[^;]+})/);
+        const hashMatch = html.match(/\.hash\s*=\s*'([^']+)'/) || html.match(/\.hash\s*=\s*"([^"]+)"/) || html.match(/\.hash\s*=\s*['"]([^'"]+)['"]/);
+        const idMatch = html.match(/\.id\s*=\s*'([^']+)'/) || html.match(/\.id\s*=\s*"([^"]+)"/) || html.match(/\.id\s*=\s*['"]([^'"]+)['"]/);
+        const typeMatch = html.match(/\.type\s*=\s*'([^']+)'/) || html.match(/\.type\s*=\s*"([^"]+)"/) || html.match(/\.type\s*=\s*['"]([^'"]+)['"]/);
 
-            if (rawSrc) {
-              const decrypted = rawSrc.includes('mp4:hls:manifest') ? rawSrc : decodeKodikUrl(rawSrc);
-              const playlistUrl = decrypted.startsWith('//') ? `https:${decrypted}` : decrypted;
-              const proxiedKodikUrl = `/api/proxy-4k?url=${encodeURIComponent(playlistUrl)}&referer=${encodeURIComponent('https://kodik.info/')}`;
+        if (urlParamsMatch && hashMatch && idMatch && typeMatch) {
+          const urlParams = typeof urlParamsMatch[1] === 'string' && urlParamsMatch[1].startsWith('{')
+            ? JSON.parse(urlParamsMatch[1])
+            : JSON.parse(urlParamsMatch[1]);
+          const videoHash = hashMatch[1];
+          const videoId = idMatch[1];
+          const videoType = typeMatch[1];
 
-              if (resolveOnly) {
-                return new Response(JSON.stringify({
-                  success: true,
-                  streamType: 'hls',
-                  qualities,
-                  quality: bestQuality,
-                  direct_url: playlistUrl,
-                  url: proxiedKodikUrl
-                }), {
-                  status: 200,
-                  headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
-                });
+          let scriptUrl = '';
+          const scriptTagRegex = /<script\b[^>]*?\bsrc\s*=\s*["']([^"']+\.js[^"']*)["']/gi;
+          let match;
+          const candidateScripts: string[] = [];
+          while ((match = scriptTagRegex.exec(html)) !== null) {
+            candidateScripts.push(match[1]);
+          }
+
+          const assetScript = candidateScripts.find(s => s.includes('/assets/'));
+          if (assetScript) {
+            scriptUrl = assetScript;
+          } else if (candidateScripts.length > 0) {
+            scriptUrl = candidateScripts[0];
+          } else {
+            scriptUrl = '/assets/js/app.serial.js';
+          }
+
+          const baseUrlObj = new URL(successfulIframe);
+          const scriptAbsoluteUrl = scriptUrl.startsWith('http') ? scriptUrl : `${baseUrlObj.protocol}//${baseUrlObj.host}${scriptUrl}`;
+
+          const scriptRes = await fetch(scriptAbsoluteUrl, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', 'Referer': successfulIframe }
+          });
+          const scriptHtml = await scriptRes.text();
+          const ajaxMatch = scriptHtml.match(/\$.ajax\([\s\S]*?url:\s*atob\("([^"]+)"\)/) || scriptHtml.match(/atob\("([^"'\(\)]+)"\)/);
+
+          if (ajaxMatch) {
+            const gboxPath = atob(ajaxMatch[1]);
+            const gboxUrl = `${baseUrlObj.protocol}//${baseUrlObj.host}${gboxPath}`;
+
+            const payload = new URLSearchParams({
+              hash: videoHash,
+              id: videoId,
+              type: videoType,
+              d: urlParams.d || baseUrlObj.hostname || 'kodik.info',
+              d_sign: urlParams.d_sign || '',
+              pd: urlParams.pd || '',
+              pd_sign: urlParams.pd_sign || '',
+              ref: decodeURIComponent(urlParams.ref || ''),
+              ref_sign: urlParams.ref_sign || '',
+              bad_user: 'true',
+              cdn_is_working: 'true'
+            });
+
+            const gboxRes = await fetch(gboxUrl, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Referer': normalizedIframe
+              },
+              body: payload.toString()
+            });
+
+            const gboxData = await gboxRes.json() as any;
+            if (gboxData?.links) {
+              const qualities = Object.keys(gboxData.links).map(Number).sort((a, b) => b - a);
+              const bestQuality = qualities[0] || 720;
+              const rawSrc = gboxData.links[String(bestQuality)]?.[0]?.src;
+
+              if (rawSrc) {
+                const decrypted = rawSrc.includes('mp4:hls:manifest') ? rawSrc : decodeKodikUrl(rawSrc);
+                const playlistUrl = decrypted.startsWith('//') ? `https:${decrypted}` : decrypted;
+                const proxiedKodikUrl = `/api/proxy-4k?url=${encodeURIComponent(playlistUrl)}&referer=${encodeURIComponent('https://kodik.info/')}`;
+
+                if (resolveOnly) {
+                  const resData = new Response(JSON.stringify({
+                    success: true,
+                    streamType: 'hls',
+                    qualities,
+                    quality: bestQuality,
+                    direct_url: playlistUrl,
+                    url: proxiedKodikUrl
+                  }), {
+                    status: 200,
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Access-Control-Allow-Origin': '*',
+                      'Cache-Control': 'public, max-age=1800, s-maxage=1800'
+                    }
+                  });
+                  try { context.waitUntil(cache.put(cacheKey, resData.clone())); } catch (_) {}
+                  return resData;
+                }
+
+                // Абсолютный URL для Response.redirect в Cloudflare Workers
+                const absoluteKodikRedirect = new URL(proxiedKodikUrl, request.url).toString();
+                return Response.redirect(absoluteKodikRedirect, 302);
               }
-
-              // Абсолютный URL для Response.redirect в Cloudflare Workers
-              const absoluteKodikRedirect = new URL(proxiedKodikUrl, request.url).toString();
-              return Response.redirect(absoluteKodikRedirect, 302);
             }
           }
         }

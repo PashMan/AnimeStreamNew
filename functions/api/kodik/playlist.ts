@@ -38,7 +38,7 @@ function getProxyOrigin(request: Request): string {
   return `${proto}://${host}`;
 }
 
-export async function onRequest(context: any) {
+export const onRequest = async (context: any) => {
   const { request } = context;
 
   // OPTIONS CORS header preflight
@@ -53,6 +53,16 @@ export async function onRequest(context: any) {
       }
     });
   }
+
+  // 1. DONOR STREAM EDGE CACHE: Check if parsed manifest/stream is cached
+  const cache = (caches as any).default;
+  const cacheKey = new Request(request.url, request);
+  try {
+    const cachedResponse = await cache.match(cacheKey);
+    if (cachedResponse) {
+      return cachedResponse;
+    }
+  } catch (_) {}
 
   const urlObj = new URL(request.url);
   const urlParam = urlObj.searchParams.get('url');
@@ -339,16 +349,19 @@ export async function onRequest(context: any) {
 
     const rewrittenText = rewrittenLines.join('\n');
 
-    return new Response(rewrittenText, {
+    const finalRes = new Response(rewrittenText, {
        status: 200,
        headers: {
-         'Content-Type': 'application/x-mpegURL',
+         'Content-Type': 'application/x-mpegURL; charset=utf-8',
          'Access-Control-Allow-Origin': '*',
          'Access-Control-Allow-Methods': 'GET, OPTIONS',
          'Access-Control-Allow-Headers': '*',
-         'Cache-Control': 'no-cache, no-store, must-revalidate',
+         'Cache-Control': 'public, max-age=1800, s-maxage=1800',
        }
     });
+
+    try { context.waitUntil(cache.put(cacheKey, finalRes.clone())); } catch (_) {}
+    return finalRes;
 
   } catch (error: any) {
     console.error('[CF KODIK PROXY ERROR]', error);

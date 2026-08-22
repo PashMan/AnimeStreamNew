@@ -67,6 +67,30 @@ export async function onRequest(context: any) {
     targetUrl = decodeURIComponent(targetUrl);
   } catch (_) {}
 
+  // 1. OPTIMIZATION: Check if target URL is a video segment (.ts, .m4s, .mp4, etc.)
+  // Do NOT proxy video bytes through Worker CPU/bandwidth. Redirect directly to CDN node.
+  const cleanUrlLower = targetUrl.toLowerCase();
+  const isMediaSegment = cleanUrlLower.endsWith('.ts') ||
+                         cleanUrlLower.endsWith('.m4s') ||
+                         cleanUrlLower.endsWith('.mp4') ||
+                         cleanUrlLower.endsWith('.m4a') ||
+                         cleanUrlLower.endsWith('.aac') ||
+                         cleanUrlLower.includes('.ts?') ||
+                         cleanUrlLower.includes('.m4s?') ||
+                         cleanUrlLower.includes('.mp4?');
+
+  if (isMediaSegment) {
+    return new Response(null, {
+      status: 302,
+      headers: {
+        'Location': targetUrl,
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+        'Cache-Control': 'public, max-age=86400'
+      }
+    });
+  }
+
   try {
     const refererParam = urlObj.searchParams.get('referer');
     const isAniboomHost = targetUrl.includes('ya-ligh') || targetUrl.includes('aniboom') || targetUrl.includes('boom-img') || targetUrl.includes('.m4s') || targetUrl.includes('.ts') || targetUrl.includes('.mpd');

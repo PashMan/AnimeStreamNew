@@ -18,6 +18,16 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     });
   }
 
+  // 1. D1 EDGE CACHE (caches.default): Check if response is cached at Cloudflare Edge node
+  const cache = (caches as any).default;
+  const cacheKey = new Request(request.url, request);
+  try {
+    const cachedResponse = await cache.match(cacheKey);
+    if (cachedResponse) {
+      return cachedResponse;
+    }
+  } catch (_) {}
+
   const rawId = params.id as string;
   const shikimoriId = rawId ? rawId.split('-')[0] : '';
 
@@ -58,7 +68,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       } catch (_) {}
     }
 
-    return new Response(JSON.stringify({
+    const finalResponse = new Response(JSON.stringify({
       shikimori_id: shikimoriId,
       aniboom_id: row?.aniboom_id || null,
       animego_slug: row?.animego_slug || null,
@@ -69,9 +79,15 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       headers: {
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': '*',
-        'Cache-Control': 'public, max-age=300'
+        'Cache-Control': 'public, max-age=600, s-maxage=600'
       }
     });
+
+    try {
+      context.waitUntil(cache.put(cacheKey, finalResponse.clone()));
+    } catch (_) {}
+
+    return finalResponse;
   } catch (err: any) {
     return new Response(JSON.stringify({
       shikimori_id: shikimoriId,
