@@ -81,14 +81,14 @@ export const onRequest = async (context: any) => {
 
   const findBestMangaDexMatch = async (searchTitles: string[]): Promise<string> => {
     let bestId = '';
-    let highestScore = -1;
+    let highestScore = 0;
 
     for (const title of searchTitles) {
       if (!title) continue;
       try {
         const mdSearchUrl = `https://api.mangadex.org/manga?limit=10&title=${encodeURIComponent(title)}`;
         const mdRes = await fetch(mdSearchUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-        const mdData: any = mdRes.ok ? await mdRes.json() : null;
+        const mdData: any = (mdRes.ok && mdRes.headers.get('content-type')?.includes('application/json')) ? await mdRes.json() : null;
         if (mdData && mdData.data && Array.isArray(mdData.data)) {
           for (const item of mdData.data) {
             const candTitles: string[] = [];
@@ -105,7 +105,7 @@ export const onRequest = async (context: any) => {
             if (follows > 50000) score += 100;
             else if (follows > 10000) score += 50;
 
-            if (score > highestScore) {
+            if (score >= 150 && score > highestScore) {
               highestScore = score;
               bestId = item.id;
             }
@@ -115,25 +115,25 @@ export const onRequest = async (context: any) => {
       if (highestScore >= 1000) break;
     }
 
-    return bestId;
+    return highestScore >= 150 ? bestId : '';
   };
 
   const findBestZazaSuggestion = async (searchTitles: string[]): Promise<string> => {
     let bestLink = '';
-    let highestScore = -1;
+    let highestScore = 0;
 
     for (const title of searchTitles) {
       if (!title) continue;
       try {
         const suggRes = await fetch('https://a.zazaza.me/search/suggestion?query=' + encodeURIComponent(title));
-        if (suggRes.ok) {
+        if (suggRes.ok && suggRes.headers.get('content-type')?.includes('application/json')) {
           const suggData: any = await suggRes.json();
           if (suggData && Array.isArray(suggData.suggestions)) {
             for (const s of suggData.suggestions) {
               if (!s.link || (!s.link.startsWith('/') && !s.link.startsWith('http'))) continue;
               const candTitles = [s.value, ...(Array.isArray(s.names) ? s.names : [])];
               const score = scoreTitleMatch(candTitles, searchTitles);
-              if (score > highestScore) {
+              if (score >= 150 && score > highestScore) {
                 highestScore = score;
                 bestLink = s.link;
               }
@@ -144,7 +144,7 @@ export const onRequest = async (context: any) => {
       if (highestScore >= 1000) break;
     }
 
-    return bestLink;
+    return highestScore >= 150 ? bestLink : '';
   };
 
   const extractBestMangaTitle = (attrs: any): { title: string; originalTitle: string } => {
@@ -850,10 +850,12 @@ export const onRequest = async (context: any) => {
     // 1. Fetch ReManga Chapters
     const fetchRemangaChapters = async (): Promise<any[]> => {
       let remangaDir = mangaId.startsWith('remanga-') ? mangaId.replace('remanga-', '') : '';
+      let highestScore = 0;
+
       if (!remangaDir) {
         for (const title of uniqueQueryTitles.slice(0, 3)) {
           try {
-            const sRes = await fetch(`https://api.remanga.org/api/search/?query=${encodeURIComponent(title)}&count=3`, {
+            const sRes = await fetch(`https://api.remanga.org/api/search/?query=${encodeURIComponent(title)}&count=5`, {
               headers: {
                 'User-Agent': 'Mozilla/5.0',
                 'Referer': 'https://remanga.org/',
@@ -862,15 +864,23 @@ export const onRequest = async (context: any) => {
             });
             if (sRes.ok && sRes.headers.get('content-type')?.includes('application/json')) {
               const sData: any = await sRes.json();
-              if (sData?.content?.[0]?.dir) {
-                remangaDir = sData.content[0].dir;
-                break;
+              if (sData && Array.isArray(sData.content)) {
+                for (const item of sData.content) {
+                  if (!item.dir) continue;
+                  const candTitles = [item.rus_name, item.en_name, item.dir.replace(/-/g, ' ')].filter(Boolean);
+                  const score = scoreTitleMatch(candTitles, uniqueQueryTitles);
+                  if (score >= 150 && score > highestScore) {
+                    highestScore = score;
+                    remangaDir = item.dir;
+                  }
+                }
               }
             }
           } catch(e) {}
+          if (highestScore >= 1000) break;
         }
       }
-      if (!remangaDir) return [];
+      if (!remangaDir || (highestScore < 150 && !mangaId.startsWith('remanga-'))) return [];
 
       try {
         const detailRes = await fetch(`https://api.remanga.org/api/titles/${remangaDir}/`, {
@@ -1135,36 +1145,57 @@ export const onRequest = async (context: any) => {
         if (fallbackTitles.length > 0) {
           // 1. Try ReManga
           try {
-            const rmSearch = await fetch(`https://api.remanga.org/api/search/?query=${encodeURIComponent(fallbackTitles[0])}&count=2`);
-            const rmData: any = await rmSearch.json();
-            const dir = rmData?.content?.[0]?.dir;
-            if (dir) {
-              const dtRes = await fetch(`https://api.remanga.org/api/titles/${dir}/`);
-              const dtData: any = await dtRes.json();
-              const branchId = dtData?.content?.branches?.[0]?.id;
-              if (branchId) {
-                const chRes = await fetch(`https://api.remanga.org/api/titles/chapters/?branch_id=${branchId}&limit=250&page=1`);
-                const chData: any = await chRes.json();
-                const matchedCh = chData?.content?.find((c: any) => String(c.chapter) === String(targetChapNum) || Math.abs(parseFloat(c.chapter) - parseFloat(targetChapNum)) < 0.1);
-                if (matchedCh?.id) {
-                  const pagesRes = await fetch(`https://api.remanga.org/api/titles/chapters/${matchedCh.id}/`);
-                  const pagesData: any = await pagesRes.json();
-                  const cObj = pagesData?.content;
-                  if (cObj?.pages || cObj?.scans) {
-                    const servers = cObj.servers || ['https://img.remanga.org'];
-                    const pageItems = cObj.pages || cObj.scans || [];
-                    const pages = pageItems.map((page: any) => {
-                      let link = typeof page === 'string' ? page : (Array.isArray(page) ? page[2] : (page.link || page.url || ''));
-                      if (link && !link.startsWith('http')) {
-                        const mainServer = servers[0] ? servers[0].replace(/\/$/, '') : 'https://img.remanga.org';
-                        link = `${mainServer}${link.startsWith('/') ? link : '/' + link}`;
-                      }
-                      return link ? `/api/manga/page-proxy?url=${encodeURIComponent(link)}` : '';
-                    }).filter(Boolean);
+            const rmSearch = await fetch(`https://api.remanga.org/api/search/?query=${encodeURIComponent(fallbackTitles[0])}&count=5`);
+            if (rmSearch.ok && rmSearch.headers.get('content-type')?.includes('application/json')) {
+              const rmData: any = await rmSearch.json();
+              if (rmData && Array.isArray(rmData.content)) {
+                let matchedDir = '';
+                let bestScore = 0;
+                for (const item of rmData.content) {
+                  if (!item.dir) continue;
+                  const candTitles = [item.rus_name, item.en_name, item.dir.replace(/-/g, ' ')].filter(Boolean);
+                  const score = scoreTitleMatch(candTitles, fallbackTitles);
+                  if (score >= 150 && score > bestScore) {
+                    bestScore = score;
+                    matchedDir = item.dir;
+                  }
+                }
 
-                    if (pages.length > 0) {
-                      debugLogs.push(`[zaza-fallback] Successfully loaded ${pages.length} real pages via ReManga fallback!`);
-                      return new Response(JSON.stringify({ pages, debugLogs, isFallback: true }), { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
+                if (matchedDir) {
+                  const dtRes = await fetch(`https://api.remanga.org/api/titles/${matchedDir}/`);
+                  if (dtRes.ok && dtRes.headers.get('content-type')?.includes('application/json')) {
+                    const dtData: any = await dtRes.json();
+                    const branchId = dtData?.content?.branches?.[0]?.id;
+                    if (branchId) {
+                      const chRes = await fetch(`https://api.remanga.org/api/titles/chapters/?branch_id=${branchId}&limit=250&page=1`);
+                      if (chRes.ok && chRes.headers.get('content-type')?.includes('application/json')) {
+                        const chData: any = await chRes.json();
+                        const matchedCh = chData?.content?.find((c: any) => String(c.chapter) === String(targetChapNum) || Math.abs(parseFloat(c.chapter) - parseFloat(targetChapNum)) < 0.1);
+                        if (matchedCh?.id) {
+                          const pagesRes = await fetch(`https://api.remanga.org/api/titles/chapters/${matchedCh.id}/`);
+                          if (pagesRes.ok && pagesRes.headers.get('content-type')?.includes('application/json')) {
+                            const pagesData: any = await pagesRes.json();
+                            const cObj = pagesData?.content;
+                            if (cObj?.pages || cObj?.scans) {
+                              const servers = cObj.servers || ['https://img.remanga.org'];
+                              const pageItems = cObj.pages || cObj.scans || [];
+                              const pages = pageItems.map((page: any) => {
+                                let link = typeof page === 'string' ? page : (Array.isArray(page) ? page[2] : (page.link || page.url || ''));
+                                if (link && !link.startsWith('http')) {
+                                  const mainServer = servers[0] ? servers[0].replace(/\/$/, '') : 'https://img.remanga.org';
+                                  link = `${mainServer}${link.startsWith('/') ? link : '/' + link}`;
+                                }
+                                return link ? `/api/manga/page-proxy?url=${encodeURIComponent(link)}` : '';
+                              }).filter(Boolean);
+
+                              if (pages.length > 0) {
+                                debugLogs.push(`[zaza-fallback] Successfully loaded ${pages.length} real pages via ReManga fallback!`);
+                                return new Response(JSON.stringify({ pages, debugLogs, isFallback: true }), { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
+                              }
+                            }
+                          }
+                        }
+                      }
                     }
                   }
                 }
@@ -1179,27 +1210,31 @@ export const onRequest = async (context: any) => {
             const mdId = await findBestMangaDexMatch(fallbackTitles);
             if (mdId) {
               const feedRes = await fetch(`https://api.mangadex.org/manga/${mdId}/feed?translatedLanguage[]=ru&translatedLanguage[]=en&limit=500&order[chapter]=asc`);
-              const feedData: any = await feedRes.json();
-              if (feedData && feedData.data && Array.isArray(feedData.data)) {
-                const isNumMatch = (chNum: any) => String(chNum) === String(targetChapNum) || Math.abs(parseFloat(chNum || '0') - parseFloat(targetChapNum)) < 0.01;
-                const validChaps = feedData.data.filter((c: any) => isNumMatch(c.attributes?.chapter) && (c.attributes?.pages > 0 || !c.attributes?.externalUrl));
+              if (feedRes.ok && feedRes.headers.get('content-type')?.includes('application/json')) {
+                const feedData: any = await feedRes.json();
+                if (feedData && feedData.data && Array.isArray(feedData.data)) {
+                  const isNumMatch = (chNum: any) => String(chNum) === String(targetChapNum) || Math.abs(parseFloat(chNum || '0') - parseFloat(targetChapNum)) < 0.01;
+                  const validChaps = feedData.data.filter((c: any) => isNumMatch(c.attributes?.chapter) && (c.attributes?.pages > 0 || !c.attributes?.externalUrl));
 
-                let matchedDex = validChaps.find((c: any) => c.attributes?.translatedLanguage === 'ru');
-                if (!matchedDex) matchedDex = validChaps.find((c: any) => c.attributes?.translatedLanguage === 'en');
-                if (!matchedDex) matchedDex = validChaps[0];
+                  let matchedDex = validChaps.find((c: any) => c.attributes?.translatedLanguage === 'ru');
+                  if (!matchedDex) matchedDex = validChaps.find((c: any) => c.attributes?.translatedLanguage === 'en');
+                  if (!matchedDex) matchedDex = validChaps[0];
 
-                if (matchedDex?.id) {
-                  const srvRes = await fetch(`https://api.mangadex.org/at-home/server/${matchedDex.id}`);
-                  const srvData: any = await srvRes.json();
-                  if (srvData && srvData.chapter) {
-                    const hash = srvData.chapter.hash;
-                    const baseUrl = srvData.baseUrl;
-                    const filenames = (srvData.chapter.data && srvData.chapter.data.length > 0) ? srvData.chapter.data : (srvData.chapter.dataSaver || []);
-                    const pathPrefix = (srvData.chapter.data && srvData.chapter.data.length > 0) ? 'data' : 'data-saver';
-                    const pages = filenames.map((fn: string) => `/api/manga/page-proxy?url=${encodeURIComponent(`${baseUrl}/${pathPrefix}/${hash}/${fn}`)}&chapterId=${matchedDex.id}`);
-                    if (pages.length > 0) {
-                      debugLogs.push(`[zaza-fallback] Successfully loaded ${pages.length} real pages via MangaDex fallback!`);
-                      return new Response(JSON.stringify({ pages, debugLogs, isFallback: true }), { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
+                  if (matchedDex?.id) {
+                    const srvRes = await fetch(`https://api.mangadex.org/at-home/server/${matchedDex.id}`);
+                    if (srvRes.ok && srvRes.headers.get('content-type')?.includes('application/json')) {
+                      const srvData: any = await srvRes.json();
+                      if (srvData && srvData.chapter) {
+                        const hash = srvData.chapter.hash;
+                        const baseUrl = srvData.baseUrl;
+                        const filenames = (srvData.chapter.data && srvData.chapter.data.length > 0) ? srvData.chapter.data : (srvData.chapter.dataSaver || []);
+                        const pathPrefix = (srvData.chapter.data && srvData.chapter.data.length > 0) ? 'data' : 'data-saver';
+                        const pages = filenames.map((fn: string) => `/api/manga/page-proxy?url=${encodeURIComponent(`${baseUrl}/${pathPrefix}/${hash}/${fn}`)}&chapterId=${matchedDex.id}`);
+                        if (pages.length > 0) {
+                          debugLogs.push(`[zaza-fallback] Successfully loaded ${pages.length} real pages via MangaDex fallback!`);
+                          return new Response(JSON.stringify({ pages, debugLogs, isFallback: true }), { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
+                        }
+                      }
                     }
                   }
                 }

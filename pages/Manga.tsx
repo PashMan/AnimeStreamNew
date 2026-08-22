@@ -910,7 +910,9 @@ const Manga: React.FC = () => {
     fetchRelatedAndSimilar(manga);
 
     try {
-      const res = await fetch(`/api/manga/${manga.id}/chapters?_t=${Date.now()}`);
+      const titleParam = encodeURIComponent(manga.title || '');
+      const origParam = encodeURIComponent(manga.originalTitle || '');
+      const res = await fetch(`/api/manga/${manga.id}/chapters?title=${titleParam}&orig=${origParam}&_t=${Date.now()}`);
       if (res.ok) {
         const data = await res.json();
         const chList: ChapterItem[] = data.chapters || [];
