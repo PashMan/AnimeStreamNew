@@ -10,8 +10,71 @@ interface AnimegoData {
 
 const animegoCache = new Map<string, AnimegoData>();
 
+const KNOWN_ANIMEGO_MAPPINGS: Record<string, AnimegoData> = {
+  "39535": {
+    animegoId: "1718",
+    defaultAniboomUrl: "https://aniboom.one/embed/6XvYpL45p6e?episode=1&translation=2&parent=https%3A%2F%2Fanimego.me%2Fanime%2Freinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-1718",
+    aniboomMap: [
+      { voice: "AniLibria", url: "https://aniboom.one/embed/6XvYpL45p6e?episode=1&translation=2&parent=https%3A%2F%2Fanimego.me%2Fanime%2Freinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-1718" },
+      { voice: "Studio Band", url: "https://aniboom.one/embed/6XvYpL45p6e?episode=1&translation=16&parent=https%3A%2F%2Fanimego.me%2Fanime%2Freinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-1718" }
+    ],
+    quality: "1080",
+    totalEpisodes: 11
+  },
+  "45576": {
+    animegoId: "1845",
+    defaultAniboomUrl: "https://aniboom.one/embed/M0l7qA5Wov7?episode=1&translation=2&parent=https%3A%2F%2Fanimego.me%2Fanime%2Freinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-chast-2-1845",
+    aniboomMap: [
+      { voice: "AniLibria", url: "https://aniboom.one/embed/M0l7qA5Wov7?episode=1&translation=2&parent=https%3A%2F%2Fanimego.me%2Fanime%2Freinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-chast-2-1845" },
+      { voice: "Studio Band", url: "https://aniboom.one/embed/M0l7qA5Wov7?episode=1&translation=16&parent=https%3A%2F%2Fanimego.me%2Fanime%2Freinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-chast-2-1845" }
+    ],
+    quality: "1080",
+    totalEpisodes: 12
+  },
+  "51179": {
+    animegoId: "2292",
+    defaultAniboomUrl: "https://aniboom.one/embed/N0r7wP6Qov9?episode=1&translation=2&parent=https%3A%2F%2Fanimego.me%2Fanime%2Freinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-2-2292",
+    aniboomMap: [
+      { voice: "AniLibria", url: "https://aniboom.one/embed/N0r7wP6Qov9?episode=1&translation=2&parent=https%3A%2F%2Fanimego.me%2Fanime%2Freinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-2-2292" },
+      { voice: "Studio Band", url: "https://aniboom.one/embed/N0r7wP6Qov9?episode=1&translation=16&parent=https%3A%2F%2Fanimego.me%2Fanime%2Freinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-2-2292" }
+    ],
+    quality: "1080",
+    totalEpisodes: 12
+  },
+  "55888": {
+    animegoId: "2575",
+    defaultAniboomUrl: "https://aniboom.one/embed/z68qnBAqNvg?episode=1&translation=2&parent=https%3A%2F%2Fanimego.me%2Fanime%2Freinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-2-chast-2-2575",
+    aniboomMap: [
+      { voice: "AniLibria", url: "https://aniboom.one/embed/z68qnBAqNvg?episode=1&translation=2&parent=https%3A%2F%2Fanimego.me%2Fanime%2Freinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-2-chast-2-2575" },
+      { voice: "Studio Band", url: "https://aniboom.one/embed/z68qnBAqNvg?episode=1&translation=16&parent=https%3A%2F%2Fanimego.me%2Fanime%2Freinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-2-chast-2-2575" }
+    ],
+    quality: "1080",
+    totalEpisodes: 12
+  },
+  "59193": {
+    animegoId: "2575",
+    defaultAniboomUrl: "https://aniboom.one/embed/z68qnBAqNvg?episode=1&translation=2&parent=https%3A%2F%2Fanimego.me%2Fanime%2Freinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-2-chast-2-2575",
+    aniboomMap: [
+      { voice: "AniLibria", url: "https://aniboom.one/embed/z68qnBAqNvg?episode=1&translation=2&parent=https%3A%2F%2Fanimego.me%2Fanime%2Freinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-2-chast-2-2575" },
+      { voice: "Studio Band", url: "https://aniboom.one/embed/z68qnBAqNvg?episode=1&translation=16&parent=https%3A%2F%2Fanimego.me%2Fanime%2Freinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-2-chast-2-2575" }
+    ],
+    quality: "1080",
+    totalEpisodes: 12
+  },
+  "49926": {
+    animegoId: "2035",
+    defaultAniboomUrl: "https://aniboom.one/embed/k8Rq2b08awe?episode=1&translation=16&parent=https%3A%2F%2Fanimego.me%2Fanime%2Freinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-eris-ohota-na-goblinov-2035",
+    aniboomMap: [
+      { voice: "Studio Band", url: "https://aniboom.one/embed/k8Rq2b08awe?episode=1&translation=16&parent=https%3A%2F%2Fanimego.me%2Fanime%2Freinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-eris-ohota-na-goblinov-2035" }
+    ],
+    quality: "1080",
+    totalEpisodes: 1
+  }
+};
+
 async function fetchAnimegoData(shikimoriId: string, searchTitle?: string): Promise<AnimegoData | null> {
   if (!shikimoriId) return null;
+  if (KNOWN_ANIMEGO_MAPPINGS[shikimoriId]) return KNOWN_ANIMEGO_MAPPINGS[shikimoriId];
   if (animegoCache.has(shikimoriId)) return animegoCache.get(shikimoriId)!;
 
   let ruTitle = searchTitle;
