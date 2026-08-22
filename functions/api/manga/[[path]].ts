@@ -173,13 +173,36 @@ export const onRequest = async (context: any) => {
     return links[0] || '';
   };
 
+  function extractMangaChanPages(html: string): string[] {
+    if (!html) return [];
+    const arrayMatches = html.match(/\[\s*["']https?:\/\/[^\]]+\]/gi) || [];
+    for (const arrStr of arrayMatches) {
+      if (arrStr.includes('thumbs') || arrStr.includes('manganew_thumbs')) continue;
+      const cleaned = arrStr.replace(/,\s*\]/g, ']');
+      try {
+        const parsed = JSON.parse(cleaned);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const res = parsed.filter((u: any) => typeof u === 'string' && u.startsWith('http') && !u.includes('thumbs'));
+          if (res.length > 0) return res;
+        }
+      } catch (e) {
+        const urlMatches = Array.from(cleaned.matchAll(/https?:\/\/[^'"\s,]+\.(?:jpg|jpeg|png|webp)/gi)).map(m => m[0]);
+        const filtered = urlMatches.filter(u => !u.includes('thumbs'));
+        if (filtered.length > 0) return filtered;
+      }
+    }
+    const globalMatches = Array.from(html.matchAll(/(https?:\/\/(?:img\d*|im\d*)\.manga-chan\.me\/manganew\/[^'"\s,]+\.(?:jpg|jpeg|png|webp))/gi)).map(m => m[1]);
+    const filteredGlobal = Array.from(new Set(globalMatches)).filter(u => !u.includes('thumbs'));
+    return filteredGlobal;
+  }
+
   const fetchMangaChanChapters = async (searchTitles: string[]): Promise<any[]> => {
     for (const title of searchTitles) {
       if (!title) continue;
       try {
         const searchUrl = `https://manga-chan.me/?do=search&subaction=search&story=${encodeURIComponent(title)}`;
         const searchRes = await fetch(searchUrl, {
-          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36' }
         });
         if (!searchRes.ok) continue;
         const searchHtml = await searchRes.text();
@@ -187,7 +210,7 @@ export const onRequest = async (context: any) => {
 
         for (const mangaUrl of mangaMatches.slice(0, 3)) {
           const mangaRes = await fetch(mangaUrl, {
-            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36' }
           });
           if (!mangaRes.ok) continue;
           const mangaHtml = await mangaRes.text();
@@ -318,24 +341,15 @@ export const onRequest = async (context: any) => {
 
             if (matchedChUrl) {
               const chRes = await fetch(matchedChUrl, {
-                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36' }
               });
               if (chRes.ok) {
                 const chHtml = await chRes.text();
-                const imgArrayMatches = chHtml.match(/\[[^\]]*https?:\/\/[^'\"\r\n]*?\.(?:jpg|png|webp|jpeg)[^\]]*\]/gi);
-                if (imgArrayMatches) {
-                  for (const arrStr of imgArrayMatches) {
-                    if (!arrStr.includes('thumbs') && (arrStr.includes('img') || arrStr.includes('manga'))) {
-                      try {
-                        const pagesArr = JSON.parse(arrStr);
-                        if (Array.isArray(pagesArr) && pagesArr.length > 0) {
-                          const pages = pagesArr.map((imgUrl: string) => `/api/manga/page-proxy?url=${encodeURIComponent(imgUrl)}`);
-                          if (debugLogs) debugLogs.push(`[fallback] Loaded ${pages.length} pages from Manga-Chan`);
-                          return pages;
-                        }
-                      } catch (e) {}
-                    }
-                  }
+                const pagesArr = extractMangaChanPages(chHtml);
+                if (pagesArr.length > 0) {
+                  const pages = pagesArr.map((imgUrl: string) => `/api/manga/page-proxy?url=${encodeURIComponent(imgUrl)}`);
+                  if (debugLogs) debugLogs.push(`[fallback] Loaded ${pages.length} pages from Manga-Chan`);
+                  return pages;
                 }
               }
             }
@@ -669,8 +683,22 @@ export const onRequest = async (context: any) => {
         }
       }
 
+      if (!res.ok && (targetUrl.includes('shikimori.one') || targetUrl.includes('shikimori.me'))) {
+        const altUrl = targetUrl.replace('shikimori.one', 'shikimori.me');
+        try {
+          const altRes = await fetch(altUrl, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+              'Referer': 'https://shikimori.me/'
+            }
+          });
+          if (altRes.ok) res = altRes;
+        } catch (e) {}
+      }
+
       if (!res.ok) {
-        return new Response(JSON.stringify({ error: 'Proxy fails' }), { status: res.status, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
+        const fallbackSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="600" viewBox="0 0 400 600" fill="#18181b"><rect width="400" height="600" fill="#18181b"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#71717a" font-family="sans-serif" font-size="16">Изображение недоступно</text></svg>`;
+        return new Response(fallbackSvg, { headers: { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'public, max-age=3600', 'Access-Control-Allow-Origin': '*' } });
       }
 
       const blob = await res.arrayBuffer();
@@ -684,7 +712,8 @@ export const onRequest = async (context: any) => {
         }
       });
     } catch(err: any) {
-      return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
+      const fallbackSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="600" viewBox="0 0 400 600" fill="#18181b"><rect width="400" height="600" fill="#18181b"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#71717a" font-family="sans-serif" font-size="16">Изображение недоступно</text></svg>`;
+      return new Response(fallbackSvg, { headers: { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'public, max-age=3600', 'Access-Control-Allow-Origin': '*' } });
     }
   }
 
@@ -1345,23 +1374,14 @@ export const onRequest = async (context: any) => {
       const debugLogs: string[] = [];
       try {
         const pageRes = await fetch(rawUrl, {
-          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36' }
         });
         if (pageRes.ok) {
           const pageHtml = await pageRes.text();
-          const imgArrayMatches = pageHtml.match(/\[[^\]]*https?:\/\/[^'\"\r\n]*?\.(?:jpg|png|webp|jpeg)[^\]]*\]/gi);
-          if (imgArrayMatches) {
-            for (const arrStr of imgArrayMatches) {
-              if (!arrStr.includes('thumbs') && (arrStr.includes('img') || arrStr.includes('manga'))) {
-                try {
-                  const pagesArr = JSON.parse(arrStr);
-                  if (Array.isArray(pagesArr) && pagesArr.length > 0) {
-                    const pages = pagesArr.map((imgUrl: string) => `/api/manga/page-proxy?url=${encodeURIComponent(imgUrl)}`);
-                    return new Response(JSON.stringify({ pages, debugLogs, isLicensed: false }), { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
-                  }
-                } catch (e) {}
-              }
-            }
+          const pagesArr = extractMangaChanPages(pageHtml);
+          if (pagesArr.length > 0) {
+            const pages = pagesArr.map((imgUrl: string) => `/api/manga/page-proxy?url=${encodeURIComponent(imgUrl)}`);
+            return new Response(JSON.stringify({ pages, debugLogs, isLicensed: false }), { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
           }
         }
       } catch (e) {}

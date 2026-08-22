@@ -2209,17 +2209,18 @@ const Manga: React.FC = () => {
                               const currentSrc = e.currentTarget.src;
                               if (currentSrc.includes('/api/manga/page-proxy?url=')) {
                                 try {
-                                  const urlParams = new URL(currentSrc);
+                                  const urlParams = new URL(currentSrc, window.location.origin);
                                   const rawUrl = urlParams.searchParams.get('url');
-                                  if (rawUrl) {
+                                  if (rawUrl && !e.currentTarget.dataset.retried) {
+                                    e.currentTarget.dataset.retried = 'true';
                                     e.currentTarget.src = rawUrl;
                                     return;
                                   }
                                 } catch (err) {}
                               }
-                              e.currentTarget.style.display = 'none'; 
+                              e.currentTarget.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="400" height="600" viewBox="0 0 400 600" fill="%2318181b"><rect width="400" height="600" fill="%2318181b"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="%2371717a" font-family="sans-serif" font-size="16">Страница недоступна</text></svg>'; 
                             }}
-                            className="w-full object-contain mx-auto"
+                            className="w-full object-contain mx-auto rounded-lg shadow-xl"
                             referrerPolicy="no-referrer"
                             loading="lazy"
                           />
@@ -2295,7 +2296,21 @@ const Manga: React.FC = () => {
                               <img 
                                 src={pages[mangaReaderPage]} 
                                 alt={`Page ${mangaReaderPage + 1}`} 
-                                onError={(e) => { e.currentTarget.src = FALLBACK_COVER; }}
+                                onError={(e) => { 
+                                  const currentSrc = e.currentTarget.src;
+                                  if (currentSrc.includes('/api/manga/page-proxy?url=')) {
+                                    try {
+                                      const urlParams = new URL(currentSrc, window.location.origin);
+                                      const rawUrl = urlParams.searchParams.get('url');
+                                      if (rawUrl && !e.currentTarget.dataset.retried) {
+                                        e.currentTarget.dataset.retried = 'true';
+                                        e.currentTarget.src = rawUrl;
+                                        return;
+                                      }
+                                    } catch (err) {}
+                                  }
+                                  e.currentTarget.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="400" height="600" viewBox="0 0 400 600" fill="%2318181b"><rect width="400" height="600" fill="%2318181b"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="%2371717a" font-family="sans-serif" font-size="16">Страница недоступна</text></svg>'; 
+                                }}
                                 className={`rounded-xl shadow-2xl transition-all duration-205 ${
                                   imageFitMode === 'height' ? 'h-full w-auto max-w-none object-contain' :
                                   imageFitMode === 'auto' ? 'max-h-[calc(100vh-140px)] max-w-full object-contain' :
