@@ -1577,6 +1577,94 @@ async function findBestZazaSuggestion(searchTitles: string[]): Promise<string> {
   return bestLink;
 }
 
+function extractBestMangaTitle(attrs: any): { title: string; originalTitle: string } {
+  if (!attrs) return { title: 'Без названия', originalTitle: '' };
+
+  const hasCyrillicOrLatin = (str: string) => /[a-zA-Zа-яА-ЯёЁ]/.test(str);
+
+  let ruTitle = attrs.title?.ru;
+  let enTitle = attrs.title?.en || attrs.title?.['ja-ro'];
+  let altRu = '';
+  let altEn = '';
+  let altAnyLatinCyrillic = '';
+
+  if (attrs.altTitles && Array.isArray(attrs.altTitles)) {
+    for (const item of attrs.altTitles) {
+      if (typeof item === 'object' && item !== null) {
+        if (!altRu && item.ru) altRu = item.ru;
+        if (!altEn && (item.en || item['ja-ro'])) altEn = item.en || item['ja-ro'];
+        if (!altAnyLatinCyrillic) {
+          const val = Object.values(item)[0];
+          if (typeof val === 'string' && hasCyrillicOrLatin(val)) {
+            altAnyLatinCyrillic = val;
+          }
+        }
+      }
+    }
+  }
+
+  let finalTitle = ruTitle || altRu || enTitle || altEn || altAnyLatinCyrillic;
+  if (!finalTitle && attrs.title) {
+    for (const val of Object.values(attrs.title)) {
+      if (typeof val === 'string' && hasCyrillicOrLatin(val)) {
+        finalTitle = val;
+        break;
+      }
+    }
+    if (!finalTitle) {
+      finalTitle = (Object.values(attrs.title)[0] as string) || 'Без названия';
+    }
+  }
+
+  const originalTitle = attrs.title?.['ja-ro'] || attrs.title?.ja || attrs.title?.en || attrs.title?.ko || '';
+
+  return { title: finalTitle || 'Без названия', originalTitle };
+}
+
+function mergeAndDeduplicateChapters(allChapters: any[]): any[] {
+  const chapterMap = new Map<string, any>();
+
+  for (const ch of allChapters) {
+    if (!ch || ch.chapter === undefined || ch.chapter === null) continue;
+    const rawChapterStr = String(ch.chapter).trim();
+    if (!rawChapterStr) continue;
+
+    const parsedNum = parseFloat(rawChapterStr);
+    const numKey = isNaN(parsedNum) ? rawChapterStr : String(parsedNum);
+
+    if (!chapterMap.has(numKey)) {
+      chapterMap.set(numKey, {
+        ...ch,
+        chapter: rawChapterStr
+      });
+    } else {
+      const existing = chapterMap.get(numKey)!;
+      const existingTitle = (existing.title || '').trim();
+      const newTitle = (ch.title || '').trim();
+
+      const existingIsGeneric = !existingTitle || existingTitle === 'Глава' || existingTitle === `Глава ${rawChapterStr}` || existingTitle === `Глава ${existing.chapter}`;
+      const newIsGeneric = !newTitle || newTitle === 'Глава' || newTitle === `Глава ${rawChapterStr}` || newTitle === `Глава ${ch.chapter}`;
+
+      if (existingIsGeneric && !newIsGeneric) {
+        existing.title = newTitle;
+      }
+
+      if (!existing.volume && ch.volume) {
+        existing.volume = ch.volume;
+      }
+    }
+  }
+
+  const merged = Array.from(chapterMap.values());
+  merged.sort((a, b) => {
+    const numA = parseFloat(a.chapter) || 0;
+    const numB = parseFloat(b.chapter) || 0;
+    return numA - numB;
+  });
+
+  return merged;
+}
+
 app.get('/api/manga/search', async (c) => {
   const query = c.req.query('q') || '';
   const limitVal = Number(c.req.query('limit') || '60');
@@ -1668,17 +1756,8 @@ app.get('/api/manga/search', async (c) => {
         const id = manga.id;
         const attrs = manga.attributes || {};
         
-        let title = attrs.title?.ru || 'Без названия';
-        if (title === 'Без названия' && attrs.altTitles && Array.isArray(attrs.altTitles)) {
-          const ruTitleObj = attrs.altTitles.find((t: any) => t.ru);
-          if (ruTitleObj) title = ruTitleObj.ru;
-        }
-        if (title === 'Без названия') {
-          title = attrs.title?.en || attrs.title?.['ja-ro'] || attrs.title?.ja || 'Без названия';
-        }
-
+        const { title, originalTitle } = extractBestMangaTitle(attrs);
         let description = attrs.description?.ru || attrs.description?.en || 'Описание манги KamiAnime';
-        const originalTitle = attrs.title?.['ja-ro'] || attrs.title?.ja || attrs.title?.en || '';
         let cover = '';
         const coverRel = manga.relationships?.find((r: any) => r.type === 'cover_art');
         if (coverRel && coverRel.attributes?.fileName) {
@@ -1955,8 +2034,7 @@ app.get('/api/manga/:id', async (c) => {
         if (mdData && mdData.data && mdData.data.length > 0) {
            const m = mdData.data[0];
            const attrs = m.attributes;
-           const title = attrs.title?.ru || attrs.title?.en || attrs.title?.['ja-ro'] || 'Без названия';
-           const originalTitle = attrs.title?.['ja-ro'] || '';
+           const { title, originalTitle } = extractBestMangaTitle(attrs);
            let cover = 'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=600&auto=format&fit=crop&q=80';
            const coverRel = m.relationships?.find((r: any) => r.type === 'cover_art');
            if (coverRel && coverRel.attributes?.fileName) {
@@ -2040,15 +2118,7 @@ app.get('/api/manga/:id', async (c) => {
     }
     const manga = data.data;
     const attrs = manga.attributes || {};
-    let title = attrs.title?.ru || 'Без названия';
-    if (title === 'Без названия' && attrs.altTitles && Array.isArray(attrs.altTitles)) {
-      const ruTitleObj = attrs.altTitles.find((t: any) => t.ru);
-      if (ruTitleObj) title = ruTitleObj.ru;
-    }
-    if (title === 'Без названия') {
-       title = attrs.title?.en || attrs.title?.['ja-ro'] || attrs.title?.ja || 'Без названия';
-    }
-    const originalTitle = attrs.title?.['ja-ro'] || attrs.title?.ja || attrs.title?.en || '';
+    const { title, originalTitle } = extractBestMangaTitle(attrs);
     let cover = '';
     const coverRel = manga.relationships?.find((r: any) => r.type === 'cover_art');
     if (coverRel && coverRel.attributes?.fileName) {
@@ -2085,12 +2155,12 @@ app.get('/api/manga/:id', async (c) => {
 async function fetchRemangaChaptersByTitle(titles: string[]): Promise<any[]> {
   const uniqueTitles = Array.from(new Set(titles.filter(Boolean)));
   let remangaMangaDir = "";
-  
-  // Try to find the title on ReManga
+  let highestScore = -1;
+
   for (const title of uniqueTitles) {
     if (!title || title.trim().length < 2) continue;
     try {
-      const searchRes = await fetch(`https://api.remanga.org/api/search/?query=${encodeURIComponent(title.trim())}&count=3`, {
+      const searchRes = await fetch(`https://api.remanga.org/api/search/?query=${encodeURIComponent(title.trim())}&count=5`, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
           'Referer': 'https://remanga.org/',
@@ -2100,15 +2170,21 @@ async function fetchRemangaChaptersByTitle(titles: string[]): Promise<any[]> {
       if (!searchRes.ok) continue;
       const cType = searchRes.headers.get('content-type') || '';
       if (!cType.includes('application/json')) continue;
-      
+
       const data: any = await searchRes.json();
-      if (data && Array.isArray(data.content) && data.content.length > 0 && data.content[0]?.dir) {
-        remangaMangaDir = data.content[0].dir;
-        break;
+      if (data && Array.isArray(data.content)) {
+        for (const item of data.content) {
+          if (!item.dir) continue;
+          const candTitles = [item.rus_name, item.en_name, item.dir.replace(/-/g, ' ')].filter(Boolean);
+          const score = scoreTitleMatch(candTitles, uniqueTitles);
+          if (score > highestScore) {
+            highestScore = score;
+            remangaMangaDir = item.dir;
+          }
+        }
       }
-    } catch (e) {
-      // Ignored for non-fatal search failures
-    }
+    } catch (e) {}
+    if (highestScore >= 1000) break;
   }
 
   if (!remangaMangaDir) return [];
@@ -2163,6 +2239,38 @@ async function fetchRemangaChaptersByTitle(titles: string[]): Promise<any[]> {
               group: 'Команда перевода',
               publishAt: ch.pub_date || new Date().toISOString()
             });
+          });
+        }
+
+        const totalPages = Math.min(chData?.props?.total_pages || 1, 5);
+        if (totalPages > 1) {
+          const extraPromises = [];
+          for (let p = 2; p <= totalPages; p++) {
+            extraPromises.push(
+              fetch(`https://api.remanga.org/api/titles/chapters/?branch_id=${branchId}&limit=250&page=${p}`, {
+                headers: {
+                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                  'Referer': 'https://remanga.org/',
+                  'Accept': 'application/json, text/plain, */*'
+                }
+              }).then(r => r.ok ? r.json() : null).catch(() => null)
+            );
+          }
+          const extraResults = await Promise.all(extraPromises);
+          extraResults.forEach((pData: any) => {
+            if (pData && Array.isArray(pData.content)) {
+              pData.content.forEach((ch: any) => {
+                const chNum = ch.chapter || '0';
+                allChapters.push({
+                  id: `remanga-${ch.id}`,
+                  chapter: chNum.toString(),
+                  volume: (ch.volume || '').toString(),
+                  title: ch.name || `Глава ${ch.chapter || ''}`,
+                  group: 'Команда перевода',
+                  publishAt: ch.pub_date || new Date().toISOString()
+                });
+              });
+            }
           });
         }
       } catch (err) {}
@@ -2306,6 +2414,10 @@ app.get('/api/manga/:id/related-similar', async (c) => {
 app.get('/api/manga/:id/chapters', async (c) => {
   let mangaId = c.req.param('id');
   let searchTitles: string[] = [];
+  const qTitle = c.req.query('title');
+  const qOrig = c.req.query('orig');
+  if (qTitle) searchTitles.push(qTitle);
+  if (qOrig) searchTitles.push(qOrig);
 
   // If starts with remanga-, get titles from ReManga and fast-track remangaDir
   let explicitRemangaDir = '';
@@ -2541,21 +2653,7 @@ app.get('/api/manga/:id/chapters', async (c) => {
 
   const allChapters = [...remangaChapters, ...mdChapters, ...zazaChapters];
 
-  // De-duplicate chapters by [chapter_number + group_name] to keep options clean and unique
-  const chKeys = new Set<string>();
-  const filteredChapters = allChapters.filter((ch: any) => {
-    const key = `${ch.chapter}-${ch.group}`;
-    if (chKeys.has(key)) return false;
-    chKeys.add(key);
-    return true;
-  });
-
-  // Sort chapters numerically
-  filteredChapters.sort((a: any, b: any) => {
-    const numA = parseFloat(a.chapter) || 0;
-    const numB = parseFloat(b.chapter) || 0;
-    return numA - numB;
-  });
+  const filteredChapters = mergeAndDeduplicateChapters(allChapters);
 
   return c.json({ chapters: filteredChapters, isLicensed: false });
 });
@@ -2645,7 +2743,7 @@ app.get('/api/manga/chapter/:chapterId/pages', async (c) => {
         try {
           const mdId = await findBestMangaDexMatch(fallbackTitles);
           if (mdId) {
-            const feedRes = await fetch(`https://api.mangadex.org/manga/${mdId}/feed?limit=500&order[chapter]=asc`);
+            const feedRes = await fetch(`https://api.mangadex.org/manga/${mdId}/feed?translatedLanguage[]=ru&translatedLanguage[]=en&limit=500&order[chapter]=asc`);
             const feedData: any = await feedRes.json();
             if (feedData && feedData.data && Array.isArray(feedData.data)) {
               const isNumMatch = (chNum: any) => String(chNum) === String(targetChapNum) || Math.abs(parseFloat(chNum || '0') - parseFloat(targetChapNum)) < 0.01;

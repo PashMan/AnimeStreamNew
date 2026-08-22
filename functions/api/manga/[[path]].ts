@@ -147,6 +147,94 @@ export const onRequest = async (context: any) => {
     return bestLink;
   };
 
+  const extractBestMangaTitle = (attrs: any): { title: string; originalTitle: string } => {
+    if (!attrs) return { title: 'Без названия', originalTitle: '' };
+
+    const hasCyrillicOrLatin = (str: string) => /[a-zA-Zа-яА-ЯёЁ]/.test(str);
+
+    let ruTitle = attrs.title?.ru;
+    let enTitle = attrs.title?.en || attrs.title?.['ja-ro'];
+    let altRu = '';
+    let altEn = '';
+    let altAnyLatinCyrillic = '';
+
+    if (attrs.altTitles && Array.isArray(attrs.altTitles)) {
+      for (const item of attrs.altTitles) {
+        if (typeof item === 'object' && item !== null) {
+          if (!altRu && item.ru) altRu = item.ru;
+          if (!altEn && (item.en || item['ja-ro'])) altEn = item.en || item['ja-ro'];
+          if (!altAnyLatinCyrillic) {
+            const val = Object.values(item)[0];
+            if (typeof val === 'string' && hasCyrillicOrLatin(val)) {
+              altAnyLatinCyrillic = val;
+            }
+          }
+        }
+      }
+    }
+
+    let finalTitle = ruTitle || altRu || enTitle || altEn || altAnyLatinCyrillic;
+    if (!finalTitle && attrs.title) {
+      for (const val of Object.values(attrs.title)) {
+        if (typeof val === 'string' && hasCyrillicOrLatin(val)) {
+          finalTitle = val;
+          break;
+        }
+      }
+      if (!finalTitle) {
+        finalTitle = (Object.values(attrs.title)[0] as string) || 'Без названия';
+      }
+    }
+
+    const originalTitle = attrs.title?.['ja-ro'] || attrs.title?.ja || attrs.title?.en || attrs.title?.ko || '';
+
+    return { title: finalTitle || 'Без названия', originalTitle };
+  };
+
+  const mergeAndDeduplicateChapters = (allChapters: any[]): any[] => {
+    const chapterMap = new Map<string, any>();
+
+    for (const ch of allChapters) {
+      if (!ch || ch.chapter === undefined || ch.chapter === null) continue;
+      const rawChapterStr = String(ch.chapter).trim();
+      if (!rawChapterStr) continue;
+
+      const parsedNum = parseFloat(rawChapterStr);
+      const numKey = isNaN(parsedNum) ? rawChapterStr : String(parsedNum);
+
+      if (!chapterMap.has(numKey)) {
+        chapterMap.set(numKey, {
+          ...ch,
+          chapter: rawChapterStr
+        });
+      } else {
+        const existing = chapterMap.get(numKey)!;
+        const existingTitle = (existing.title || '').trim();
+        const newTitle = (ch.title || '').trim();
+
+        const existingIsGeneric = !existingTitle || existingTitle === 'Глава' || existingTitle === `Глава ${rawChapterStr}` || existingTitle === `Глава ${existing.chapter}`;
+        const newIsGeneric = !newTitle || newTitle === 'Глава' || newTitle === `Глава ${rawChapterStr}` || newTitle === `Глава ${ch.chapter}`;
+
+        if (existingIsGeneric && !newIsGeneric) {
+          existing.title = newTitle;
+        }
+
+        if (!existing.volume && ch.volume) {
+          existing.volume = ch.volume;
+        }
+      }
+    }
+
+    const merged = Array.from(chapterMap.values());
+    merged.sort((a, b) => {
+      const numA = parseFloat(a.chapter) || 0;
+      const numB = parseFloat(b.chapter) || 0;
+      return numA - numB;
+    });
+
+    return merged;
+  };
+
   // Safe timeout-controlled fetch utility to prevent node thread lock-ups on dead/firewalled mirrors in RF
   const fetchWithTimeout = async (url: string, options: any = {}, timeoutMs: number = 4000) => {
     const controller = new AbortController();
@@ -364,17 +452,8 @@ export const onRequest = async (context: any) => {
         mdResults = mdRes.value.data.map((manga: any) => {
           const id = manga.id;
           const attrs = manga.attributes || {};
-          let title = attrs.title?.ru || 'Без названия';
-          if (title === 'Без названия' && attrs.altTitles && Array.isArray(attrs.altTitles)) {
-            const ruTitleObj = attrs.altTitles.find((t: any) => t.ru);
-            if (ruTitleObj) title = ruTitleObj.ru;
-          }
-          if (title === 'Без названия') {
-            title = attrs.title?.en || attrs.title?.['ja-ro'] || attrs.title?.ja || 'Без названия';
-          }
-
+          const { title, originalTitle } = extractBestMangaTitle(attrs);
           let description = attrs.description?.ru || attrs.description?.en || 'Описание манги KamiAnime';
-          const originalTitle = attrs.title?.['ja-ro'] || attrs.title?.ja || attrs.title?.en || '';
           let cover = '';
           const coverRel = manga.relationships?.find((r: any) => r.type === 'cover_art');
           if (coverRel && coverRel.attributes?.fileName) {
@@ -556,12 +635,7 @@ export const onRequest = async (context: any) => {
       }
       const m = data.data;
       const attrs = m.attributes;
-      let title = attrs.title?.ru || attrs.title?.en || attrs.title?.['ja-ro'] || 'Без названия';
-      if (attrs.altTitles && Array.isArray(attrs.altTitles)) {
-        const ruTitle = attrs.altTitles.find((t: any) => t.ru);
-        if (ruTitle) title = ruTitle.ru;
-      }
-      const originalTitle = attrs.title?.['ja-ro'] || attrs.title?.ja || attrs.title?.en || '';
+      const { title, originalTitle } = extractBestMangaTitle(attrs);
       let cover = '';
       const coverRel = m.relationships?.find((r: any) => r.type === 'cover_art');
       if (coverRel && coverRel.attributes?.fileName) {
@@ -929,20 +1003,7 @@ export const onRequest = async (context: any) => {
 
     const allChapters = [...rmList, ...mdList, ...zazaList];
 
-    // De-duplicate chapters by [chapter_number + group_name]
-    const chKeys = new Set();
-    const filteredChapters = allChapters.filter((ch: any) => {
-      const key = `${ch.chapter}-${ch.group}`;
-      if (chKeys.has(key)) return false;
-      chKeys.add(key);
-      return true;
-    });
-
-    filteredChapters.sort((a: any, b: any) => {
-      const numA = parseFloat(a.chapter) || 0;
-      const numB = parseFloat(b.chapter) || 0;
-      return numA - numB;
-    });
+    const filteredChapters = mergeAndDeduplicateChapters(allChapters);
 
     return new Response(JSON.stringify({ chapters: filteredChapters, isLicensed: false }), {
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
@@ -1117,7 +1178,7 @@ export const onRequest = async (context: any) => {
           try {
             const mdId = await findBestMangaDexMatch(fallbackTitles);
             if (mdId) {
-              const feedRes = await fetch(`https://api.mangadex.org/manga/${mdId}/feed?limit=500&order[chapter]=asc`);
+              const feedRes = await fetch(`https://api.mangadex.org/manga/${mdId}/feed?translatedLanguage[]=ru&translatedLanguage[]=en&limit=500&order[chapter]=asc`);
               const feedData: any = await feedRes.json();
               if (feedData && feedData.data && Array.isArray(feedData.data)) {
                 const isNumMatch = (chNum: any) => String(chNum) === String(targetChapNum) || Math.abs(parseFloat(chNum || '0') - parseFloat(targetChapNum)) < 0.01;
