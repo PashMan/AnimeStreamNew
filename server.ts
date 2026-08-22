@@ -1476,6 +1476,78 @@ app.get('/api/manga/anime-bridge', async (c) => {
   }
 });
 
+function normalizeMangaTitle(s: string): string {
+  return (s || "")
+    .toLowerCase()
+    .replace(/ё/g, "е")
+    .replace(/[^a-zа-я0-9]/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function scoreTitleMatch(candidateTitles: (string | undefined)[], searchTerms: (string | undefined)[]): number {
+  let maxScore = 0;
+  for (const term of searchTerms) {
+    if (!term) continue;
+    const normTerm = normalizeMangaTitle(term);
+    if (!normTerm || normTerm.length < 1) continue;
+
+    for (const raw of candidateTitles) {
+      if (!raw) continue;
+      const normCand = normalizeMangaTitle(raw);
+      if (!normCand) continue;
+
+      if (normCand === normTerm) {
+        maxScore = Math.max(maxScore, 1000);
+      } else if (normCand.startsWith(normTerm + " ") || normCand.endsWith(" " + normTerm)) {
+        maxScore = Math.max(maxScore, 600 - Math.abs(normCand.length - normTerm.length));
+      } else if (normCand.includes(normTerm)) {
+        maxScore = Math.max(maxScore, Math.max(50, 400 - Math.abs(normCand.length - normTerm.length)));
+      }
+    }
+  }
+  return maxScore;
+}
+
+async function findBestMangaDexMatch(searchTitles: string[]): Promise<string> {
+  let bestId = '';
+  let highestScore = -1;
+
+  for (const title of searchTitles) {
+    if (!title) continue;
+    try {
+      const mdSearchUrl = `https://api.mangadex.org/manga?limit=10&title=${encodeURIComponent(title)}`;
+      const mdRes = await fetch(mdSearchUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+      const mdData = mdRes.ok ? await mdRes.json() : null;
+      if (mdData && mdData.data && Array.isArray(mdData.data)) {
+        for (const item of mdData.data) {
+          const candTitles: string[] = [];
+          if (item.attributes?.title) {
+            candTitles.push(...Object.values(item.attributes.title) as string[]);
+          }
+          if (Array.isArray(item.attributes?.altTitles)) {
+            for (const alt of item.attributes.altTitles) {
+              candTitles.push(...Object.values(alt) as string[]);
+            }
+          }
+          let score = scoreTitleMatch(candTitles, searchTitles);
+          const follows = item.attributes?.followedCount || 0;
+          if (follows > 50000) score += 100;
+          else if (follows > 10000) score += 50;
+
+          if (score > highestScore) {
+            highestScore = score;
+            bestId = item.id;
+          }
+        }
+      }
+    } catch (err) {}
+    if (highestScore >= 1000) break;
+  }
+
+  return bestId;
+}
+
 app.get('/api/manga/search', async (c) => {
   const query = c.req.query('q') || '';
   const limitVal = Number(c.req.query('limit') || '60');
@@ -1664,6 +1736,14 @@ app.get('/api/manga/search', async (c) => {
       if (i < shikiResults.length) pushIfUnique(shikiResults[i]);
       if (i < rmResults.length) pushIfUnique(rmResults[i]);
       if (i < mdResults.length) pushIfUnique(mdResults[i]);
+    }
+
+    if (query) {
+      interleaved.sort((a, b) => {
+        const scoreA = scoreTitleMatch([a.title, a.originalTitle], [query]);
+        const scoreB = scoreTitleMatch([b.title, b.originalTitle], [query]);
+        return scoreB - scoreA;
+      });
     }
 
     return c.json({ results: interleaved });
@@ -2226,19 +2306,7 @@ app.get('/api/manga/:id/chapters', async (c) => {
       searchTitles.push(explicitRemangaDir.replace(/-/g, ' '));
     }
 
-    let matchedId = '';
-    for (const title of searchTitles) {
-      if (!title) continue;
-      try {
-        const mdSearchUrl = `https://api.mangadex.org/manga?limit=5&title=${encodeURIComponent(title)}`;
-        const mdRes = await fetch(mdSearchUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-        const mdData = await mdRes.ok ? await mdRes.json() : null;
-        if (mdData && mdData.data && mdData.data.length > 0) {
-          matchedId = mdData.data[0].id;
-          break;
-        }
-      } catch (err) {}
-    }
+    const matchedId = await findBestMangaDexMatch(searchTitles);
     if (matchedId) {
       mangaId = matchedId; // replace mangaId with MangaDex UUID so `fetchMD` works
     }
@@ -2264,25 +2332,7 @@ app.get('/api/manga/:id/chapters', async (c) => {
       console.error('[API] Shikimori details fetch for chapters failed:', e);
     }
 
-    let matchedId = '';
-    // Search MangaDex using titles in order of accuracy
-    for (const title of searchTitles) {
-      if (!title) continue;
-      const mdSearchUrl = `https://api.mangadex.org/manga?limit=5&title=${encodeURIComponent(title)}`;
-      try {
-        const mdRes = await fetch(mdSearchUrl, {
-          headers: { 'User-Agent': 'Mozilla/5.0' }
-        });
-        const mdData = await mdRes.ok ? await mdRes.json() : null;
-        if (mdData && mdData.data && mdData.data.length > 0) {
-          matchedId = mdData.data[0].id;
-          break;
-        }
-      } catch (err) {
-        console.error(`[API] MangaDex title lookup failed for "${title}":`, err);
-      }
-    }
-
+    const matchedId = await findBestMangaDexMatch(searchTitles);
     if (matchedId) {
       mangaId = matchedId;
     }
