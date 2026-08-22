@@ -118,6 +118,35 @@ export const onRequest = async (context: any) => {
     return bestId;
   };
 
+  const findBestZazaSuggestion = async (searchTitles: string[]): Promise<string> => {
+    let bestLink = '';
+    let highestScore = -1;
+
+    for (const title of searchTitles) {
+      if (!title) continue;
+      try {
+        const suggRes = await fetch('https://a.zazaza.me/search/suggestion?query=' + encodeURIComponent(title));
+        if (suggRes.ok) {
+          const suggData: any = await suggRes.json();
+          if (suggData && Array.isArray(suggData.suggestions)) {
+            for (const s of suggData.suggestions) {
+              if (!s.link || (!s.link.startsWith('/') && !s.link.startsWith('http'))) continue;
+              const candTitles = [s.value, ...(Array.isArray(s.names) ? s.names : [])];
+              const score = scoreTitleMatch(candTitles, searchTitles);
+              if (score > highestScore) {
+                highestScore = score;
+                bestLink = s.link;
+              }
+            }
+          }
+        }
+      } catch (e) {}
+      if (highestScore >= 1000) break;
+    }
+
+    return bestLink;
+  };
+
   // Safe timeout-controlled fetch utility to prevent node thread lock-ups on dead/firewalled mirrors in RF
   const fetchWithTimeout = async (url: string, options: any = {}, timeoutMs: number = 4000) => {
     const controller = new AbortController();
@@ -851,19 +880,7 @@ export const onRequest = async (context: any) => {
 
     // 3. Fetch ReadManga / Zaza Chapters
     const fetchZazaChapters = async (): Promise<any[]> => {
-      let zazaPath = '';
-      for (const title of uniqueQueryTitles.slice(0, 3)) {
-        try {
-          const suggRes = await fetch('https://a.zazaza.me/search/suggestion?query=' + encodeURIComponent(title));
-          const suggData: any = await suggRes.json();
-          const suggestion = suggData?.suggestions?.find((s: any) => s.link && (s.link.startsWith('/') || s.link.startsWith('http')));
-          if (suggestion?.link) {
-            zazaPath = suggestion.link;
-            break;
-          }
-        } catch(e) {}
-      }
-
+      const zazaPath = await findBestZazaSuggestion(uniqueQueryTitles);
       if (!zazaPath) return [];
 
       try {
@@ -1043,17 +1060,21 @@ export const onRequest = async (context: any) => {
         }
 
         // Automatic fallback: extract chapter number & slug to find chapter on MangaDex or ReManga
+        const reqTitle = url.searchParams.get('title') || '';
+        const reqOrig = url.searchParams.get('orig') || '';
         const pathPart = rawPath.split('?')[0];
         const matchVolChap = pathPart.match(/vol(\d+)\/([\d.,]+)/);
         const targetChapNum = matchVolChap ? matchVolChap[2] : '1';
         const rawSlug = pathPart.split('/')[1] || '';
         const cleanSlug = rawSlug.replace(/__.*$/, '').replace(/_/g, ' ').trim();
-        debugLogs.push(`[zaza-fallback] Searching alternative sources for title "${cleanSlug}" chapter ${targetChapNum}...`);
 
-        if (cleanSlug) {
+        const fallbackTitles = [reqTitle, reqOrig, cleanSlug].filter(Boolean);
+        debugLogs.push(`[zaza-fallback] Searching alternative sources for titles "${fallbackTitles.join(', ')}" chapter ${targetChapNum}...`);
+
+        if (fallbackTitles.length > 0) {
           // 1. Try ReManga
           try {
-            const rmSearch = await fetch(`https://api.remanga.org/api/search/?query=${encodeURIComponent(cleanSlug)}&count=2`);
+            const rmSearch = await fetch(`https://api.remanga.org/api/search/?query=${encodeURIComponent(fallbackTitles[0])}&count=2`);
             const rmData: any = await rmSearch.json();
             const dir = rmData?.content?.[0]?.dir;
             if (dir) {
@@ -1094,22 +1115,32 @@ export const onRequest = async (context: any) => {
 
           // 2. Try MangaDex
           try {
-            const mdSearch = await fetch(`https://api.mangadex.org/manga?limit=2&title=${encodeURIComponent(cleanSlug)}`);
-            const mdData: any = await mdSearch.json();
-            const mdId = mdData?.data?.[0]?.id;
+            const mdId = await findBestMangaDexMatch(fallbackTitles);
             if (mdId) {
-              const feedRes = await fetch(`https://api.mangadex.org/manga/${mdId}/feed?limit=500`);
+              const feedRes = await fetch(`https://api.mangadex.org/manga/${mdId}/feed?limit=500&order[chapter]=asc`);
               const feedData: any = await feedRes.json();
-              const matchedDex = feedData?.data?.find((c: any) => String(c.attributes?.chapter) === String(targetChapNum));
-              if (matchedDex?.id) {
-                const srvRes = await fetch(`https://api.mangadex.org/at-home/server/${matchedDex.id}`);
-                const srvData: any = await srvRes.json();
-                if (srvData?.chapter?.data) {
-                  const hash = srvData.chapter.hash;
-                  const baseUrl = srvData.baseUrl;
-                  const pages = srvData.chapter.data.map((fn: string) => `/api/manga/page-proxy?url=${encodeURIComponent(`${baseUrl}/data/${hash}/${fn}`)}&chapterId=${matchedDex.id}`);
-                  debugLogs.push(`[zaza-fallback] Successfully loaded ${pages.length} real pages via MangaDex fallback!`);
-                  return new Response(JSON.stringify({ pages, debugLogs, isFallback: true }), { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
+              if (feedData && feedData.data && Array.isArray(feedData.data)) {
+                const isNumMatch = (chNum: any) => String(chNum) === String(targetChapNum) || Math.abs(parseFloat(chNum || '0') - parseFloat(targetChapNum)) < 0.01;
+                const validChaps = feedData.data.filter((c: any) => isNumMatch(c.attributes?.chapter) && (c.attributes?.pages > 0 || !c.attributes?.externalUrl));
+
+                let matchedDex = validChaps.find((c: any) => c.attributes?.translatedLanguage === 'ru');
+                if (!matchedDex) matchedDex = validChaps.find((c: any) => c.attributes?.translatedLanguage === 'en');
+                if (!matchedDex) matchedDex = validChaps[0];
+
+                if (matchedDex?.id) {
+                  const srvRes = await fetch(`https://api.mangadex.org/at-home/server/${matchedDex.id}`);
+                  const srvData: any = await srvRes.json();
+                  if (srvData && srvData.chapter) {
+                    const hash = srvData.chapter.hash;
+                    const baseUrl = srvData.baseUrl;
+                    const filenames = (srvData.chapter.data && srvData.chapter.data.length > 0) ? srvData.chapter.data : (srvData.chapter.dataSaver || []);
+                    const pathPrefix = (srvData.chapter.data && srvData.chapter.data.length > 0) ? 'data' : 'data-saver';
+                    const pages = filenames.map((fn: string) => `/api/manga/page-proxy?url=${encodeURIComponent(`${baseUrl}/${pathPrefix}/${hash}/${fn}`)}&chapterId=${matchedDex.id}`);
+                    if (pages.length > 0) {
+                      debugLogs.push(`[zaza-fallback] Successfully loaded ${pages.length} real pages via MangaDex fallback!`);
+                      return new Response(JSON.stringify({ pages, debugLogs, isFallback: true }), { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
+                    }
+                  }
                 }
               }
             }

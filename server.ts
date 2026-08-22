@@ -1548,6 +1548,35 @@ async function findBestMangaDexMatch(searchTitles: string[]): Promise<string> {
   return bestId;
 }
 
+async function findBestZazaSuggestion(searchTitles: string[]): Promise<string> {
+  let bestLink = '';
+  let highestScore = -1;
+
+  for (const title of searchTitles) {
+    if (!title) continue;
+    try {
+      const suggRes = await fetch('https://a.zazaza.me/search/suggestion?query=' + encodeURIComponent(title));
+      if (suggRes.ok) {
+        const suggData: any = await suggRes.json();
+        if (suggData && Array.isArray(suggData.suggestions)) {
+          for (const s of suggData.suggestions) {
+            if (!s.link || (!s.link.startsWith('/') && !s.link.startsWith('http'))) continue;
+            const candTitles = [s.value, ...(Array.isArray(s.names) ? s.names : [])];
+            const score = scoreTitleMatch(candTitles, searchTitles);
+            if (score > highestScore) {
+              highestScore = score;
+              bestLink = s.link;
+            }
+          }
+        }
+      }
+    } catch (e) {}
+    if (highestScore >= 1000) break;
+  }
+
+  return bestLink;
+}
+
 app.get('/api/manga/search', async (c) => {
   const query = c.req.query('q') || '';
   const limitVal = Number(c.req.query('limit') || '60');
@@ -2361,21 +2390,7 @@ app.get('/api/manga/:id/chapters', async (c) => {
   }
 
   // Attempt ZazaZa fallback resolving globally before generic fetchMD
-  let zazaPath = '';
-  for (const title of searchTitles) {
-    if (!title) continue;
-    try {
-      const suggRes = await fetch('https://a.zazaza.me/search/suggestion?query=' + encodeURIComponent(title));
-      if (suggRes.ok) {
-        const suggData: any = await suggRes.json();
-        const suggestion = suggData?.suggestions?.find((s: any) => s.link && (s.link.startsWith('/') || s.link.startsWith('http')));
-        if (suggestion) {
-          zazaPath = suggestion.link;
-          break;
-        }
-      }
-    } catch(e) {}
-  }
+  const zazaPath = await findBestZazaSuggestion(searchTitles);
 
   let zazaChapters: any[] = [];
   if (zazaPath) {
@@ -2577,16 +2592,20 @@ app.get('/api/manga/chapter/:chapterId/pages', async (c) => {
       }
 
       // Automatic fallback for deleted/licensed chapters on ReadManga:
+      const reqTitle = c.req.query('title') || '';
+      const reqOrig = c.req.query('orig') || '';
       const pathPart = rawPath.split('?')[0];
       const matchVolChap = pathPart.match(/vol(\d+)\/([\d.,]+)/);
       const targetChapNum = matchVolChap ? matchVolChap[2] : '1';
       const rawSlug = pathPart.split('/')[1] || '';
       const cleanSlug = rawSlug.replace(/__.*$/, '').replace(/_/g, ' ').trim();
 
-      if (cleanSlug) {
+      const fallbackTitles = [reqTitle, reqOrig, cleanSlug].filter(Boolean);
+
+      if (fallbackTitles.length > 0) {
         // Try ReManga fallback
         try {
-          const rmSearch = await fetch(`https://api.remanga.org/api/search/?query=${encodeURIComponent(cleanSlug)}&count=2`);
+          const rmSearch = await fetch(`https://api.remanga.org/api/search/?query=${encodeURIComponent(fallbackTitles[0])}&count=2`);
           const rmData: any = await rmSearch.json();
           const dir = rmData?.content?.[0]?.dir;
           if (dir) {
@@ -2624,21 +2643,31 @@ app.get('/api/manga/chapter/:chapterId/pages', async (c) => {
 
         // Try MangaDex fallback
         try {
-          const mdSearch = await fetch(`https://api.mangadex.org/manga?limit=2&title=${encodeURIComponent(cleanSlug)}`);
-          const mdData: any = await mdSearch.json();
-          const mdId = mdData?.data?.[0]?.id;
+          const mdId = await findBestMangaDexMatch(fallbackTitles);
           if (mdId) {
-            const feedRes = await fetch(`https://api.mangadex.org/manga/${mdId}/feed?limit=500`);
+            const feedRes = await fetch(`https://api.mangadex.org/manga/${mdId}/feed?limit=500&order[chapter]=asc`);
             const feedData: any = await feedRes.json();
-            const matchedDex = feedData?.data?.find((ch: any) => String(ch.attributes?.chapter) === String(targetChapNum));
-            if (matchedDex?.id) {
-              const srvRes = await fetch(`https://api.mangadex.org/at-home/server/${matchedDex.id}`);
-              const srvData: any = await srvRes.json();
-              if (srvData?.chapter?.data) {
-                const hash = srvData.chapter.hash;
-                const baseUrl = srvData.baseUrl;
-                const pages = srvData.chapter.data.map((fn: string) => `/api/manga/page-proxy?url=${encodeURIComponent(`${baseUrl}/data/${hash}/${fn}`)}&chapterId=${matchedDex.id}`);
-                return c.json({ pages, isFallback: true });
+            if (feedData && feedData.data && Array.isArray(feedData.data)) {
+              const isNumMatch = (chNum: any) => String(chNum) === String(targetChapNum) || Math.abs(parseFloat(chNum || '0') - parseFloat(targetChapNum)) < 0.01;
+              const validChaps = feedData.data.filter((ch: any) => isNumMatch(ch.attributes?.chapter) && (ch.attributes?.pages > 0 || !ch.attributes?.externalUrl));
+
+              let matchedDex = validChaps.find((ch: any) => ch.attributes?.translatedLanguage === 'ru');
+              if (!matchedDex) matchedDex = validChaps.find((ch: any) => ch.attributes?.translatedLanguage === 'en');
+              if (!matchedDex) matchedDex = validChaps[0];
+
+              if (matchedDex?.id) {
+                const srvRes = await fetch(`https://api.mangadex.org/at-home/server/${matchedDex.id}`);
+                const srvData: any = await srvRes.json();
+                if (srvData && srvData.chapter) {
+                  const hash = srvData.chapter.hash;
+                  const baseUrl = srvData.baseUrl;
+                  const filenames = (srvData.chapter.data && srvData.chapter.data.length > 0) ? srvData.chapter.data : (srvData.chapter.dataSaver || []);
+                  const pathPrefix = (srvData.chapter.data && srvData.chapter.data.length > 0) ? 'data' : 'data-saver';
+                  const pages = filenames.map((fn: string) => `/api/manga/page-proxy?url=${encodeURIComponent(`${baseUrl}/${pathPrefix}/${hash}/${fn}`)}&chapterId=${matchedDex.id}`);
+                  if (pages.length > 0) {
+                    return c.json({ pages, isFallback: true });
+                  }
+                }
               }
             }
           }

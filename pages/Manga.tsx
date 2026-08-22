@@ -125,7 +125,8 @@ const Manga: React.FC = () => {
     setDownloadProgress({ current: 0, total: 100 });
 
     try {
-      const res = await fetch(`/api/manga/chapter/${ch.id}/pages`);
+      const titleQuery = manga ? `?title=${encodeURIComponent(manga.title || '')}&orig=${encodeURIComponent(manga.originalTitle || '')}` : '';
+      const res = await fetch(`/api/manga/chapter/${ch.id}/pages${titleQuery}`);
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.pages && data.pages.length > 0) {
         await saveChapterOffline(manga, ch, data.pages, (curr, tot) => {
@@ -840,7 +841,8 @@ const Manga: React.FC = () => {
 
     console.log(`[KamiManga] Loading pages for chapter: ${chapterObj.title || 'Chapter'} (ID: ${chapterObj.id})`);
     try {
-      const res = await fetch(`/api/manga/chapter/${chapterObj.id}/pages`);
+      const titleQuery = selectedManga ? `?title=${encodeURIComponent(selectedManga.title || '')}&orig=${encodeURIComponent(selectedManga.originalTitle || '')}` : '';
+      const res = await fetch(`/api/manga/chapter/${chapterObj.id}/pages${titleQuery}`);
       const data = await res.json().catch(() => ({}));
 
       console.log(`[KamiManga] Fetch response status code: ${res.status}`);
