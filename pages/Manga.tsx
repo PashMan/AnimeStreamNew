@@ -269,7 +269,6 @@ const Manga: React.FC = () => {
   const [chapters, setChapters] = useState<ChapterItem[]>([]);
   const uniqueChaptersCount = React.useMemo(() => new Set(chapters.map((ch) => ch.chapter)).size, [chapters]);
   const [chaptersLoading, setChaptersLoading] = useState<boolean>(false);
-  const [selectedTranslationGroup, setSelectedTranslationGroup] = useState<string>('');
   const [activeDetailTab, setActiveDetailTab] = useState<'info' | 'chapters' | 'related' | 'similar' | 'comments'>('info');
   const [relatedManga, setRelatedManga] = useState<MangaRelatedItem[]>([]);
   const [similarManga, setSimilarManga] = useState<MangaSimilarItem[]>([]);
@@ -899,7 +898,6 @@ const Manga: React.FC = () => {
     setChaptersLoading(true);
     setChapters([]);
     setIsMangaLicensed(false);
-    setSelectedTranslationGroup('');
     fetchRelatedAndSimilar(manga);
 
     try {
@@ -910,38 +908,8 @@ const Manga: React.FC = () => {
         setChapters(chList);
         setIsMangaLicensed(!!data.isLicensed);
 
-        // Group by translator name to find scanlator with most chapters
+        // Auto open chapter if target chapter is specified
         if (chList.length > 0) {
-          const sanitizeGrp = (name: string) => {
-            if (!name) return "Команда перевода";
-            const lower = name.toLowerCase();
-            if (lower.includes("readmanga") || lower.includes("mangaread") || lower.includes("zazaza")) {
-              return "Команда перевода";
-            }
-            return name;
-          };
-
-          const groupsMap: Record<string, number> = {};
-          chList.forEach((ch) => {
-            const grp = sanitizeGrp(ch.group);
-            groupsMap[grp] = (groupsMap[grp] || 0) + 1;
-          });
-          
-          let maxGroup = "";
-          let maxCount = -1;
-          if (groupsMap["Команда перевода"] && groupsMap["Команда перевода"] > 0) {
-            maxGroup = "Команда перевода";
-          } else {
-            Object.entries(groupsMap).forEach(([gName, count]) => {
-              if (count > maxCount) {
-                maxCount = count;
-                maxGroup = gName;
-              }
-            });
-          }
-          setSelectedTranslationGroup(maxGroup);
-
-          // Auto open chapter if target chapter is specified
           if (targetChapterNum !== undefined && targetChapterNum !== null) {
             const targetNum = parseFloat(String(targetChapterNum));
             if (!isNaN(targetNum)) {
@@ -1505,66 +1473,15 @@ const Manga: React.FC = () => {
                         <span className="text-xs font-black uppercase text-slate-500 tracking-widest">Инициализация структуры глав...</span>
                       </div>
                     ) : (() => {
-                      const sanitizeGroupName = (name: string) => {
-                        if (!name) return "KamiManga Trans";
-                        const lower = name.toLowerCase();
-                        if (lower.includes("readmanga") || lower.includes("mangaread") || lower.includes("zazaza")) {
-                          return "Команда перевода";
-                        }
-                        return name;
-                      };
-
-                      // Collect all unique translator groups and counts
-                      const groupsMap: Record<string, number> = {};
-                      chapters.forEach((ch) => {
-                        const gName = sanitizeGroupName(ch.group);
-                        groupsMap[gName] = (groupsMap[gName] || 0) + 1;
-                      });
-                      const availableGroups = Object.keys(groupsMap);
-
-                      // Filter chapters by both translation group and chapter search query
+                      // Filter chapters by chapter search query
                       const filtered = chapters.filter((ch) => {
-                        const gName = sanitizeGroupName(ch.group);
-                        const matchGroup = !selectedTranslationGroup || gName === selectedTranslationGroup;
                         const matchSearch = ch.chapter.toLowerCase().includes(chapterSearchQuery.toLowerCase()) || 
                           (ch.title && ch.title.toLowerCase().includes(chapterSearchQuery.toLowerCase()));
-                        return matchGroup && matchSearch;
+                        return matchSearch;
                       });
 
                       return (
                         <div className="space-y-4">
-                          {/* Translator translation group option selectors */}
-                          {availableGroups.length > 1 && (
-                            <div className="bg-[#18191d]/60 border border-white/5 p-3.5 rounded-2xl space-y-2 select-none">
-                              <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider block">Выбор команды перевода:</span>
-                              <div className="flex flex-wrap gap-1.5">
-                                <button
-                                  onClick={() => setSelectedTranslationGroup('')}
-                                  className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider border transition-all cursor-pointer ${
-                                    !selectedTranslationGroup
-                                      ? 'bg-[#8B5CF6]/10 border-[#8B5CF6] text-[#8B5CF6]'
-                                      : 'bg-[#121316] border-white/5 text-slate-400 hover:text-white hover:border-white/10'
-                                  }`}
-                                >
-                                  {isMangaLicensed ? 'Команды перевода' : `Все команды (${chapters.length})`}
-                                </button>
-                                {availableGroups.map((gName) => (
-                                  <button
-                                    key={gName}
-                                    onClick={() => setSelectedTranslationGroup(gName)}
-                                    className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider border transition-all cursor-pointer ${
-                                      selectedTranslationGroup === gName
-                                        ? 'bg-[#8B5CF6]/10 border-[#8B5CF6] text-[#8B5CF6]'
-                                        : 'bg-[#121316] border-white/5 text-slate-400 hover:text-white hover:border-white/10'
-                                    }`}
-                                  >
-                                    {gName} ({groupsMap[gName]})
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-
                           {filtered.length === 0 ? (
                             isMangaLicensed ? (
                               <div className="py-8 px-5 text-center border border-red-500/15 bg-red-500/5 text-slate-300 rounded-3xl flex flex-col items-center gap-2">
@@ -1582,7 +1499,6 @@ const Manga: React.FC = () => {
                           ) : (
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[450px] overflow-y-auto pr-2 custom-scrollbar">
                               {filtered.map((ch) => {
-                                const groupDisplayName = sanitizeGroupName(ch.group);
                                 const isDownloaded = downloadedChapterIds.includes(ch.id);
                                 const isDownloading = downloadingChapterId === ch.id;
 
@@ -1594,7 +1510,7 @@ const Manga: React.FC = () => {
                                   >
                                     <div className="min-w-0 pr-2">
                                       <div className="flex items-center gap-2 flex-wrap">
-                                        <span className="text-[8px] font-black uppercase text-[#8B5CF6] tracking-wider block">ГРУППА: {groupDisplayName}</span>
+                                        <span className="text-[8px] font-black uppercase text-[#8B5CF6] tracking-wider block">Команда перевода</span>
                                         {isDownloaded && (
                                           <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-black text-[8px] uppercase tracking-wider flex items-center gap-0.5 border border-emerald-500/30">
                                             <CheckCircle2 className="w-2.5 h-2.5" /> Оффлайн
