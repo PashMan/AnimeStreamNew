@@ -265,6 +265,9 @@ export async function onRequest(context: any) {
             const iframe = res.link.startsWith('//') ? `https:${res.link}` : res.link;
             const epCount = res.episodes_count || res.last_episode || 1;
             const lastEp = res.last_episode || res.episodes_count || 1;
+            const itemQuality = res.quality
+              ? (String(res.quality).toLowerCase().includes('p') ? String(res.quality) : `${res.quality}p`)
+              : (res.link?.includes('1080') ? '1080p' : (res.link?.includes('480') ? '480p' : (res.link?.includes('360') ? '360p' : '720p')));
 
             if (!translationsMap.has(tName)) {
               translationsMap.set(tName, {
@@ -273,8 +276,18 @@ export async function onRequest(context: any) {
                 type: res.translation.type || 'voice',
                 iframe: iframe,
                 episodes_count: epCount,
-                last_episode: lastEp
+                last_episode: lastEp,
+                quality: itemQuality,
+                quality_label: itemQuality
               });
+            } else {
+              const existing = translationsMap.get(tName);
+              existing.episodes_count = Math.max(existing.episodes_count, epCount);
+              existing.last_episode = Math.max(existing.last_episode, lastEp);
+              if (res.quality) {
+                existing.quality = itemQuality;
+                existing.quality_label = itemQuality;
+              }
             }
           }
         });
@@ -391,7 +404,7 @@ export async function onRequest(context: any) {
           kodik_iframe: kt.iframe,
           episodes_count: maxEpisodes,
           last_episode: maxEpisodes,
-          quality_label: '1080p',
+          quality_label: kt.quality || kt.quality_label || '720p',
           is_native_4k: false
         });
       }

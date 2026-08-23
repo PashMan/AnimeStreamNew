@@ -422,28 +422,32 @@ const Details: React.FC = () => {
   };
 
   const getTranslationQuality = (t: any) => {
-    if (!t) return "1080p";
+    if (!t) return "720p";
     if (t.quality_label) {
       if (t.quality_label.toLowerCase().includes("4k")) return "4K";
-      return "1080p";
+      return t.quality_label.includes("p") ? t.quality_label : `${t.quality_label}p`;
+    }
+    if (t.quality) {
+      if (String(t.quality).toLowerCase().includes("4k")) return "4K";
+      return String(t.quality).includes("p") ? String(t.quality) : `${t.quality}p`;
     }
     const baseTitle = getCleanTitle(t.title || "");
     const override = translationQualityOverrides[baseTitle];
     if (override) {
-      return override.toLowerCase().includes("4k") ? "4K" : "1080p";
+      return override.toLowerCase().includes("4k") ? "4K" : (override.includes("p") ? override : `${override}p`);
     }
 
     const isNative4KFilm = id === "50594" || id === "62568" || id === "38826" || id === "16782" || id === "32281";
     if (isNative4KFilm || t.is_native_4k) return "4K";
 
-    const match = (t.title || "").match(/\b(4K|1080|720)\b/i);
+    const match = (t.title || "").match(/\b(4K|1080|720|480|360)\b/i);
     if (match) {
       const val = match[0].toUpperCase();
       if (val === "4K") return "4K";
-      return "1080p";
+      return `${val}p`;
     }
 
-    return "1080p";
+    return t.provider === "AniBoom" ? "1080p" : "720p";
   };
 
   const getDisplayTitle = (title: string) => {
@@ -2349,11 +2353,7 @@ const Details: React.FC = () => {
                                     <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-white/10 text-slate-300">
                                       {activeEpTotal} сер.
                                     </span>
-                                    <span className={`text-[10px] font-black px-2 py-0.5 rounded uppercase tracking-wider ${
-                                      activeQuality === "4K"
-                                        ? "bg-emerald-500/25 text-emerald-300 border border-emerald-400/40"
-                                        : "bg-amber-500/20 text-amber-300 border border-amber-400/30"
-                                    }`}>
+                                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-white/10 text-slate-300 uppercase tracking-wider">
                                       {activeQuality}
                                     </span>
                                   </div>
@@ -2400,15 +2400,7 @@ const Details: React.FC = () => {
                                       <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-white/10 text-slate-300">
                                         {epTotal} сер.
                                       </span>
-                                      <span className={`text-[10px] font-black px-2 py-0.5 rounded uppercase tracking-wider ${
-                                        tQuality === "4K"
-                                          ? isSelected
-                                            ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40"
-                                            : "bg-emerald-950/40 text-emerald-400/90 border border-emerald-500/20"
-                                          : isSelected
-                                            ? "bg-purple-500/20 text-purple-300 border border-purple-500/40"
-                                            : "bg-slate-800 text-slate-300 border border-white/10"
-                                      }`}>
+                                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-white/10 text-slate-300 uppercase tracking-wider">
                                         {tQuality}
                                       </span>
                                       {isSelected && <Check className="w-4 h-4 text-primary ml-0.5 shrink-0" />}
