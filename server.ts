@@ -240,8 +240,8 @@ async function handleAiChatRequest(c: any) {
       return { role, content };
     });
 
-    const deepseekKey = process.env.DEEPSEEK_API_KEY;
-    const geminiKey = process.env.GEMINI_API_KEY;
+    const deepseekKey = process.env.DEEPSEEK_API_KEY ? process.env.DEEPSEEK_API_KEY.trim() : undefined;
+    const geminiKey = process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.trim() : undefined;
     
     if (!deepseekKey && !geminiKey) {
       return c.json({ error: 'AI API keys not configured. Please define DEEPSEEK_API_KEY or GEMINI_API_KEY in Settings/Secrets.' }, 400);
@@ -255,34 +255,48 @@ async function handleAiChatRequest(c: any) {
       "Пожалуйста, вспомните правильный Shikimori ID для рекомендуемого тайтла из вашей базы знаний (например: Атака титанов ID: 16498, Тетрадь смерти ID: 1535, Клинок рассекающий демонов ID: 38000, Ван-Пис ID: 21, Наруто ID: 20, Магическая битва ID: 40748, Токийский гуль ID: 22319, Евангелион ID: 30, Твоё имя ID: 32281, Унесённые призраками ID: 199, Код Гиас ID: 1575, Сага о Винланде ID: 37521, Хантер х Хантер 2011 ID: 11061, Госпожа Кагуя ID: 37999, Человек-бензопила ID: 44511, Твое апрельское вранье ID: 23273, Созданный в Бездне ID: 34599, Бездомный бог ID: 20507, Моб Психо 100 ID: 32182). " +
       "Никогда не указывайте внешние ссылки типа shikimori.one или другие домены, используйте только относительный путь `/anime/ID`.";
     
+    let deepseekSuccess = false;
+    let textResult = '';
+
     if (deepseekKey) {
-      const response = await fetch('https://api.deepseek.com/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${deepseekKey}`
-        },
-        body: JSON.stringify({
-          model: 'deepseek-chat',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            ...messages
-          ],
-          temperature: 0.7,
-          max_tokens: 1000
-        })
-      });
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('DeepSeek API error:', errorText);
-        throw new Error(`DeepSeek API returned error ${response.status}`);
+      try {
+        console.log('[AI Chat] Attempting request with DeepSeek API...');
+        const response = await fetch('https://api.deepseek.com/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${deepseekKey}`
+          },
+          body: JSON.stringify({
+            model: 'deepseek-chat',
+            messages: [
+              { role: 'system', content: systemPrompt },
+              ...messages
+            ],
+            temperature: 0.7,
+            max_tokens: 1000
+          })
+        });
+        
+        if (response.ok) {
+          const data = await response.json() as any;
+          textResult = data.choices?.[0]?.message?.content || 'Извините, произошла ошибка.';
+          deepseekSuccess = true;
+        } else {
+          const errorText = await response.text();
+          console.error(`DeepSeek API returned status ${response.status}:`, errorText);
+        }
+      } catch (dsErr: any) {
+        console.error('DeepSeek API network/request error:', dsErr.message);
       }
-      
-      const data = await response.json() as any;
-      const text = data.choices?.[0]?.message?.content || 'Извините, произошла ошибка.';
-      return c.json({ text });
-    } else {
+    }
+
+    if (deepseekSuccess) {
+      return c.json({ text: textResult });
+    }
+
+    if (geminiKey) {
+      console.log('[AI Chat] Falling back to Gemini API...');
       const { GoogleGenAI } = await import('@google/genai');
       const ai = new GoogleGenAI({
         apiKey: geminiKey,
@@ -299,7 +313,7 @@ async function handleAiChatRequest(c: any) {
       }));
       
       const response = await ai.models.generateContent({
-        model: 'gemini-3.7-flash',
+        model: 'gemini-2.5-flash',
         contents: formattedContents,
         config: {
           systemInstruction: systemPrompt,
@@ -309,14 +323,26 @@ async function handleAiChatRequest(c: any) {
       
       return c.json({ text: response.text || 'Извините, произошла ошибка.' });
     }
+
+    return c.json({ error: 'AI API unavailable or invalid keys provided.' }, 500);
   } catch (err: any) {
     console.error('AI Chat API Error:', err);
     return c.json({ error: err.message || 'Ошибка сервера при получении ответа от ИИ.' }, 500);
   }
 }
 
-app.post('/api/ai/chat', handleAiChatRequest);
-app.post('/api/ai/recommend', handleAiChatRequest);
+app.use('/api/ai/*', async (c, next) => {
+  c.header('Access-Control-Allow-Origin', '*');
+  c.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  c.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (c.req.method === 'OPTIONS') {
+    return c.text('', 204);
+  }
+  return next();
+});
+
+app.all('/api/ai/chat', handleAiChatRequest);
+app.all('/api/ai/recommend', handleAiChatRequest);
 
 // In-memory cache for anime image URLs & AniList data
 const animeImageCache = new Map<string, { url: string; buffer?: ArrayBuffer; contentType?: string }>();
@@ -664,6 +690,55 @@ async function fetchAnimegoData(shikimoriId: string, searchTitle?: string): Prom
     }
   } catch (err: any) {
     console.error(`[AnimeGo Scraper] Shikimori title fetch failed: ${err.message}`);
+  }
+
+  // Try Cloudflare Worker catalog first (fastest and handles Cloudflare/DDOS-Guard protected pages)
+  try {
+    console.log(`[AnimeGo Scraper] Querying Cloudflare Worker for Shikimori ID: ${shikimoriId}`);
+    const workerRes = await fetch(`https://parser.oshxycfdjab.workers.dev/?shikimori_id=${shikimoriId}`, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+      signal: AbortSignal.timeout(3500)
+    });
+    if (workerRes.ok) {
+      const workerData = await workerRes.json() as any;
+      if (workerData && (workerData.source === 'aniboom' || workerData.aniboom_id || workerData.embed_url || (workerData.voices && workerData.voices.length > 0))) {
+        let map: { voice: string; url: string; episodesCount?: number }[] = [];
+        if (Array.isArray(workerData.voices) && workerData.voices.length > 0) {
+          map = workerData.voices.map((v: any) => ({
+            voice: v.voice || 'AniBoom 4K',
+            url: v.url || workerData.embed_url || `https://aniboom.one/embed/${v.aniboom_id || workerData.aniboom_id}`,
+            episodesCount: shikiEpisodesCount || undefined
+          }));
+        } else if (workerData.embed_url) {
+          map = [{
+            voice: 'AniBoom 4K',
+            url: workerData.embed_url,
+            episodesCount: shikiEpisodesCount || undefined
+          }];
+        } else if (workerData.aniboom_id) {
+          map = [{
+            voice: 'AniBoom 4K',
+            url: `https://aniboom.one/embed/${workerData.aniboom_id}?episode=1`,
+            episodesCount: shikiEpisodesCount || undefined
+          }];
+        }
+
+        if (map.length > 0) {
+          const workerResult: AnimegoData = {
+            animegoId: workerData.aniboom_id || workerData.animego_slug || `shiki_${shikimoriId}`,
+            aniboomMap: map,
+            defaultAniboomUrl: map[0].url,
+            quality: '1080',
+            totalEpisodes: shikiEpisodesCount || undefined
+          };
+          animegoCache.set(shikimoriId, workerResult);
+          console.log(`[AnimeGo Scraper] Resolved via Cloudflare Worker for Shikimori ID ${shikimoriId}:`, map.map(m => m.voice));
+          return workerResult;
+        }
+      }
+    }
+  } catch (wErr: any) {
+    console.warn(`[AnimeGo Scraper] Cloudflare Worker fetch warning: ${wErr.message}`);
   }
 
   const searchQueries = [ruTitle, enTitle].filter(Boolean) as string[];
