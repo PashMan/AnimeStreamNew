@@ -32,11 +32,23 @@ export interface BalancerData {
 export const fetchPlayersClientSide = async (shikimoriId: string, title: string, year: string): Promise<BalancerData> => {
   if (!shikimoriId) return { players: [], kodik_translations: [] };
 
-  const cacheKey = `balancer_v8_${shikimoriId}`;
+  // Clear any outdated cache entries in browser storage
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && (k.startsWith('as_cache_balancer_v') || k.startsWith('balancer_v')) && !k.includes('balancer_v12_')) {
+          localStorage.removeItem(k);
+        }
+      }
+    } catch (_) {}
+  }
+
+  const cacheKey = `balancer_v12_${shikimoriId}`;
   const cached = getFromStorage(cacheKey);
 
-  // TTL: 24 hours for balancer data (prevents domain rot but keeps it ultra fast)
-  const ttl = 24 * 60 * 60 * 1000;
+  // TTL: 6 hours for balancer data
+  const ttl = 6 * 60 * 60 * 1000;
   if (cached && (Date.now() - cached.timestamp < ttl)) {
     console.log(`[Balancer Service] Loaded from cache for ID ${shikimoriId}`);
     return cached.data;

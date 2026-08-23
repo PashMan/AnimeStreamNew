@@ -137,7 +137,7 @@ class AnimeWebGL1080p {
       }
     `;
 
-    // Pass 1: Debanding + Blue Noise Dither & Deblur
+    // Pass 1: Detail-Preserving Anime Bilateral Denoising
     const fsDebandSource = this.isWebGL2 ? `#version 300 es
       precision highp float;
       in vec2 v_texCoord;
@@ -145,48 +145,40 @@ class AnimeWebGL1080p {
       uniform sampler2D u_image;
       uniform vec2 u_textureSize;
 
-      float hash12(vec2 p) {
-        vec3 p3 = fract(vec3(p.xyx) * 0.1031);
-        p3 += dot(p3, p3.yzx + 33.33);
-        return fract((p3.x + p3.y) * p3.z);
-      }
-
-      float blueNoiseDither(vec2 uv) {
-        float n1 = hash12(uv * u_textureSize + vec2(1.23, 4.56));
-        float n2 = hash12(uv * u_textureSize + vec2(7.89, 0.12));
-        return (n1 + n2 - 1.0) / 255.0;
+      float luma(vec3 c) {
+        return dot(c, vec3(0.299, 0.587, 0.114));
       }
 
       void main() {
         vec2 texel = 1.0 / u_textureSize;
         vec4 center = texture(u_image, v_texCoord);
         
-        float radius = 12.0;
-        float threshold = 18.0 / 255.0;
-        vec3 sum = center.rgb;
-        float totalWeight = 1.0;
-        const float SAMPLES = 8.0;
-        float angleStep = 6.2831853 / SAMPLES;
+        // 3x3 Edge-Preserving Bilateral Filter
+        vec3 sum = center.rgb * 0.25;
+        float totalWeight = 0.25;
+        float centerLuma = luma(center.rgb);
         
-        for (float i = 0.0; i < SAMPLES; i += 1.0) {
-          float angle = i * angleStep;
-          float r = radius * (0.7 + 0.3 * hash12(v_texCoord * u_textureSize + vec2(i, 3.14159)));
-          vec2 offset = vec2(cos(angle), sin(angle)) * r * texel;
-          vec3 sampleCol = texture(u_image, v_texCoord + offset).rgb;
-          vec3 diff = abs(sampleCol - center.rgb);
-          float maxDiff = max(max(diff.r, diff.g), diff.b);
-          
-          if (maxDiff < threshold) {
-            float weight = 1.0 - (maxDiff / threshold);
-            sum += sampleCol * weight;
-            totalWeight += weight;
+        for (int y = -1; y <= 1; y++) {
+          for (int x = -1; x <= 1; x++) {
+            if (x == 0 && y == 0) continue;
+            vec2 offset = vec2(float(x), float(y)) * texel;
+            vec3 sCol = texture(u_image, v_texCoord + offset).rgb;
+            float sLuma = luma(sCol);
+            
+            float spatialDist = float(x * x + y * y);
+            float spatialWeight = exp(-spatialDist * 0.5);
+            
+            float lumaDiff = abs(sLuma - centerLuma);
+            float colorWeight = exp(-lumaDiff * lumaDiff / (2.0 * 0.008));
+            
+            float w = spatialWeight * colorWeight;
+            sum += sCol * w;
+            totalWeight += w;
           }
         }
         
-        vec3 debanded = sum / totalWeight;
-        float dither = blueNoiseDither(v_texCoord);
-        vec3 finalColor = debanded + vec3(dither);
-        fragColor = vec4(clamp(finalColor, 0.0, 1.0), center.a);
+        vec3 filtered = sum / max(totalWeight, 0.001);
+        fragColor = vec4(clamp(filtered, 0.0, 1.0), center.a);
       }
     ` : `
       precision highp float;
@@ -194,50 +186,43 @@ class AnimeWebGL1080p {
       uniform sampler2D u_image;
       uniform vec2 u_textureSize;
 
-      float hash12(vec2 p) {
-        vec3 p3 = fract(vec3(p.xyx) * 0.1031);
-        p3 += dot(p3, p3.yzx + 33.33);
-        return fract((p3.x + p3.y) * p3.z);
-      }
-
-      float blueNoiseDither(vec2 uv) {
-        float n1 = hash12(uv * u_textureSize + vec2(1.23, 4.56));
-        float n2 = hash12(uv * u_textureSize + vec2(7.89, 0.12));
-        return (n1 + n2 - 1.0) / 255.0;
+      float luma(vec3 c) {
+        return dot(c, vec3(0.299, 0.587, 0.114));
       }
 
       void main() {
         vec2 texel = 1.0 / u_textureSize;
         vec4 center = texture2D(u_image, v_texCoord);
-        float radius = 12.0;
-        float threshold = 18.0 / 255.0;
-        vec3 sum = center.rgb;
-        float totalWeight = 1.0;
-        const float SAMPLES = 8.0;
-        float angleStep = 6.2831853 / SAMPLES;
         
-        for (float i = 0.0; i < SAMPLES; i += 1.0) {
-          float angle = i * angleStep;
-          float r = radius * (0.7 + 0.3 * hash12(v_texCoord * u_textureSize + vec2(i, 3.14159)));
-          vec2 offset = vec2(cos(angle), sin(angle)) * r * texel;
-          vec3 sampleCol = texture2D(u_image, v_texCoord + offset).rgb;
-          vec3 diff = abs(sampleCol - center.rgb);
-          float maxDiff = max(max(diff.r, diff.g), diff.b);
-          if (maxDiff < threshold) {
-            float weight = 1.0 - (maxDiff / threshold);
-            sum += sampleCol * weight;
-            totalWeight += weight;
+        vec3 sum = center.rgb * 0.25;
+        float totalWeight = 0.25;
+        float centerLuma = luma(center.rgb);
+        
+        for (int y = -1; y <= 1; y++) {
+          for (int x = -1; x <= 1; x++) {
+            if (x == 0 && y == 0) continue;
+            vec2 offset = vec2(float(x), float(y)) * texel;
+            vec3 sCol = texture2D(u_image, v_texCoord + offset).rgb;
+            float sLuma = luma(sCol);
+            
+            float spatialDist = float(x * x + y * y);
+            float spatialWeight = exp(-spatialDist * 0.5);
+            
+            float lumaDiff = abs(sLuma - centerLuma);
+            float colorWeight = exp(-lumaDiff * lumaDiff / (2.0 * 0.008));
+            
+            float w = spatialWeight * colorWeight;
+            sum += sCol * w;
+            totalWeight += w;
           }
         }
         
-        vec3 debanded = sum / totalWeight;
-        float dither = blueNoiseDither(v_texCoord);
-        vec3 finalColor = debanded + vec3(dither);
-        gl_FragColor = vec4(clamp(finalColor, 0.0, 1.0), center.a);
+        vec3 filtered = sum / max(totalWeight, 0.001);
+        gl_FragColor = vec4(clamp(filtered, 0.0, 1.0), center.a);
       }
     `;
 
-    // Pass 2: Artifact Cleaning, Denoise & Ringing Suppression
+    // Pass 2: Anime Line Reconstruction & Directional Anti-Aliasing
     const fsRestoreSource = this.isWebGL2 ? `#version 300 es
       precision highp float;
       in vec2 v_texCoord;
@@ -261,26 +246,23 @@ class AnimeWebGL1080p {
         vec3 bc = texture(u_image, v_texCoord + vec2( 0.0,  d.y)).rgb;
         vec3 br = texture(u_image, v_texCoord + vec2( d.x,  d.y)).rgb;
         
-        float lCC = luma(cc);
         float lTL = luma(tl); float lTC = luma(tc); float lTR = luma(tr);
-        float lML = luma(ml);                      float lMR = luma(mr);
+        float lML = luma(ml); float lCC = luma(cc); float lMR = luma(mr);
         float lBL = luma(bl); float lBC = luma(bc); float lBR = luma(br);
         
+        // High-precision Sobel Gradients
         float gx = (lTR + 2.0 * lMR + lBR) - (lTL + 2.0 * lML + lBL);
         float gy = (lBL + 2.0 * lBC + lBR) - (lTL + 2.0 * lTC + lTR);
         float edgeStrength = sqrt(gx * gx + gy * gy);
         
-        vec3 minNeighbor = min(min(min(tl, tc), min(tr, ml)), min(min(mr, bl), min(bc, br)));
-        vec3 maxNeighbor = max(max(max(tl, tc), max(tr, ml)), max(max(mr, bl), max(bc, br)));
-        vec3 cleaned = clamp(cc, minNeighbor, maxNeighbor);
+        // Tangent Direction for directional smoothing along linework
+        vec2 dir = normalize(vec2(-gy, gx) + vec2(0.00001));
+        vec3 sPos = texture(u_image, v_texCoord + dir * d * 0.5).rgb;
+        vec3 sNeg = texture(u_image, v_texCoord - dir * d * 0.5).rgb;
+        vec3 tangentSmooth = (cc * 2.0 + sPos + sNeg) * 0.25;
         
-        vec2 dir = normalize(vec2(-gy, gx) + vec2(0.0001));
-        vec3 sP = texture(u_image, v_texCoord + dir * d * 0.75).rgb;
-        vec3 sN = texture(u_image, v_texCoord - dir * d * 0.75).rgb;
-        vec3 lineAverage = (sP + sN) * 0.5;
-        
-        float isEdge = smoothstep(0.06, 0.22, edgeStrength);
-        vec3 reconstructed = mix(cleaned, min(cleaned, lineAverage), isEdge * 0.45);
+        float isEdge = smoothstep(0.04, 0.20, edgeStrength);
+        vec3 reconstructed = mix(cc, tangentSmooth, isEdge * 0.55);
         
         fragColor = vec4(clamp(reconstructed, 0.0, 1.0), 1.0);
       }
@@ -306,32 +288,27 @@ class AnimeWebGL1080p {
         vec3 bc = texture2D(u_image, v_texCoord + vec2( 0.0,  d.y)).rgb;
         vec3 br = texture2D(u_image, v_texCoord + vec2( d.x,  d.y)).rgb;
         
-        float lCC = luma(cc);
         float lTL = luma(tl); float lTC = luma(tc); float lTR = luma(tr);
-        float lML = luma(ml);                      float lMR = luma(mr);
+        float lML = luma(ml); float lCC = luma(cc); float lMR = luma(mr);
         float lBL = luma(bl); float lBC = luma(bc); float lBR = luma(br);
         
         float gx = (lTR + 2.0 * lMR + lBR) - (lTL + 2.0 * lML + lBL);
         float gy = (lBL + 2.0 * lBC + lBR) - (lTL + 2.0 * lTC + lTR);
         float edgeStrength = sqrt(gx * gx + gy * gy);
         
-        vec3 minNeighbor = min(min(min(tl, tc), min(tr, ml)), min(min(mr, bl), min(bc, br)));
-        vec3 maxNeighbor = max(max(max(tl, tc), max(tr, ml)), max(max(mr, bl), max(bc, br)));
-        vec3 cleaned = clamp(cc, minNeighbor, maxNeighbor);
+        vec2 dir = normalize(vec2(-gy, gx) + vec2(0.00001));
+        vec3 sPos = texture2D(u_image, v_texCoord + dir * d * 0.5).rgb;
+        vec3 sNeg = texture2D(u_image, v_texCoord - dir * d * 0.5).rgb;
+        vec3 tangentSmooth = (cc * 2.0 + sPos + sNeg) * 0.25;
         
-        vec2 dir = normalize(vec2(-gy, gx) + vec2(0.0001));
-        vec3 sP = texture2D(u_image, v_texCoord + dir * d * 0.75).rgb;
-        vec3 sN = texture2D(u_image, v_texCoord - dir * d * 0.75).rgb;
-        vec3 lineAverage = (sP + sN) * 0.5;
-        
-        float isEdge = smoothstep(0.06, 0.22, edgeStrength);
-        vec3 reconstructed = mix(cleaned, min(cleaned, lineAverage), isEdge * 0.45);
+        float isEdge = smoothstep(0.04, 0.20, edgeStrength);
+        vec3 reconstructed = mix(cc, tangentSmooth, isEdge * 0.55);
         
         gl_FragColor = vec4(clamp(reconstructed, 0.0, 1.0), 1.0);
       }
     `;
 
-    // Pass 3: Upscale 2x Vector Interpolation
+    // Pass 3: High-Fidelity Catmull-Rom Bicubic Spline 2x Super-Resolution
     const fsUpscale2xSource = this.isWebGL2 ? `#version 300 es
       precision highp float;
       in vec2 v_texCoord;
@@ -339,42 +316,40 @@ class AnimeWebGL1080p {
       uniform sampler2D u_image;
       uniform vec2 u_srcTextureSize;
 
-      float luma(vec3 c) {
-        return dot(c, vec3(0.299, 0.587, 0.114));
+      vec4 catmullRom(float x) {
+        float x2 = x * x;
+        float x3 = x2 * x;
+        return vec4(
+          -0.5 * x3 + x2 - 0.5 * x,
+           1.5 * x3 - 2.5 * x2 + 1.0,
+          -1.5 * x3 + 2.0 * x2 + 0.5 * x,
+           0.5 * x3 - 0.5 * x2
+        );
       }
 
       void main() {
         vec2 texel = 1.0 / u_srcTextureSize;
         vec2 pos = v_texCoord * u_srcTextureSize - 0.5;
         vec2 f = fract(pos);
-        vec2 baseUV = (floor(pos) + 0.5) * texel;
+        vec2 base = (floor(pos) - 0.5) * texel;
         
-        vec3 c00 = texture(u_image, baseUV).rgb;
-        vec3 c10 = texture(u_image, baseUV + vec2(texel.x, 0.0)).rgb;
-        vec3 c01 = texture(u_image, baseUV + vec2(0.0, texel.y)).rgb;
-        vec3 c11 = texture(u_image, baseUV + vec2(texel.x, texel.y)).rgb;
+        vec4 wx = catmullRom(f.x);
+        vec4 wy = catmullRom(f.y);
         
-        float l00 = luma(c00);
-        float l10 = luma(c10);
-        float l01 = luma(c01);
-        float l11 = luma(c11);
+        vec3 color = vec3(0.0);
+        float totalW = 0.0;
         
-        float d1 = abs(l00 - l11);
-        float d2 = abs(l10 - l01);
-        
-        vec3 color;
-        if (d1 < d2 * 0.85) {
-          float t = (f.x + f.y) * 0.5;
-          color = mix(c00, c11, t);
-        } else if (d2 < d1 * 0.85) {
-          float t = (f.x + (1.0 - f.y)) * 0.5;
-          color = mix(c01, c10, t);
-        } else {
-          vec3 top = mix(c00, c10, f.x);
-          vec3 bot = mix(c01, c11, f.x);
-          color = mix(top, bot, f.y);
+        for (int j = 0; j < 4; j++) {
+          for (int i = 0; i < 4; i++) {
+            vec2 sampleUV = base + vec2(float(i), float(j)) * texel;
+            vec3 c = texture(u_image, sampleUV).rgb;
+            float w = wx[i] * wy[j];
+            color += c * w;
+            totalW += w;
+          }
         }
         
+        color = color / max(totalW, 0.0001);
         fragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
       }
     ` : `
@@ -383,42 +358,40 @@ class AnimeWebGL1080p {
       uniform sampler2D u_image;
       uniform vec2 u_srcTextureSize;
 
-      float luma(vec3 c) {
-        return dot(c, vec3(0.299, 0.587, 0.114));
+      vec4 catmullRom(float x) {
+        float x2 = x * x;
+        float x3 = x2 * x;
+        return vec4(
+          -0.5 * x3 + x2 - 0.5 * x,
+           1.5 * x3 - 2.5 * x2 + 1.0,
+          -1.5 * x3 + 2.0 * x2 + 0.5 * x,
+           0.5 * x3 - 0.5 * x2
+        );
       }
 
       void main() {
         vec2 texel = 1.0 / u_srcTextureSize;
         vec2 pos = v_texCoord * u_srcTextureSize - 0.5;
         vec2 f = fract(pos);
-        vec2 baseUV = (floor(pos) + 0.5) * texel;
+        vec2 base = (floor(pos) - 0.5) * texel;
         
-        vec3 c00 = texture2D(u_image, baseUV).rgb;
-        vec3 c10 = texture2D(u_image, baseUV + vec2(texel.x, 0.0)).rgb;
-        vec3 c01 = texture2D(u_image, baseUV + vec2(0.0, texel.y)).rgb;
-        vec3 c11 = texture2D(u_image, baseUV + vec2(texel.x, texel.y)).rgb;
+        vec4 wx = catmullRom(f.x);
+        vec4 wy = catmullRom(f.y);
         
-        float l00 = luma(c00);
-        float l10 = luma(c10);
-        float l01 = luma(c01);
-        float l11 = luma(c11);
+        vec3 color = vec3(0.0);
+        float totalW = 0.0;
         
-        float d1 = abs(l00 - l11);
-        float d2 = abs(l10 - l01);
-        
-        vec3 color;
-        if (d1 < d2 * 0.85) {
-          float t = (f.x + f.y) * 0.5;
-          color = mix(c00, c11, t);
-        } else if (d2 < d1 * 0.85) {
-          float t = (f.x + (1.0 - f.y)) * 0.5;
-          color = mix(c01, c10, t);
-        } else {
-          vec3 top = mix(c00, c10, f.x);
-          vec3 bot = mix(c01, c11, f.x);
-          color = mix(top, bot, f.y);
+        for (int j = 0; j < 4; j++) {
+          for (int i = 0; i < 4; i++) {
+            vec2 sampleUV = base + vec2(float(i), float(j)) * texel;
+            vec3 c = texture2D(u_image, sampleUV).rgb;
+            float w = wx[i] * wy[j];
+            color += c * w;
+            totalW += w;
+          }
         }
         
+        color = color / max(totalW, 0.0001);
         gl_FragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
       }
     `;
@@ -461,7 +434,7 @@ class AnimeWebGL1080p {
 
         // Contrast Adaptive Sharpening weight calculation
         vec3 amp = clamp(min(min_soft, vec3(1.0) - max_soft) / max(max_soft, vec3(0.0001)), 0.0, 1.0);
-        float peak = -1.0 / mix(8.0, 5.0, clamp(u_amount, 0.0, 1.0));
+        float peak = -1.0 / mix(9.0, 6.0, clamp(u_amount, 0.0, 1.0));
         vec3 w = vec3(sqrt(amp) * peak);
 
         // Weighted filter evaluation (4-tap cross + center)
@@ -504,7 +477,7 @@ class AnimeWebGL1080p {
         vec3 max_soft = max(max_grid, max_cross);
 
         vec3 amp = clamp(min(min_soft, vec3(1.0) - max_soft) / max(max_soft, vec3(0.0001)), 0.0, 1.0);
-        float peak = -1.0 / mix(8.0, 5.0, clamp(u_amount, 0.0, 1.0));
+        float peak = -1.0 / mix(9.0, 6.0, clamp(u_amount, 0.0, 1.0));
         vec3 w = vec3(sqrt(amp) * peak);
 
         vec3 filter_sum = b + d + f + h;
@@ -621,11 +594,11 @@ class AnimeWebGL1080p {
   public setTargetResolution(targetH: number) {
     this.targetMode = targetH;
     if (targetH === 2160 || targetH === 0) {
-      this.sharpness = 0.80; // 0.75-0.85 for 1080p source upscaled to 4K
+      this.sharpness = 0.60; // 0.60 for 1080p source upscaled to 4K
     } else if (targetH === 1080) {
-      this.sharpness = 1.0;  // 1.0 for 720p source upscaled to 1080p
+      this.sharpness = 0.55;  // 0.55 for 720p source upscaled to 1080p
     } else {
-      this.sharpness = 0.80;
+      this.sharpness = 0.55;
     }
     if (targetH === -1) {
       this.canvas.style.opacity = "0";

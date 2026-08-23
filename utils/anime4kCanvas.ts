@@ -83,9 +83,9 @@ export class MobileAnime4KRenderer {
       }
     `;
 
-    // Fast Anime4K Line Reconstruction & Contrast Adaptive Sharpening (Mode A/B Fast 2-pass equivalent)
+    // High-Fidelity Anime4K Mobile Line Reconstruction & Anti-Aliasing
     const fsSource = `
-      precision mediump float;
+      precision highp float;
       varying vec2 v_texCoord;
       uniform sampler2D u_image;
       uniform vec2 u_textureSize;
@@ -98,32 +98,41 @@ export class MobileAnime4KRenderer {
         vec2 d = 1.0 / u_textureSize;
         vec3 cc = texture2D(u_image, v_texCoord).rgb;
 
-        vec3 tc = texture2D(u_image, v_texCoord + vec2(0.0, -d.y)).rgb;
-        vec3 bc = texture2D(u_image, v_texCoord + vec2(0.0, d.y)).rgb;
-        vec3 ml = texture2D(u_image, v_texCoord + vec2(-d.x, 0.0)).rgb;
-        vec3 mr = texture2D(u_image, v_texCoord + vec2(d.x, 0.0)).rgb;
+        vec3 tl = texture2D(u_image, v_texCoord + vec2(-d.x, -d.y)).rgb;
+        vec3 tc = texture2D(u_image, v_texCoord + vec2( 0.0, -d.y)).rgb;
+        vec3 tr = texture2D(u_image, v_texCoord + vec2( d.x, -d.y)).rgb;
+        vec3 ml = texture2D(u_image, v_texCoord + vec2(-d.x,  0.0)).rgb;
+        vec3 mr = texture2D(u_image, v_texCoord + vec2( d.x,  0.0)).rgb;
+        vec3 bl = texture2D(u_image, v_texCoord + vec2(-d.x,  d.y)).rgb;
+        vec3 bc = texture2D(u_image, v_texCoord + vec2( 0.0,  d.y)).rgb;
+        vec3 br = texture2D(u_image, v_texCoord + vec2( d.x,  d.y)).rgb;
 
-        float lCC = luma(cc);
-        float lTC = luma(tc);
-        float lBC = luma(bc);
-        float lML = luma(ml);
-        float lMR = luma(mr);
+        float lTL = luma(tl); float lTC = luma(tc); float lTR = luma(tr);
+        float lML = luma(ml); float lCC = luma(cc); float lMR = luma(mr);
+        float lBL = luma(bl); float lBC = luma(bc); float lBR = luma(br);
 
-        // Edge Detection
-        float gx = lMR - lML;
-        float gy = lBC - lTC;
+        // 3x3 Sobel edge detection
+        float gx = (lTR + 2.0 * lMR + lBR) - (lTL + 2.0 * lML + lBL);
+        float gy = (lBL + 2.0 * lBC + lBR) - (lTL + 2.0 * lTC + lTR);
         float edge = sqrt(gx * gx + gy * gy);
 
-        // Contrast-adaptive contour sharpening
-        vec3 minCol = min(cc, min(min(tc, bc), min(ml, mr)));
-        vec3 maxCol = max(cc, max(max(tc, bc), max(ml, mr)));
+        // Directional sub-pixel smoothing along contours
+        vec2 dir = normalize(vec2(-gy, gx) + vec2(0.00001));
+        vec3 sPos = texture2D(u_image, v_texCoord + dir * d * 0.5).rgb;
+        vec3 sNeg = texture2D(u_image, v_texCoord - dir * d * 0.5).rgb;
+        vec3 lineSmooth = (cc * 2.0 + sPos + sNeg) * 0.25;
 
-        vec3 sharp = cc + (cc - (tc + bc + ml + mr) * 0.25) * 0.85;
+        // Anti-aliased line refinement
+        float edgeFactor = smoothstep(0.04, 0.22, edge);
+        vec3 refined = mix(cc, lineSmooth, edgeFactor * 0.6);
+
+        // Subtle contrast-adaptive enhancement
+        vec3 minCol = min(min(min(tl, tc), min(tr, ml)), min(min(mr, bl), min(bc, br)));
+        vec3 maxCol = max(max(max(tl, tc), max(tr, ml)), max(max(mr, bl), max(bc, br)));
+        vec3 sharp = refined + (refined - (tc + bc + ml + mr) * 0.25) * 0.35;
         vec3 clamped = clamp(sharp, minCol, maxCol);
 
-        float edgeFactor = smoothstep(0.04, 0.2, edge);
-        vec3 result = mix(cc, clamped, edgeFactor * 0.75);
-
+        vec3 result = mix(refined, clamped, 0.5);
         gl_FragColor = vec4(clamp(result, 0.0, 1.0), 1.0);
       }
     `;
@@ -204,13 +213,22 @@ export class MobileAnime4KRenderer {
     const render = () => {
       if (!this.isRunning) return;
 
-      // Sync canvas dimensions with video physical pixels
+      // Sync canvas dimensions with target upscale resolution
       if (this.video.videoWidth > 0) {
-        if (this.canvas.width !== this.video.videoWidth || this.canvas.height !== this.video.videoHeight) {
-          this.canvas.width = this.video.videoWidth;
-          this.canvas.height = this.video.videoHeight;
+        const vW = this.video.videoWidth;
+        const vH = this.video.videoHeight;
+        const aspect = vW / vH;
+        let targetH = this.targetResolution === 2160 ? 2160 : (this.targetResolution === 1080 ? 1080 : (vH >= 1000 ? 2160 : 1080));
+        let targetW = Math.round(targetH * aspect);
+        const dpr = Math.min(2.0, window.devicePixelRatio || 1);
+        const renderW = Math.floor(targetW * dpr);
+        const renderH = Math.floor(targetH * dpr);
+
+        if (this.canvas.width !== renderW || this.canvas.height !== renderH) {
+          this.canvas.width = renderW;
+          this.canvas.height = renderH;
           if (this.gl) {
-            this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+            this.gl.viewport(0, 0, renderW, renderH);
           }
         }
       }
