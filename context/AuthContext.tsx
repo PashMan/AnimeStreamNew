@@ -2,7 +2,7 @@
 import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
 import { User } from '../types';
 import { db } from '../services/db';
-
+import { evaluateUnlockedTitles } from '../utils/titleUtils';
 
 interface AuthContextType {
   user: User | null;
@@ -13,6 +13,7 @@ interface AuthContextType {
   resetPassword: (email: string) => Promise<{ success: boolean; message?: string }>;
   logout: () => void;
   updateProfile: (updates: Partial<User>) => Promise<boolean>;
+  unlockTitle: (titleId: string) => Promise<void>;
   activateVip: (days: number) => Promise<boolean>;
   isAuthModalOpen: boolean;
   openAuthModal: () => void;
@@ -188,12 +189,37 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return false;
   };
 
+  const unlockTitle = async (titleId: string) => {
+    if (!user?.email) return;
+    const currentUnlocked = user.unlockedPrefixes || ['newgen'];
+    if (!currentUnlocked.includes(titleId)) {
+      const updatedUnlocked = [...currentUnlocked, titleId];
+      await updateProfile({ unlockedPrefixes: updatedUnlocked });
+    }
+  };
+
+  // Auto-evaluate unlocked titles whenever user state or criteria changes
+  useEffect(() => {
+    if (user?.email) {
+      const evaluated = evaluateUnlockedTitles(user);
+      const currentUnlocked = user.unlockedPrefixes || ['newgen'];
+      const hasNewTitles = evaluated.some(id => !currentUnlocked.includes(id));
+      if (hasNewTitles) {
+        updateProfile({ unlockedPrefixes: evaluated });
+      }
+    }
+  }, [user?.email, user?.isPremium, user?.watchedAnimeIds, user?.createdAt, user?.episodesWatched]);
+
   const activateVip = async (days: number) => {
     if (!user?.email) return false;
     try {
       const updatedUser = await db.activateVip(user.email, days);
       if (updatedUser) {
-        setUser(updatedUser);
+        // Unlock premium titles ('first_aid' and 'custom')
+        const currentUnlocked = updatedUser.unlockedPrefixes || ['newgen'];
+        const newUnlocked = Array.from(new Set([...currentUnlocked, 'first_aid', 'custom']));
+        const finalUser = await db.updateProfile(user.email, { unlockedPrefixes: newUnlocked });
+        setUser(finalUser || updatedUser);
         return true;
       }
     } catch (e) {
@@ -225,6 +251,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         resetPassword,
         logout,
         updateProfile,
+        unlockTitle,
         activateVip,
         isAuthModalOpen,
         openAuthModal,

@@ -505,7 +505,12 @@ export const AIChatBot: React.FC = () => {
                     const formattedTime = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                     const userAvatar = msg.user?.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${msg.user?.name || 'User'}`;
                     const userName = msg.user?.name || 'Пользователь';
-                    const userBadge = (msg.user as any)?.title_badge || (msg.user as any)?.badge;
+                    
+                    const userTitle = isOwn
+                      ? ((user?.customPrefix === 'Свой титул' && user?.customTitleText?.trim()) ? user.customTitleText.trim() : (user?.customPrefix || 'Ньюген'))
+                      : (msg.user?.title || (msg.user as any)?.title_badge || 'Ньюген');
+                    
+                    const userIsPremium = isOwn ? Boolean(user?.isPremium) : Boolean(msg.user?.isPremium);
 
                     return (
                       <div
@@ -526,18 +531,27 @@ export const AIChatBot: React.FC = () => {
                               : 'bg-white/5 border border-white/10 text-slate-200 rounded-tl-sm'
                           }`}
                         >
-                          {!isOwn && (
-                            <div className="flex items-center gap-1.5 mb-1">
-                              <span className="font-extrabold text-sky-400 text-[11px] truncate max-w-[140px]">
-                                {userName}
+                          <div className="flex items-center flex-wrap gap-1.5 mb-1.5">
+                            <span className={`font-extrabold text-[11px] truncate max-w-[130px] ${isOwn ? 'text-sky-100' : 'text-sky-400'}`}>
+                              {userName}
+                            </span>
+
+                            {/* Title badge */}
+                            {userTitle && (
+                              <span className="px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-200 border border-sky-500/30 text-[9px] font-extrabold tracking-tight">
+                                {userTitle}
                               </span>
-                              {userBadge && (
-                                <span className="px-1.5 py-0.2 rounded bg-sky-500/20 text-sky-300 text-[9px] font-black uppercase tracking-wider border border-sky-500/30">
-                                  {userBadge}
-                                </span>
-                              )}
-                            </div>
-                          )}
+                            )}
+
+                            {/* Premium badge */}
+                            {userIsPremium && (
+                              <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[9px] font-black uppercase tracking-wider flex items-center gap-0.5 shadow-sm">
+                                <Crown className="w-2.5 h-2.5 text-amber-400 fill-amber-400" />
+                                <span>PREMIUM</span>
+                              </span>
+                            )}
+                          </div>
+
                           <p className="leading-relaxed break-words select-text">{msg.text}</p>
                           <div
                             className={`text-[9px] mt-1 font-bold ${

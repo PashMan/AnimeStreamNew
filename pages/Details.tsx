@@ -288,7 +288,7 @@ const Details: React.FC = () => {
 
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { openAuthModal, user, isVip, openPremiumModal } = useAuth();
+  const { openAuthModal, user, isVip, openPremiumModal, unlockTitle } = useAuth();
   const relatedRef = useRef<HTMLDivElement>(null);
   const similarRef = useRef<HTMLDivElement>(null);
 
@@ -755,6 +755,9 @@ const Details: React.FC = () => {
   const handleCreateRoom = () => {
     const newRoomId = Math.random().toString(36).substring(2, 10);
     setRoomId(newRoomId);
+    if (user?.email && unlockTitle) {
+      unlockTitle('instigator');
+    }
     setSearchParams(
       (prev) => {
         prev.set("room", newRoomId);

@@ -83,9 +83,15 @@ interface HistoryItem {
 }
 
 const Manga: React.FC = () => {
-  const { user, isVip, openPremiumModal } = useAuth();
+  const { user, isVip, openPremiumModal, unlockTitle } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const activeMangaId = searchParams.get('mangaId');
+
+  useEffect(() => {
+    if (user?.email && unlockTitle) {
+      unlockTitle('mangaka');
+    }
+  }, [user?.email]);
 
   // Offline Manga Download States
   const [downloadingChapterId, setDownloadingChapterId] = useState<string | null>(null);

@@ -257,7 +257,8 @@ const UserProfile: React.FC = () => {
                 <h1 className="text-2xl font-black text-white uppercase tracking-tight text-center md:text-left">{profile.name}</h1>
                 <div className="flex flex-wrap items-center justify-center md:justify-start gap-2">
                    {(() => {
-                      const prefixName = profile.customPrefix || 'Пользователь';
+                      const prefixName = profile.customPrefix || 'Ньюген';
+                      const displayText = (prefixName === 'Свой титул' && profile.customTitleText) ? profile.customTitleText : prefixName;
                       const prefixDef = AVAILABLE_PREFIXES.find(p => p.name === prefixName);
                       return (
                         <span 
@@ -268,7 +269,7 @@ const UserProfile: React.FC = () => {
                             backgroundColor: prefixDef ? prefixDef.bgColor : '#8B5CF620' 
                           }}
                         >
-                           {prefixName}
+                           {displayText}
                         </span>
                       );
                    })()}

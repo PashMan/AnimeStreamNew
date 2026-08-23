@@ -495,6 +495,10 @@ class DatabaseService {
       cardBlur: p.card_blur,
       cardBg: p.card_bg,
       lastSeen: p.last_seen,
+      customPrefix: p.custom_prefix || 'Ньюген',
+      unlockedPrefixes: this.safeParseArray(p.unlocked_prefixes),
+      customTitleText: p.custom_title_text || '',
+      createdAt: p.created_at,
       role: p.is_admin ? 'admin' : (p.role || 'user'),
       isBanned: p.is_banned || false,
       isMuted: p.is_muted || false,
@@ -555,6 +559,9 @@ class DatabaseService {
       if (updates.profileBlocks !== undefined) mapped.profile_blocks = JSON.stringify(updates.profileBlocks);
       if (updates.profilePositions !== undefined) mapped.profile_positions = JSON.stringify(updates.profilePositions);
       if (updates.friends !== undefined) mapped.friends = JSON.stringify(updates.friends);
+      if (updates.customPrefix !== undefined) mapped.custom_prefix = updates.customPrefix;
+      if (updates.unlockedPrefixes !== undefined) mapped.unlocked_prefixes = JSON.stringify(updates.unlockedPrefixes);
+      if (updates.customTitleText !== undefined) mapped.custom_title_text = updates.customTitleText;
       if (updates.shikimoriToken !== undefined) mapped.shikimori_token = updates.shikimoriToken;
       if (updates.shikimoriRefreshToken !== undefined) mapped.shikimori_refresh_token = updates.shikimoriRefreshToken;
       if (updates.shikimoriId !== undefined) mapped.shikimori_id = updates.shikimoriId;
@@ -1039,16 +1046,30 @@ class DatabaseService {
     try {
       const { data } = await supabaseClient
         .from('global_messages')
-        .select('*, profiles(name, avatar)')
+        .select('*, profiles(name, avatar, custom_prefix, custom_title_text, is_premium)')
         .order('created_at', { ascending: true })
         .limit(100);
       
-      return data?.map((d: any) => ({
-        id: d.id,
-        user: { name: d.profiles.name, avatar: d.profiles.avatar, email: d.user_email },
-        text: d.text,
-        timestamp: new Date(d.created_at).getTime()
-      })) || [];
+      return data?.map((d: any) => {
+        const pName = d.profiles?.name || d.user_name || 'Пользователь';
+        const pAvatar = d.profiles?.avatar || d.user_avatar || '';
+        const rawPrefix = d.profiles?.custom_prefix;
+        const customText = d.profiles?.custom_title_text;
+        const displayTitle = (rawPrefix === 'Свой титул' && customText) ? customText : (rawPrefix || 'Ньюген');
+
+        return {
+          id: d.id,
+          user: { 
+            name: pName, 
+            avatar: pAvatar, 
+            email: d.user_email,
+            title: displayTitle,
+            isPremium: Boolean(d.profiles?.is_premium)
+          },
+          text: d.text,
+          timestamp: new Date(d.created_at).getTime()
+        };
+      }) || [];
     } catch (e) {
       return [];
     }
@@ -1060,13 +1081,24 @@ class DatabaseService {
       const { data, error } = await supabaseClient
         .from('global_messages')
         .insert([{ user_email: user.email, text }])
-        .select('*, profiles(name, avatar)')
+        .select('*, profiles(name, avatar, custom_prefix, custom_title_text, is_premium)')
         .single();
       
       if (error || !data) throw error;
+      
+      const displayTitle = (user.customPrefix === 'Свой титул' && user.customTitleText?.trim())
+        ? user.customTitleText.trim()
+        : (user.customPrefix || 'Ньюген');
+
       return {
         id: data.id,
-        user: { name: data.profiles.name, avatar: data.profiles.avatar, email: data.user_email },
+        user: { 
+          name: data.profiles?.name || user.name, 
+          avatar: data.profiles?.avatar || user.avatar, 
+          email: data.user_email,
+          title: displayTitle,
+          isPremium: user.isPremium
+        },
         text: data.text,
         timestamp: new Date(data.created_at).getTime()
       };

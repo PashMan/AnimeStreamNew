@@ -66,8 +66,10 @@ export interface User {
   profilePositions?: Record<string, { x: number, y: number, scale?: number }>;
   lastSeen?: string; // ISO date string
   role?: 'user' | 'admin' | 'moderator';
-  customPrefix?: string; // e.g. 'Отаку', 'Сенсей', 'Легенда', 'Мангака', etc.
-  unlockedPrefixes?: string[]; // list of unlocked prefix badges
+  customPrefix?: string; // e.g. 'Ньюген', 'Первая помощь', 'Мангака', 'Свой титул', etc.
+  unlockedPrefixes?: string[]; // list of unlocked prefix badges e.g. ['newgen', 'first_aid', 'mangaka']
+  customTitleText?: string; // Custom title typed by user if Premium
+  createdAt?: string;
   isBanned?: boolean;
   bannedUntil?: string;
   isMuted?: boolean;
@@ -194,6 +196,8 @@ export interface ChatMessage {
     name: string;
     avatar: string;
     email: string;
+    title?: string;
+    isPremium?: boolean;
   };
   text: string;
   timestamp: number;

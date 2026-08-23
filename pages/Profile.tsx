@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState, useRef } from 'react';
-import { History, Heart, Settings, Clock, PlayCircle, LogIn, Loader2, Mail, CheckCircle, User as UserIcon, Crown, Users, Save, Edit2, Camera, Upload, Palette, Layout, Search, Filter, Image as ImageIcon, LayoutTemplate, X, ChevronRight, ChevronUp, ChevronDown, Grid } from 'lucide-react';
+import { History, Heart, Settings, Clock, PlayCircle, LogIn, Loader2, Mail, CheckCircle, User as UserIcon, Crown, Users, Save, Edit2, Camera, Upload, Palette, Layout, Search, Filter, Image as ImageIcon, LayoutTemplate, X, ChevronRight, ChevronUp, ChevronDown, Grid, Lock } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../services/db';
 import { fetchAnimes } from '../services/shikimori';
@@ -42,7 +42,8 @@ const Profile: React.FC = () => {
   const [editName, setEditName] = useState(user?.name || '');
   const [editBio, setEditBio] = useState(user?.bio || '');
   const [editAvatar, setEditAvatar] = useState(user?.avatar || '');
-  const [editPrefix, setEditPrefix] = useState(user?.customPrefix || 'Пользователь');
+  const [editPrefix, setEditPrefix] = useState(user?.customPrefix || 'Ньюген');
+  const [customTitleInput, setCustomTitleInput] = useState(user?.customTitleText || '');
   
   // Design State
   const [editBg, setEditBg] = useState(user?.profileBg || '');
@@ -496,6 +497,7 @@ const Profile: React.FC = () => {
         bio: editBio,
         avatar: editAvatar,
         customPrefix: editPrefix,
+        customTitleText: customTitleInput,
         profileBg: editBg,
         profileBanner: editBanner,
         profileLayout: editLayout,
@@ -737,8 +739,11 @@ const Profile: React.FC = () => {
                       <h1 className="text-2xl font-black uppercase tracking-tight text-center z-10 relative">{user.name}</h1>
                       <div className="flex flex-wrap items-center justify-center gap-2 mt-3 z-10 relative">
                          {(() => {
-                            const currentPrefixName = isEditing ? editPrefix : (user.customPrefix || 'Пользователь');
+                            const currentPrefixName = isEditing ? editPrefix : (user.customPrefix || 'Ньюген');
                             const prefixDef = AVAILABLE_PREFIXES.find(p => p.name === currentPrefixName);
+                            const badgeLabel = (currentPrefixName === 'Свой титул' && (isEditing ? customTitleInput : user.customTitleText))
+                              ? (isEditing ? customTitleInput : user.customTitleText)
+                              : currentPrefixName;
                             return (
                               <span 
                                 className="px-3.5 py-1 text-[10px] font-black uppercase rounded-xl border tracking-widest transition-all" 
@@ -748,7 +753,7 @@ const Profile: React.FC = () => {
                                   backgroundColor: prefixDef ? prefixDef.bgColor : (currentTheme ? `${currentTheme}20` : '#8B5CF620') 
                                 }}
                               >
-                                 {currentPrefixName}
+                                 {badgeLabel}
                               </span>
                             );
                          })()}
@@ -954,47 +959,89 @@ const Profile: React.FC = () => {
 
                         {/* Prefix / Title Selection Setting */}
                         <div className="space-y-4">
-                          <div className="flex items-center justify-between">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                             <div>
-                              <label className="text-sm font-bold text-white mb-1 block">Префикс (Звание) профиля</label>
-                              <p className="text-[13px] text-slate-400">Выберите бейдж/префикс, отображаемый под вашей аватаркой.</p>
+                              <label className="text-sm font-bold text-white mb-1 block">Титул профиля</label>
+                              <p className="text-[13px] text-slate-400">Выберите титул, который увидят другие пользователи под вашим именем в чате и профиле.</p>
                             </div>
-                            <span className="text-xs px-3 py-1 bg-white/5 border border-white/10 rounded-xl font-black text-white uppercase">
-                              Текущий: {editPrefix || user.customPrefix || 'Пользователь'}
+                            <span className="text-xs px-3 py-1 bg-white/5 border border-white/10 rounded-xl font-black text-white uppercase shrink-0 self-start sm:self-auto">
+                              Текущий: {editPrefix === 'Свой титул' && customTitleInput ? customTitleInput : (editPrefix || user.customPrefix || 'Ньюген')}
                             </span>
                           </div>
 
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-2">
                             {AVAILABLE_PREFIXES.map((prefix) => {
-                              const isSelected = (editPrefix || user.customPrefix || 'Пользователь') === prefix.name;
+                              const isUnlocked = user.unlockedPrefixes?.includes(prefix.id) || prefix.id === 'newgen' || ((user.isPremium || isVip) && (prefix.id === 'first_aid' || prefix.id === 'custom'));
+                              const isSelected = (editPrefix || user.customPrefix || 'Ньюген') === prefix.name;
+                              
                               return (
                                 <button
                                   key={prefix.id}
                                   type="button"
-                                  disabled={!isEditing}
-                                  onClick={() => setEditPrefix(prefix.name)}
-                                  className={`p-3.5 rounded-2xl border text-left transition-all duration-200 flex flex-col justify-between gap-2 ${
+                                  disabled={!isEditing || !isUnlocked}
+                                  onClick={() => {
+                                    if (isUnlocked) setEditPrefix(prefix.name);
+                                  }}
+                                  className={`p-3.5 rounded-2xl border text-left transition-all duration-200 flex flex-col justify-between gap-2.5 relative ${
                                     isSelected
-                                      ? 'border-primary shadow-lg bg-primary/10'
-                                      : 'border-white/5 bg-black/20 hover:border-white/20'
-                                  } ${!isEditing ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:scale-[1.02]'}`}
+                                      ? 'border-primary shadow-lg bg-primary/10 ring-1 ring-primary/50'
+                                      : isUnlocked
+                                        ? 'border-white/10 bg-black/30 hover:border-white/30 cursor-pointer'
+                                        : 'border-white/5 bg-black/40 opacity-50 cursor-not-allowed'
+                                  }`}
                                 >
-                                  <div className="flex items-center justify-between">
+                                  <div className="flex items-center justify-between gap-2">
                                     <span 
-                                      className="text-xs font-black uppercase px-2.5 py-0.5 rounded-lg border"
+                                      className="text-xs font-black uppercase px-2.5 py-0.5 rounded-lg border tracking-wider"
                                       style={{ color: prefix.color, borderColor: prefix.borderColor, backgroundColor: prefix.bgColor }}
                                     >
                                       {prefix.name}
                                     </span>
-                                    {isSelected && <CheckCircle className="w-4 h-4 text-primary" />}
+                                    <div className="flex items-center gap-1">
+                                      {!isUnlocked && (
+                                        <span className="flex items-center gap-1 text-[10px] text-amber-400 font-bold bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20">
+                                          <Lock className="w-3 h-3" /> Заблокирован
+                                        </span>
+                                      )}
+                                      {isSelected && <CheckCircle className="w-4 h-4 text-primary shrink-0" />}
+                                    </div>
                                   </div>
-                                  <p className="text-[10px] text-slate-400 line-clamp-2 leading-tight">
+
+                                  <p className="text-[11px] text-slate-300 leading-snug">
                                     {prefix.description}
                                   </p>
                                 </button>
                               );
                             })}
                           </div>
+
+                          {/* Custom Title Input field */}
+                          {editPrefix === 'Свой титул' && (
+                            <div className="mt-4 p-4 bg-purple-500/10 border border-purple-500/30 rounded-2xl space-y-2">
+                              <div className="flex items-center justify-between">
+                                <label className="text-xs font-bold text-purple-200 block">
+                                  Напишите ваш уникальный титул:
+                                </label>
+                                {!(user.isPremium || isVip) && (
+                                  <span className="text-[10px] text-amber-400 font-bold flex items-center gap-1">
+                                    <Lock className="w-3 h-3" /> Требуется Premium
+                                  </span>
+                                )}
+                              </div>
+                              <input
+                                type="text"
+                                maxLength={30}
+                                disabled={!isEditing || !(user.isPremium || isVip)}
+                                value={customTitleInput}
+                                onChange={(e) => setCustomTitleInput(e.target.value)}
+                                placeholder="Например: Повелитель Теней"
+                                className="w-full px-4 py-2.5 bg-black/40 border border-purple-500/30 rounded-xl text-white text-sm focus:outline-none focus:border-purple-400 disabled:opacity-50"
+                              />
+                              <p className="text-[11px] text-purple-300/70">
+                                Ваш собственный титул будет отображаться рядом с вашим именем в чате и профиле (до 30 символов).
+                              </p>
+                            </div>
+                          )}
                         </div>
 
                         <div className="h-px w-full bg-gradient-to-r from-transparent via-white/10 to-transparent my-4"></div>

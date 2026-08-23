@@ -185,6 +185,21 @@ export const onRequestPost = async (context: any) => {
              throw e;
           }
         }
+      } else if (e.message && (e.message.includes('custom_prefix') || e.message.includes('unlocked_prefixes') || e.message.includes('custom_title_text'))) {
+        try {
+          await db.prepare('ALTER TABLE profiles ADD COLUMN custom_prefix TEXT DEFAULT "Ньюген"').run();
+        } catch(skip) {}
+        try {
+          await db.prepare('ALTER TABLE profiles ADD COLUMN unlocked_prefixes TEXT DEFAULT "[\"newgen\"]"').run();
+        } catch(skip) {}
+        try {
+          await db.prepare('ALTER TABLE profiles ADD COLUMN custom_title_text TEXT').run();
+        } catch(skip) {}
+        try {
+          result = await db.prepare(query).bind(...params).all();
+        } catch(lastErr: any) {
+          throw e;
+        }
       } else if (e.message && (e.message.includes('from_email') || e.message.includes('to_email') || e.message.includes('text'))) {
         try {
           // Rename sender_id and receiver_id if they exist, or just add the columns
