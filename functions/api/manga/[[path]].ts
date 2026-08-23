@@ -1525,6 +1525,7 @@ export const onRequest = async (context: any) => {
     const reqTitle = url.searchParams.get('title') || '';
     const reqOrig = url.searchParams.get('orig') || '';
     const reqChTitle = url.searchParams.get('chTitle') || '';
+    const reqCh = url.searchParams.get('ch') || '';
 
     if (checkIsMangaLicensed([reqTitle, reqOrig, reqChTitle, chapterId]).isLicensed) {
       return new Response(JSON.stringify({ error: 'Манга официально лицензирована в РФ и полностью скрыта.', pages: [], isLicensed: true }), {
@@ -1791,10 +1792,6 @@ export const onRequest = async (context: any) => {
     }
 
     // MangaDex failed: perform fallback
-    const reqTitle = url.searchParams.get('title') || '';
-    const reqOrig = url.searchParams.get('orig') || '';
-    const reqCh = url.searchParams.get('ch') || '';
-    const reqChTitle = url.searchParams.get('chTitle') || '';
     const targetChapNum = reqCh || (reqChTitle.match(/([\d.,]+)/)?.[1] || '1');
     const fallbackTitles = [reqTitle, reqOrig].filter(Boolean);
 
