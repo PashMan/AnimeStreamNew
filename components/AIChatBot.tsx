@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Send, Trash2, Loader2, MessagesSquare, ChevronRight, Sparkles, LogIn, Crown, MessageCircle } from 'lucide-react';
+import { X, Send, Trash2, Loader2, MessagesSquare, ChevronRight, Sparkles, LogIn, Crown, MessageCircle, Image as ImageIcon } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import Markdown from 'react-markdown';
 import { AI_AVATAR_IMAGE } from '../utils/aiAvatar';
@@ -49,10 +49,14 @@ export const AIChatBot: React.FC = () => {
   const [communityInput, setCommunityInput] = useState('');
   const [isCommunitySending, setIsCommunitySending] = useState(false);
   const [communityCooldown, setCommunityCooldown] = useState(0);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [isCompressingImage, setIsCompressingImage] = useState(false);
+  const [previewModalImage, setPreviewModalImage] = useState<string | null>(null);
 
   const aiMessagesEndRef = useRef<HTMLDivElement>(null);
   const commMessagesEndRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Close selection menu when clicking outside
   useEffect(() => {
@@ -203,13 +207,78 @@ export const AIChatBot: React.FC = () => {
     }
   };
 
+  // Image upload and compression handler
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert('Пожалуйста, выберите файл изображения');
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      alert('Размер файла превышает 10 МБ');
+      return;
+    }
+
+    setIsCompressingImage(true);
+    const reader = new FileReader();
+
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const MAX_SIZE = 800;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_SIZE) {
+            height = Math.round((height * MAX_SIZE) / width);
+            width = MAX_SIZE;
+          }
+        } else {
+          if (height > MAX_SIZE) {
+            width = Math.round((width * MAX_SIZE) / height);
+            height = MAX_SIZE;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.75);
+          setSelectedImage(compressedDataUrl);
+        } else {
+          setSelectedImage(event.target?.result as string);
+        }
+        setIsCompressingImage(false);
+      };
+      img.onerror = () => {
+        setIsCompressingImage(false);
+        alert('Не удалось загрузить изображение');
+      };
+      img.src = event.target?.result as string;
+    };
+
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
   // Handle Community Send
   const handleCommunitySend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!communityInput.trim() || isCommunitySending || communityCooldown > 0 || !user) return;
+    if ((!communityInput.trim() && !selectedImage) || isCommunitySending || communityCooldown > 0 || !user) return;
 
-    const textToSend = communityInput.trim().slice(0, CHAR_LIMIT);
+    const rawText = communityInput.trim().slice(0, CHAR_LIMIT);
+    const imageMarkdown = selectedImage ? `![фото](${selectedImage})` : '';
+    const textToSend = rawText && imageMarkdown ? `${rawText}\n\n${imageMarkdown}` : (rawText || imageMarkdown);
+
     setCommunityInput('');
+    setSelectedImage(null);
     setIsCommunitySending(true);
     setCommunityCooldown(3);
 
@@ -552,7 +621,27 @@ export const AIChatBot: React.FC = () => {
                             )}
                           </div>
 
-                          <p className="leading-relaxed break-words select-text">{msg.text}</p>
+                          <div className="leading-relaxed break-words select-text">
+                            <Markdown
+                              components={{
+                                img: ({ node, ...props }) => (
+                                  <img
+                                    {...props}
+                                    alt={props.alt || 'Фото'}
+                                    onClick={() => setPreviewModalImage(props.src || null)}
+                                    className="max-h-56 w-auto max-w-full rounded-xl my-1.5 border border-white/10 object-cover cursor-pointer hover:opacity-95 transition-opacity shadow-sm"
+                                    loading="lazy"
+                                  />
+                                ),
+                                p: ({ node, children }) => <p className="mb-1 last:mb-0 leading-relaxed">{children}</p>,
+                                a: ({ node, ...props }) => (
+                                  <a {...props} target="_blank" rel="noopener noreferrer" className="text-sky-300 underline hover:text-sky-200" />
+                                )
+                              }}
+                            >
+                              {msg.text}
+                            </Markdown>
+                          </div>
                           <div
                             className={`text-[9px] mt-1 font-bold ${
                               isOwn ? 'text-sky-200 text-right' : 'text-slate-500 text-left'
@@ -572,25 +661,76 @@ export const AIChatBot: React.FC = () => {
               <div className="p-3 bg-[#18132B] border-t border-white/5">
                 {user ? (
                   <form onSubmit={handleCommunitySend} className="flex flex-col gap-2">
-                    <div className="relative flex items-center">
-                      <input
-                        type="text"
-                        value={communityInput}
-                        onChange={(e) => setCommunityInput(e.target.value.slice(0, CHAR_LIMIT))}
-                        placeholder={communityCooldown > 0 ? `Подождите ${communityCooldown}с...` : 'Написать в общий чат...'}
-                        disabled={isCommunitySending || communityCooldown > 0}
-                        className="w-full pl-4 pr-11 py-3 bg-white/5 border border-white/10 rounded-2xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 transition-colors disabled:opacity-50"
-                      />
+                    {/* Attached Image Preview Bar */}
+                    {isCompressingImage && (
+                      <div className="p-2 bg-white/5 border border-white/10 rounded-2xl flex items-center gap-2 text-xs text-sky-400 animate-pulse">
+                        <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                        <span>Обработка фотографии...</span>
+                      </div>
+                    )}
+
+                    {selectedImage && !isCompressingImage && (
+                      <div className="relative inline-block self-start group">
+                        <img
+                          src={selectedImage}
+                          alt="Прикрепленное фото"
+                          className="w-20 h-20 object-cover rounded-2xl border-2 border-sky-500/50 shadow-lg"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setSelectedImage(null)}
+                          className="absolute -top-1.5 -right-1.5 p-1 bg-red-500 hover:bg-red-600 text-white rounded-full shadow-lg transition-transform hover:scale-110 cursor-pointer"
+                          title="Удалить прикрепленное фото"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleImageSelect}
+                    />
+
+                    <div className="relative flex items-center gap-2">
                       <button
-                        type="submit"
-                        disabled={!communityInput.trim() || isCommunitySending || communityCooldown > 0}
-                        className="absolute right-1.5 p-2 bg-sky-500 hover:bg-sky-400 disabled:opacity-40 disabled:hover:bg-sky-500 text-white rounded-xl transition-all cursor-pointer shadow-md disabled:cursor-not-allowed"
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={isCommunitySending || communityCooldown > 0 || isCompressingImage}
+                        className={`p-3 rounded-2xl border transition-all cursor-pointer shrink-0 flex items-center justify-center ${
+                          selectedImage
+                            ? 'bg-sky-500/20 border-sky-500 text-sky-300 shadow-sm'
+                            : 'bg-white/5 border-white/10 text-slate-400 hover:text-white hover:bg-white/10'
+                        } disabled:opacity-40 disabled:cursor-not-allowed`}
+                        title="Добавить фото"
                       >
-                        <Send className="w-3.5 h-3.5" />
+                        <ImageIcon className="w-4 h-4" />
                       </button>
+
+                      <div className="relative flex-1 flex items-center">
+                        <input
+                          type="text"
+                          value={communityInput}
+                          onChange={(e) => setCommunityInput(e.target.value.slice(0, CHAR_LIMIT))}
+                          placeholder={communityCooldown > 0 ? `Подождите ${communityCooldown}с...` : 'Написать в общий чат...'}
+                          disabled={isCommunitySending || communityCooldown > 0}
+                          className="w-full pl-4 pr-11 py-3 bg-white/5 border border-white/10 rounded-2xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 transition-colors disabled:opacity-50"
+                        />
+                        <button
+                          type="submit"
+                          disabled={(!communityInput.trim() && !selectedImage) || isCommunitySending || communityCooldown > 0 || isCompressingImage}
+                          className="absolute right-1.5 p-2 bg-sky-500 hover:bg-sky-400 disabled:opacity-40 disabled:hover:bg-sky-500 text-white rounded-xl transition-all cursor-pointer shadow-md disabled:cursor-not-allowed"
+                        >
+                          <Send className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
+
                     <div className="flex justify-between items-center px-1 text-[9px] text-slate-500 font-bold uppercase tracking-wider">
-                      <span>{communityCooldown > 0 ? `Кулдаун: ${communityCooldown}с` : 'Чат сообщества'}</span>
+                      <span>{communityCooldown > 0 ? `Кулдаун: ${communityCooldown}с` : selectedImage ? 'Фото прикреплено' : 'Чат сообщества'}</span>
                       <span>{communityInput.length}/{CHAR_LIMIT}</span>
                     </div>
                   </form>
@@ -609,6 +749,28 @@ export const AIChatBot: React.FC = () => {
               </div>
             </>
           )}
+        </div>
+      )}
+
+      {/* Full-screen Photo Lightbox Modal */}
+      {previewModalImage && (
+        <div 
+          className="fixed inset-0 z-[300] bg-black/90 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200"
+          onClick={() => setPreviewModalImage(null)}
+        >
+          <button
+            onClick={() => setPreviewModalImage(null)}
+            className="absolute top-4 right-4 p-2.5 bg-white/10 hover:bg-white/20 text-white rounded-full transition-colors cursor-pointer"
+            title="Закрыть"
+          >
+            <X className="w-6 h-6" />
+          </button>
+          <img
+            src={previewModalImage}
+            alt="Просмотр фото"
+            className="max-w-full max-h-[90vh] object-contain rounded-2xl shadow-2xl border border-white/10"
+            onClick={(e) => e.stopPropagation()}
+          />
         </div>
       )}
     </div>
