@@ -422,32 +422,17 @@ const Details: React.FC = () => {
   };
 
   const getTranslationQuality = (t: any) => {
-    if (!t) return "720p";
-    if (t.quality_label) {
-      if (t.quality_label.toLowerCase().includes("4k")) return "4K";
-      return t.quality_label.includes("p") ? t.quality_label : `${t.quality_label}p`;
+    if (!t) return "1080";
+    if (
+      t.provider === "AniBoom" ||
+      t.aniboom_iframe ||
+      t.is_native_4k ||
+      (t.quality_label && String(t.quality_label).toLowerCase().includes("4k")) ||
+      (t.title && String(t.title).toLowerCase().includes("aniboom"))
+    ) {
+      return "4K";
     }
-    if (t.quality) {
-      if (String(t.quality).toLowerCase().includes("4k")) return "4K";
-      return String(t.quality).includes("p") ? String(t.quality) : `${t.quality}p`;
-    }
-    const baseTitle = getCleanTitle(t.title || "");
-    const override = translationQualityOverrides[baseTitle];
-    if (override) {
-      return override.toLowerCase().includes("4k") ? "4K" : (override.includes("p") ? override : `${override}p`);
-    }
-
-    const isNative4KFilm = id === "50594" || id === "62568" || id === "38826" || id === "16782" || id === "32281";
-    if (isNative4KFilm || t.is_native_4k) return "4K";
-
-    const match = (t.title || "").match(/\b(4K|1080|720|480|360)\b/i);
-    if (match) {
-      const val = match[0].toUpperCase();
-      if (val === "4K") return "4K";
-      return `${val}p`;
-    }
-
-    return t.provider === "AniBoom" ? "1080p" : "720p";
+    return "1080";
   };
 
   const getDisplayTitle = (title: string) => {

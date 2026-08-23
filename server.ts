@@ -212,7 +212,7 @@ app.post('/api/vote4k/vote-final', async (c) => {
   }
 });
 
-// API Route for AI Anime Recommendation & Chat (Supports DeepSeek and Gemini API)
+// API Route for AI Anime Recommendation & Chat (Supports Gemini API primary & DeepSeek fallback)
 async function handleAiChatRequest(c: any) {
   try {
     const body = await c.req.json().catch(() => ({}));
@@ -240,12 +240,8 @@ async function handleAiChatRequest(c: any) {
       return { role, content };
     });
 
-    const deepseekKey = process.env.DEEPSEEK_API_KEY ? process.env.DEEPSEEK_API_KEY.trim() : undefined;
+    const deepseekKey = (process.env.DEEPSEEK_API_KEY ? process.env.DEEPSEEK_API_KEY.trim() : '') || 'sk-540fa54da61f421d9cfb7edd51448802';
     const geminiKey = process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.trim() : undefined;
-    
-    if (!deepseekKey && !geminiKey) {
-      return c.json({ error: 'AI API keys not configured. Please define DEEPSEEK_API_KEY or GEMINI_API_KEY in Settings/Secrets.' }, 400);
-    }
     
     const systemPrompt = "Вы — дружелюбный искусственный интеллект-ассистент KamiAnime, эксперт по аниме. " +
       "Ваша цель — рекомендовать пользователю подходящие под его запрос тайтлы, отвечать на вопросы об аниме и помогать с выбором. " +
@@ -255,12 +251,10 @@ async function handleAiChatRequest(c: any) {
       "Пожалуйста, вспомните правильный Shikimori ID для рекомендуемого тайтла из вашей базы знаний (например: Атака титанов ID: 16498, Тетрадь смерти ID: 1535, Клинок рассекающий демонов ID: 38000, Ван-Пис ID: 21, Наруто ID: 20, Магическая битва ID: 40748, Токийский гуль ID: 22319, Евангелион ID: 30, Твоё имя ID: 32281, Унесённые призраками ID: 199, Код Гиас ID: 1575, Сага о Винланде ID: 37521, Хантер х Хантер 2011 ID: 11061, Госпожа Кагуя ID: 37999, Человек-бензопила ID: 44511, Твое апрельское вранье ID: 23273, Созданный в Бездне ID: 34599, Бездомный бог ID: 20507, Моб Психо 100 ID: 32182). " +
       "Никогда не указывайте внешние ссылки типа shikimori.one или другие домены, используйте только относительный путь `/anime/ID`.";
     
-    let deepseekSuccess = false;
-    let textResult = '';
-
+    // 1. Try DeepSeek API first (Primary)
     if (deepseekKey) {
       try {
-        console.log('[AI Chat] Attempting request with DeepSeek API...');
+        console.log('[AI Chat] Requesting DeepSeek API...');
         const response = await fetch('https://api.deepseek.com/chat/completions', {
           method: 'POST',
           headers: {
@@ -280,51 +274,50 @@ async function handleAiChatRequest(c: any) {
         
         if (response.ok) {
           const data = await response.json() as any;
-          textResult = data.choices?.[0]?.message?.content || 'Извините, произошла ошибка.';
-          deepseekSuccess = true;
+          const textResult = data.choices?.[0]?.message?.content;
+          if (textResult) {
+            console.log('[AI Chat] DeepSeek response success!');
+            return c.json({ text: textResult });
+          }
         } else {
           const errorText = await response.text();
-          console.error(`DeepSeek API returned status ${response.status}:`, errorText);
+          console.error(`[AI Chat] DeepSeek API returned status ${response.status}:`, errorText);
         }
       } catch (dsErr: any) {
-        console.error('DeepSeek API network/request error:', dsErr.message);
+        console.error('[AI Chat] DeepSeek API network error:', dsErr.message);
       }
     }
 
-    if (deepseekSuccess) {
-      return c.json({ text: textResult });
-    }
-
+    // 2. Fallback to Gemini API
     if (geminiKey) {
-      console.log('[AI Chat] Falling back to Gemini API...');
-      const { GoogleGenAI } = await import('@google/genai');
-      const ai = new GoogleGenAI({
-        apiKey: geminiKey,
-        httpOptions: {
-          headers: {
-            'User-Agent': 'aistudio-build'
+      try {
+        console.log('[AI Chat] Falling back to Gemini API...');
+        const { GoogleGenAI } = await import('@google/genai');
+        const ai = new GoogleGenAI({ apiKey: geminiKey });
+        
+        const formattedContents = messages.map((m: any) => ({
+          role: m.role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: m.content }]
+        }));
+        
+        const response = await ai.models.generateContent({
+          model: 'gemini-2.5-flash',
+          contents: formattedContents,
+          config: {
+            systemInstruction: systemPrompt,
+            temperature: 0.7
           }
+        });
+        
+        if (response && response.text) {
+          return c.json({ text: response.text });
         }
-      });
-      
-      const formattedContents = messages.map((m: any) => ({
-        role: m.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: m.content }]
-      }));
-      
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: formattedContents,
-        config: {
-          systemInstruction: systemPrompt,
-          temperature: 0.7
-        }
-      });
-      
-      return c.json({ text: response.text || 'Извините, произошла ошибка.' });
+      } catch (gemErr: any) {
+        console.error('[AI Chat] Gemini API error:', gemErr.message);
+      }
     }
 
-    return c.json({ error: 'AI API unavailable or invalid keys provided.' }, 500);
+    return c.json({ error: 'Сервер ИИ временно недоступен. Пожалуйста, попробуйте чуть позже.' }, 500);
   } catch (err: any) {
     console.error('AI Chat API Error:', err);
     return c.json({ error: err.message || 'Ошибка сервера при получении ответа от ИИ.' }, 500);
@@ -1438,7 +1431,7 @@ app.get('/api/balancer', async (c) => {
             kodik_iframe: kt.iframe,
             episodes_count: maxEpisodes,
             last_episode: maxEpisodes,
-            quality_label: kt.quality || kt.quality_label || '720p',
+            quality_label: '1080',
             is_native_4k: false
           });
         }
@@ -1474,7 +1467,7 @@ app.get('/api/balancer', async (c) => {
           kodik_iframe: kodik_iframe,
           episodes_count: 1,
           last_episode: 1,
-          quality_label: '1080p',
+          quality_label: '1080',
           is_native_4k: false
         });
       }

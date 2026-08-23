@@ -2324,12 +2324,16 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
       setActiveSubmenu("main");
     };
 
-    // Skip Opening Action (Seek to end of opening from Kodik/AniBoom)
+    // Skip Opening Action (Seek to end of opening or +85s)
     const handleSkipOpening = () => {
       const art = artInstanceRef.current;
       const st = skipTimingsRef.current;
-      if (art && st.end !== null) {
-        art.currentTime = st.end;
+      if (art) {
+        if (st.end !== null) {
+          art.currentTime = st.end;
+        } else {
+          art.currentTime = Math.min(art.duration || 9999, art.currentTime + 85);
+        }
         if (art.notice) {
           art.notice.show = "Пропуск опенинга";
         }
@@ -2337,17 +2341,25 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
       setShowSkipOpBtn(false);
     };
 
-    // Skip Ending Action (Seek to end of ending or next episode from Kodik/AniBoom)
+    // Skip Ending Action (Seek to end of ending, next episode, or +90s)
     const handleSkipEnding = () => {
       const art = artInstanceRef.current;
       const st = skipTimingsRef.current;
-      if (art && st.outro_end !== null) {
-        art.currentTime = st.outro_end;
+      if (art) {
+        if (st.outro_end !== null) {
+          art.currentTime = st.outro_end;
+        } else if (st.outro_start !== null) {
+          art.currentTime = st.outro_start;
+        } else if (art.duration && art.duration - art.currentTime > 90) {
+          art.currentTime = Math.max(0, art.duration - 90);
+        } else if (onNextEpisodeRef.current) {
+          onNextEpisodeRef.current();
+        } else {
+          art.currentTime = Math.min(art.duration || 9999, art.currentTime + 90);
+        }
         if (art.notice) {
           art.notice.show = "Пропуск эндинга";
         }
-      } else if (onNextEpisodeRef.current) {
-        onNextEpisodeRef.current();
       }
       setShowSkipEdBtn(false);
     };
@@ -2401,12 +2413,12 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
           className="absolute inset-0 w-full h-full object-contain opacity-0 z-10"
         />
 
-        {/* Dynamic Quick Skip Opening Badge (From AniBoom/Kodik) */}
+        {/* Dynamic Quick Skip Opening Badge (Strictly based on database/API timings from Kodik/AniBoom/AniSkip) */}
         {skipOpening && showSkipOpBtn && skipTimings.end !== null && (
           <div className="absolute bottom-16 left-6 z-30 animate-in fade-in slide-in-from-bottom-2 duration-200">
             <button
               onClick={handleSkipOpening}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-black/80 hover:bg-[#8B5CF6] text-white border border-white/20 hover:border-[#8B5CF6] font-sans font-bold text-xs shadow-2xl backdrop-blur-md transition-all active:scale-95 cursor-pointer"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-black/90 hover:bg-[#8B5CF6] text-white border border-white/20 hover:border-[#8B5CF6] font-sans font-bold text-xs shadow-2xl backdrop-blur-md transition-all active:scale-95 cursor-pointer"
             >
               <FastForward className="w-4 h-4 text-[#8B5CF6] group-hover:text-white" />
               <span>Пропустить опенинг</span>
@@ -2414,7 +2426,7 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
           </div>
         )}
 
-        {/* Dynamic Quick Skip Ending Badge (From AniBoom/Kodik) */}
+        {/* Dynamic Quick Skip Ending Badge (Strictly based on database/API timings from Kodik/AniBoom/AniSkip) */}
         {skipEnding && showSkipEdBtn && (
           <div className="absolute bottom-16 right-6 z-30 animate-in fade-in slide-in-from-bottom-2 duration-200">
             <button
@@ -2427,7 +2439,7 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
           </div>
         )}
 
-        {/* Top Overlay Bar with Title and Settings Button */}
+        {/* Top Overlay Bar with Title and Quick Action Buttons */}
         <div className="absolute top-4 left-4 right-4 z-20 flex items-center justify-between pointer-events-none opacity-0 group-hover/player:opacity-100 transition-opacity duration-300">
           {/* Top Left: Title Badge */}
           <div className="flex items-center gap-2 px-3 py-1.5 bg-black/70 border border-white/10 rounded-xl backdrop-blur-md shadow-lg pointer-events-auto">
@@ -2442,8 +2454,24 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
             )}
           </div>
 
-          {/* Top Right: Player Settings Button */}
+          {/* Top Right: Skip Quick Buttons & Player Settings Button */}
           <div className="flex items-center gap-2 pointer-events-auto">
+            <button
+              onClick={handleSkipOpening}
+              className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-xl bg-black/80 hover:bg-[#8B5CF6] text-white border border-white/15 hover:border-[#8B5CF6] text-xs font-bold backdrop-blur-md transition-all cursor-pointer shadow-lg active:scale-95"
+              title="Пропустить опенинг"
+            >
+              <FastForward className="w-3.5 h-3.5 text-[#8B5CF6] group-hover:text-white" />
+              <span>Скип опенинга</span>
+            </button>
+            <button
+              onClick={handleSkipEnding}
+              className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-xl bg-black/80 hover:bg-[#8B5CF6] text-white border border-white/15 hover:border-[#8B5CF6] text-xs font-bold backdrop-blur-md transition-all cursor-pointer shadow-lg active:scale-95"
+              title="Пропустить эндинг"
+            >
+              <SkipForward className="w-3.5 h-3.5 text-[#8B5CF6] group-hover:text-white" />
+              <span>Скип эндинга</span>
+            </button>
             <button
               onClick={() => {
                 setActiveSubmenu("main");
