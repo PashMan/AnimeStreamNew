@@ -154,23 +154,24 @@ export const AIChatBot: React.FC = () => {
 
     try {
       const historyForApi = newMessages.map(m => ({
-        role: m.role === 'user' ? 'user' : 'model',
-        parts: [{ text: m.content }]
+        role: m.role,
+        content: m.content
       }));
 
       const res = await fetch('/api/ai/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          contents: historyForApi
+          messages: historyForApi
         })
       });
 
+      const data = await res.json().catch(() => ({}));
+
       if (!res.ok) {
-        throw new Error(`Ошибка сервера: ${res.status}`);
+        throw new Error(data.error || `Ошибка сервера: ${res.status}`);
       }
 
-      const data = await res.json();
       const replyText = data.text || 'Извините, не удалось сформировать ответ. Попробуйте еще раз.';
 
       setAiMessages([

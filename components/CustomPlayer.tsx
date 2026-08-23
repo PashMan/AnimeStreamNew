@@ -40,6 +40,7 @@ interface CustomPlayerProps {
   animeId?: string;
   episodeNumber?: string;
   animeTitle?: string;
+  iframeUrl?: string;
   onNextEpisode?: () => void;
   onPrevEpisode?: () => void;
   onPlayerError?: () => void;
@@ -880,6 +881,7 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
       animeId,
       episodeNumber,
       animeTitle,
+      iframeUrl,
       onNextEpisode,
       onPrevEpisode,
       onPlayerError,
@@ -1160,6 +1162,102 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
     // Dynamic In-Player Badges
     const [showSkipOpBtn, setShowSkipOpBtn] = useState(false);
     const [showSkipEdBtn, setShowSkipEdBtn] = useState(false);
+
+    // Exact Skip Timings from Kodik / AniBoom
+    const [skipTimings, setSkipTimings] = useState<{
+      start: number | null;
+      end: number | null;
+      outro_start: number | null;
+      outro_end: number | null;
+    }>({ start: null, end: null, outro_start: null, outro_end: null });
+
+    const skipTimingsRef = useRef(skipTimings);
+    useEffect(() => {
+      skipTimingsRef.current = skipTimings;
+    }, [skipTimings]);
+
+    // Fetch Skip Timings strictly from Kodik / AniBoom
+    useEffect(() => {
+      let isMounted = true;
+      setSkipTimings({ start: null, end: null, outro_start: null, outro_end: null });
+      setShowSkipOpBtn(false);
+      setShowSkipEdBtn(false);
+
+      const targetUrl = iframeUrl || (src && src.includes("http") ? src : null);
+      if (!targetUrl && !animeId) return;
+
+      const params = new URLSearchParams();
+      if (targetUrl) params.set("url", targetUrl);
+      if (animeId) params.set("animeId", animeId);
+      if (episodeNumber) params.set("episode", episodeNumber);
+
+      fetch(`/api/media/skip-timings?${params.toString()}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (!isMounted) return;
+          if (data && data.normalized) {
+            setSkipTimings(data.normalized);
+            console.log(`⏱️ [KamiPlayer] Loaded skip timings (Provider: ${data.provider}):`, data.normalized);
+          }
+        })
+        .catch((err) => {
+          console.warn("⏱️ [KamiPlayer] Failed to load skip timings:", err);
+        });
+
+      return () => {
+        isMounted = false;
+      };
+    }, [iframeUrl, src, provider, animeId, episodeNumber]);
+
+    // Listen to postMessage from Kodik or AniBoom if skip timing data is sent in real-time
+    useEffect(() => {
+      const handleMessage = (event: MessageEvent) => {
+        try {
+          if (!event.data) return;
+          const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+          
+          let skipsObj: any = null;
+          if (data.key === 'kodik_player_video_info' && data.value) {
+            skipsObj = data.value.skips || data.value.skip_buttons;
+          } else if (data.skips || data.skip_buttons) {
+            skipsObj = data.skips || data.skip_buttons;
+          }
+
+          if (skipsObj) {
+            let normalized = {
+              start: null as number | null,
+              end: null as number | null,
+              outro_start: null as number | null,
+              outro_end: null as number | null,
+            };
+
+            if (skipsObj.intro) {
+              if (typeof skipsObj.intro.start === 'number') normalized.start = skipsObj.intro.start;
+              else if (typeof skipsObj.intro.from === 'number') normalized.start = skipsObj.intro.from;
+              if (typeof skipsObj.intro.end === 'number') normalized.end = skipsObj.intro.end;
+              else if (typeof skipsObj.intro.to === 'number') normalized.end = skipsObj.intro.to;
+            } else if (typeof skipsObj.start === 'number' && typeof skipsObj.end === 'number') {
+              normalized.start = skipsObj.start;
+              normalized.end = skipsObj.end;
+            }
+
+            if (skipsObj.outro) {
+              if (typeof skipsObj.outro.start === 'number') normalized.outro_start = skipsObj.outro.start;
+              else if (typeof skipsObj.outro.from === 'number') normalized.outro_start = skipsObj.outro.from;
+              if (typeof skipsObj.outro.end === 'number') normalized.outro_end = skipsObj.outro.end;
+              else if (typeof skipsObj.outro.to === 'number') normalized.outro_end = skipsObj.outro.to;
+            }
+
+            if (normalized.start !== null || normalized.outro_start !== null) {
+              setSkipTimings(normalized);
+            }
+          }
+        } catch (_) {}
+      };
+
+      window.addEventListener('message', handleMessage);
+      return () => window.removeEventListener('message', handleMessage);
+    }, []);
 
     // Mini Player on Scroll State
     const [isMiniPlayer, setIsMiniPlayer] = useState(false);
@@ -1915,7 +2013,7 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
           }
         });
 
-        // Time updates: Progress, Skip Opening (+85s) & Skip Ending logic
+        // Time updates: Progress, Skip Opening & Skip Ending logic from Kodik / AniBoom
         art.on("video:timeupdate", () => {
           if (!art) return;
           const curr = art.currentTime;
@@ -1924,6 +2022,32 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
             lastPlaybackPosRef.current = curr;
           }
           saveProgress(curr, dur);
+
+          const st = skipTimingsRef.current;
+
+          // Show Opening Skip button ONLY if exact interval exists from AniBoom / Kodik
+          if (
+            st.start !== null &&
+            st.end !== null &&
+            curr >= st.start &&
+            curr < st.end
+          ) {
+            setShowSkipOpBtn(true);
+          } else {
+            setShowSkipOpBtn(false);
+          }
+
+          // Show Ending Skip button ONLY if exact interval exists from AniBoom / Kodik
+          if (
+            st.outro_start !== null &&
+            st.outro_end !== null &&
+            curr >= st.outro_start &&
+            curr < st.outro_end
+          ) {
+            setShowSkipEdBtn(true);
+          } else {
+            setShowSkipEdBtn(false);
+          }
         });
 
         // Auto-switch to next episode when current video ends
@@ -2200,23 +2324,32 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
       setActiveSubmenu("main");
     };
 
-    // Skip Opening Action (+85s)
+    // Skip Opening Action (Seek to end of opening from Kodik/AniBoom)
     const handleSkipOpening = () => {
       const art = artInstanceRef.current;
-      if (art) {
-        art.currentTime += 85;
+      const st = skipTimingsRef.current;
+      if (art && st.end !== null) {
+        art.currentTime = st.end;
         if (art.notice) {
-          art.notice.show = "+85s Пропуск опенинга";
+          art.notice.show = "Пропуск опенинга";
         }
       }
       setShowSkipOpBtn(false);
     };
 
-    // Skip Ending Action -> Jump to Next Episode
+    // Skip Ending Action (Seek to end of ending or next episode from Kodik/AniBoom)
     const handleSkipEnding = () => {
-      if (onNextEpisodeRef.current) {
+      const art = artInstanceRef.current;
+      const st = skipTimingsRef.current;
+      if (art && st.outro_end !== null) {
+        art.currentTime = st.outro_end;
+        if (art.notice) {
+          art.notice.show = "Пропуск эндинга";
+        }
+      } else if (onNextEpisodeRef.current) {
         onNextEpisodeRef.current();
       }
+      setShowSkipEdBtn(false);
     };
 
     // Download Episode Action
@@ -2268,27 +2401,27 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
           className="absolute inset-0 w-full h-full object-contain opacity-0 z-10"
         />
 
-        {/* Dynamic Quick Skip Opening Badge (+85s) */}
-        {skipOpening && showSkipOpBtn && (
+        {/* Dynamic Quick Skip Opening Badge (From AniBoom/Kodik) */}
+        {skipOpening && showSkipOpBtn && skipTimings.end !== null && (
           <div className="absolute bottom-16 left-6 z-30 animate-in fade-in slide-in-from-bottom-2 duration-200">
             <button
               onClick={handleSkipOpening}
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-black/80 hover:bg-[#8B5CF6] text-white border border-white/20 hover:border-[#8B5CF6] font-sans font-bold text-xs shadow-2xl backdrop-blur-md transition-all active:scale-95 cursor-pointer"
             >
               <FastForward className="w-4 h-4 text-[#8B5CF6] group-hover:text-white" />
-              <span>Пропустить опенинг (+85s)</span>
+              <span>Пропустить опенинг</span>
             </button>
           </div>
         )}
 
-        {/* Dynamic Quick Skip Ending Badge (Next Episode) */}
+        {/* Dynamic Quick Skip Ending Badge (From AniBoom/Kodik) */}
         {skipEnding && showSkipEdBtn && (
           <div className="absolute bottom-16 right-6 z-30 animate-in fade-in slide-in-from-bottom-2 duration-200">
             <button
               onClick={handleSkipEnding}
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#8B5CF6] hover:bg-[#7C3AED] text-white border border-[#8B5CF6] font-sans font-bold text-xs shadow-2xl transition-all active:scale-95 cursor-pointer"
             >
-              <span>Следующая серия</span>
+              <span>Пропустить эндинг</span>
               <SkipForward className="w-4 h-4" />
             </button>
           </div>

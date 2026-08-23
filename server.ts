@@ -212,11 +212,34 @@ app.post('/api/vote4k/vote-final', async (c) => {
   }
 });
 
-// API Route for AI Anime Recommendation (Supports DeepSeek and Gemini API)
-app.post('/api/ai/recommend', async (c) => {
+// API Route for AI Anime Recommendation & Chat (Supports DeepSeek and Gemini API)
+async function handleAiChatRequest(c: any) {
   try {
-    const { messages } = await c.req.json();
+    const body = await c.req.json().catch(() => ({}));
+    let rawMessages = body.messages || body.contents;
     
+    if (!rawMessages && body.prompt) {
+      rawMessages = [{ role: 'user', content: body.prompt }];
+    }
+    
+    if (!Array.isArray(rawMessages) || rawMessages.length === 0) {
+      return c.json({ error: 'Сообщение должно быть массивом или содержать текст.' }, 400);
+    }
+
+    const messages = rawMessages.map((m: any) => {
+      let content = '';
+      if (typeof m.content === 'string') {
+        content = m.content;
+      } else if (Array.isArray(m.parts)) {
+        content = m.parts.map((p: any) => p.text || '').join('');
+      } else if (typeof m.text === 'string') {
+        content = m.text;
+      }
+
+      const role = (m.role === 'model' || m.role === 'assistant') ? 'assistant' : 'user';
+      return { role, content };
+    });
+
     const deepseekKey = process.env.DEEPSEEK_API_KEY;
     const geminiKey = process.env.GEMINI_API_KEY;
     
@@ -276,7 +299,7 @@ app.post('/api/ai/recommend', async (c) => {
       }));
       
       const response = await ai.models.generateContent({
-        model: 'gemini-3.5-flash',
+        model: 'gemini-3.7-flash',
         contents: formattedContents,
         config: {
           systemInstruction: systemPrompt,
@@ -287,10 +310,13 @@ app.post('/api/ai/recommend', async (c) => {
       return c.json({ text: response.text || 'Извините, произошла ошибка.' });
     }
   } catch (err: any) {
-    console.error('AI Recommend API Error:', err);
-    return c.json({ error: err.message || 'Ошибка сервера при получении рекомендаций.' }, 500);
+    console.error('AI Chat API Error:', err);
+    return c.json({ error: err.message || 'Ошибка сервера при получении ответа от ИИ.' }, 500);
   }
-});
+}
+
+app.post('/api/ai/chat', handleAiChatRequest);
+app.post('/api/ai/recommend', handleAiChatRequest);
 
 // In-memory cache for anime image URLs & AniList data
 const animeImageCache = new Map<string, { url: string; buffer?: ArrayBuffer; contentType?: string }>();
@@ -3856,57 +3882,40 @@ function extractBalancedObject(str: string): string {
   return str;
 }
 
-async function getKodikSkipButtons(iframeUrl: string, html: string): Promise<any> {
-  const match = html.match(/(?:skip_buttons|skipButtons)\s*[:=]\s*(\{[\s\S]*?\})/i);
-  if (match) {
+async function getAniboomSkipButtons(iframeUrl: string, html: string): Promise<any> {
+  if (!html) return null;
+
+  // 1. Check for JSON structure or object containing skip / skips / skip_buttons / opening / ending
+  const jsonMatch = html.match(/(?:skip_buttons|skipButtons|skips|skip_timings|skipData)\s*[:=]\s*(\{[\s\S]*?\})/i);
+  if (jsonMatch) {
     try {
-      const jsonStr = extractBalancedObject(match[1]);
+      const jsonStr = extractBalancedObject(jsonMatch[1]);
       const data = JSON.parse(jsonStr);
-      
-      if (data && data.ajax && data.id) {
-        const baseUrl = new URL(iframeUrl);
-        const skipUrl = `${baseUrl.protocol}//${baseUrl.host}/skip_buttons`;
-        
-        const response = await fetch(skipUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Referer': iframeUrl
-          },
-          body: new URLSearchParams({ id: String(data.id) }).toString()
-        });
-        
-        if (response.ok) {
-          const skipData = await response.json() as any;
-          return skipData;
-        } else {
-          // GET fallback
-          const getResponse = await fetch(`${skipUrl}?id=${data.id}`, {
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-              'Referer': iframeUrl
-            }
-          });
-          if (getResponse.ok) {
-            const skipData = await getResponse.json() as any;
-            return skipData;
-          }
-        }
-      } else if (data) {
-        return data;
-      }
+      if (data) return data;
     } catch {}
   }
 
-  // Fallback match skip_buttons = { ... }
-  const altMatch = html.match(/(?:skip_buttons|skipButtons)\s*=\s*(\{[\s\S]*?\})/i);
-  if (altMatch) {
-    try {
-      const jsonStr = extractBalancedObject(altMatch[1]);
-      return JSON.parse(jsonStr);
-    } catch {}
+  // 2. Check for "opening":[start, end] and "ending":[start, end] or "op":[start, end] and "ed":[start, end]
+  const opMatch = html.match(/"(?:opening|op|intro)"\s*:\s*\[\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*\]/i);
+  const edMatch = html.match(/"(?:ending|ed|outro)"\s*:\s*\[\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*\]/i);
+
+  if (opMatch || edMatch) {
+    return {
+      intro: opMatch ? { start: parseFloat(opMatch[1]), end: parseFloat(opMatch[2]) } : null,
+      outro: edMatch ? { start: parseFloat(edMatch[1]), end: parseFloat(edMatch[2]) } : null
+    };
   }
+
+  // 3. Check for window.aniboom or player config containing skip parameters
+  const playerMatch = html.match(/skip[_\s]?opening\s*[:=]\s*(\d+(?:\.\d+)?)/i);
+  const playerEndMatch = html.match(/skip[_\s]?ending\s*[:=]\s*(\d+(?:\.\d+)?)/i);
+  if (playerMatch || playerEndMatch) {
+    return {
+      intro: playerMatch ? { start: parseFloat(playerMatch[1]), end: parseFloat(playerMatch[1]) + 85 } : null,
+      outro: playerEndMatch ? { start: parseFloat(playerEndMatch[1]), end: parseFloat(playerEndMatch[1]) + 85 } : null
+    };
+  }
+
   return null;
 }
 
@@ -3924,112 +3933,103 @@ app.options('/api/media/skip-timings', (c) => {
 
 app.get('/api/media/skip-timings', async (c) => {
   const urlParam = c.req.query('url');
-  if (!urlParam) {
-    return c.json({ error: 'url parameter is required' }, 400);
-  }
-
   const animeId = c.req.query('animeId');
   const episode = c.req.query('episode');
 
-  // Priority 1: Fetch via AniSkip if animeId and episode are specified
-  if (animeId && episode) {
+  let normalized = {
+    start: null as number | null,
+    end: null as number | null,
+    outro_start: null as number | null,
+    outro_end: null as number | null
+  };
+
+  let skipButtons: any = null;
+  let providerName = 'none';
+
+  // 1. Try parsing skip timings from Kodik / AniBoom player page
+  if (urlParam) {
+    try {
+      let iframeUrl = urlParam.startsWith('//') ? `https:${urlParam}` : urlParam;
+      const isAniboom = iframeUrl.includes('aniboom') || iframeUrl.includes('ya-ligh');
+      providerName = isAniboom ? 'aniboom' : 'kodik';
+      
+      if (!isAniboom) {
+        iframeUrl = iframeUrl.replace(/(kodik\.info|kodik\.cc|kodik\.biz|kodik\.net|kodik\.tv|kodik\.club|kodik\.site|kodik\.space|kodik\.ru|kodikonline\.com|kodikhd\.club|kodik-api\.com)/g, 'kodikplayer.com');
+      }
+
+      const iframeRes = await fetch(iframeUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+          'Referer': isAniboom ? 'https://aniboom.one/' : 'https://shikimori.one/'
+        }
+      });
+
+      if (iframeRes.ok) {
+        const html = await iframeRes.text();
+        skipButtons = isAniboom ? await getAniboomSkipButtons(iframeUrl, html) : await getKodikSkipButtons(iframeUrl, html);
+        
+        if (skipButtons) {
+          if (typeof skipButtons.start === 'number' && typeof skipButtons.end === 'number') {
+            normalized.start = skipButtons.start;
+            normalized.end = skipButtons.end;
+          }
+          if (skipButtons.intro) {
+            if (typeof skipButtons.intro.start === 'number') normalized.start = skipButtons.intro.start;
+            else if (typeof skipButtons.intro.from === 'number') normalized.start = skipButtons.intro.from;
+            
+            if (typeof skipButtons.intro.end === 'number') normalized.end = skipButtons.intro.end;
+            else if (typeof skipButtons.intro.to === 'number') normalized.end = skipButtons.intro.to;
+          }
+          if (skipButtons.outro) {
+            if (typeof skipButtons.outro.start === 'number') normalized.outro_start = skipButtons.outro.start;
+            else if (typeof skipButtons.outro.from === 'number') normalized.outro_start = skipButtons.outro.from;
+            
+            if (typeof skipButtons.outro.end === 'number') normalized.outro_end = skipButtons.outro.end;
+            else if (typeof skipButtons.outro.to === 'number') normalized.outro_end = skipButtons.outro.to;
+          }
+        }
+      }
+    } catch (err: any) {
+      console.warn('[SkipTimings] Player parse error:', err.message);
+    }
+  }
+
+  // 2. If Kodik / AniBoom is missing intro or outro, fall back to / cross-check with AniSkip
+  if ((normalized.start === null || normalized.outro_start === null) && animeId && episode) {
     try {
       const aniSkipUrl = `https://api.aniskip.com/v2/skip-times/${animeId}/${episode}?types[]=op&types[]=ed&episodeLength=0`;
-      console.log(`[ANISKIP] Fetching timings from: ${aniSkipUrl}`);
-      const aniRes = await fetch(aniSkipUrl);
+      const aniRes = await fetch(aniSkipUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+      });
       if (aniRes.ok) {
         const aniData = await aniRes.json() as any;
         if (aniData && aniData.found && aniData.results) {
           const opResult = aniData.results.find((r: any) => r.skipType === 'op');
           const edResult = aniData.results.find((r: any) => r.skipType === 'ed');
 
-          if (opResult || edResult) {
-            const normalized = {
-              start: opResult?.interval?.startTime ?? null,
-              end: opResult?.interval?.endTime ?? null,
-              outro_start: edResult?.interval?.startTime ?? null,
-              outro_end: edResult?.interval?.endTime ?? null
-            };
-            console.log("[ANISKIP] Successfully loaded timings:", normalized);
-            return c.json({
-              provider: 'aniskip',
-              normalized
-            });
+          if (normalized.start === null && opResult?.interval) {
+            normalized.start = opResult.interval.startTime;
+            normalized.end = opResult.interval.endTime;
           }
+          if (normalized.outro_start === null && edResult?.interval) {
+            normalized.outro_start = edResult.interval.startTime;
+            normalized.outro_end = edResult.interval.endTime;
+          }
+          if (providerName === 'none') providerName = 'aniskip';
         }
       }
     } catch (err: any) {
-      console.warn("[ANISKIP] Timings not found or error occurred, falling back to Kodik:", err.message);
+      console.warn('[ANISKIP] Fetch error:', err.message);
     }
   }
 
-  try {
-    let iframeUrl = urlParam.startsWith('//') ? `https:${urlParam}` : urlParam;
-    iframeUrl = iframeUrl.replace(/(kodik\.info|kodik\.cc|kodik\.biz|kodik\.net|kodik\.tv|kodik\.club|kodik\.site|kodik\.space|kodik\.ru|kodikonline\.com|kodikhd\.club|kodik-api\.com)/g, 'kodikplayer.com');
-    const iframeRes = await fetch(iframeUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-        'Referer': 'https://shikimori.one/'
-      }
-    });
-    if (!iframeRes.ok) {
-      return c.json({ 
-        error: 'Failed to load player page',
-        normalized: {
-          start: null,
-          end: null,
-          outro_start: null,
-          outro_end: null
-        }
-      }, 200);
-    }
-    const html = await iframeRes.text();
-    const skipButtons = await getKodikSkipButtons(iframeUrl, html);
-    
-    // Normalize response for frontend
-    let normalized = {
-      start: null as number | null,
-      end: null as number | null,
-      outro_start: null as number | null,
-      outro_end: null as number | null
-    };
-
-    if (skipButtons) {
-      if (typeof skipButtons.start === 'number' && typeof skipButtons.end === 'number') {
-        normalized.start = skipButtons.start;
-        normalized.end = skipButtons.end;
-      }
-      if (skipButtons.intro) {
-        if (typeof skipButtons.intro.start === 'number') normalized.start = skipButtons.intro.start;
-        else if (typeof skipButtons.intro.from === 'number') normalized.start = skipButtons.intro.from;
-        
-        if (typeof skipButtons.intro.end === 'number') normalized.end = skipButtons.intro.end;
-        else if (typeof skipButtons.intro.to === 'number') normalized.end = skipButtons.intro.to;
-      }
-      if (skipButtons.outro) {
-        if (typeof skipButtons.outro.start === 'number') normalized.outro_start = skipButtons.outro.start;
-        else if (typeof skipButtons.outro.from === 'number') normalized.outro_start = skipButtons.outro.from;
-        
-        if (typeof skipButtons.outro.end === 'number') normalized.outro_end = skipButtons.outro.end;
-        else if (typeof skipButtons.outro.to === 'number') normalized.outro_end = skipButtons.outro.to;
-      }
-    }
-
-    return c.json({
-      skip_buttons: skipButtons,
-      normalized
-    });
-  } catch (err: any) {
-    return c.json({ 
-      error: err.message,
-      normalized: {
-        start: null,
-        end: null,
-        outro_start: null,
-        outro_end: null
-      }
-    }, 200);
-  }
+  return c.json({
+    provider: providerName,
+    skip_buttons: skipButtons,
+    normalized
+  });
 });
 
 app.options('/api/media/segment', (c) => {

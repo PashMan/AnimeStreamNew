@@ -2200,10 +2200,17 @@ const Details: React.FC = () => {
                               navigate(newUrl);
                             } : undefined;
 
+                            const epNumForPlayer = parseInt(paramEpisode || "1") || 1;
+                            const defaultKodikForPlayer = players.find((p) => p.name === "Kodik")?.iframe;
+                            const kodikIframeForPlayer = getResolvedKodikUrl(selectedTranslation, epNumForPlayer, defaultKodikForPlayer, translations);
+                            const aniboomIframeForPlayer = (selectedTranslation as any)?.aniboom_iframe || (selectedTranslation as any)?.iframe;
+                            const currentIframeUrl = kodikIframeForPlayer || aniboomIframeForPlayer || undefined;
+
                             return (
                               <CustomPlayer
                                 ref={nativeVideoRef}
                                 src={customSrc}
+                                iframeUrl={currentIframeUrl}
                                 streamType={resolvedStream?.streamType}
                                 provider={resolvedStream?.provider || (selectedTranslation as any)?.provider}
                                 translationTitle={selectedTranslation?.title}
