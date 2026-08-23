@@ -35,16 +35,18 @@ export const fetchPlayersClientSide = async (shikimoriId: string, title: string,
   // Clear any outdated cache entries in browser storage
   if (typeof window !== 'undefined' && window.localStorage) {
     try {
+      const keysToRemove: string[] = [];
       for (let i = 0; i < localStorage.length; i++) {
         const k = localStorage.key(i);
-        if (k && (k.startsWith('as_cache_balancer_v') || k.startsWith('balancer_v')) && !k.includes('balancer_v12_')) {
-          localStorage.removeItem(k);
+        if (k && (k.startsWith('as_cache_balancer_v') || k.startsWith('balancer_v')) && !k.includes('balancer_v15_')) {
+          keysToRemove.push(k);
         }
       }
+      keysToRemove.forEach(k => localStorage.removeItem(k));
     } catch (_) {}
   }
 
-  const cacheKey = `balancer_v12_${shikimoriId}`;
+  const cacheKey = `balancer_v15_${shikimoriId}`;
   const cached = getFromStorage(cacheKey);
 
   // TTL: 6 hours for balancer data
