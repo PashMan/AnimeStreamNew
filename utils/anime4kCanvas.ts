@@ -114,25 +114,34 @@ export class MobileAnime4KRenderer {
         // 3x3 Sobel edge detection
         float gx = (lTR + 2.0 * lMR + lBR) - (lTL + 2.0 * lML + lBL);
         float gy = (lBL + 2.0 * lBC + lBR) - (lTL + 2.0 * lTC + lTR);
-        float edge = sqrt(gx * gx + gy * gy);
+        float edge = length(vec2(gx, gy));
 
-        // Directional sub-pixel smoothing along contours
-        vec2 dir = normalize(vec2(-gy, gx) + vec2(0.00001));
-        vec3 sPos = texture2D(u_image, v_texCoord + dir * d * 0.5).rgb;
-        vec3 sNeg = texture2D(u_image, v_texCoord - dir * d * 0.5).rgb;
-        vec3 lineSmooth = (cc * 2.0 + sPos + sNeg) * 0.25;
+        if (edge < 0.03) {
+          gl_FragColor = vec4(cc, 1.0);
+          return;
+        }
 
-        // Anti-aliased line refinement
-        float edgeFactor = smoothstep(0.04, 0.22, edge);
-        vec3 refined = mix(cc, lineSmooth, edgeFactor * 0.6);
+        // Anime4K Push-Color Line Thinning
+        vec2 normal = normalize(vec2(gx, gy) + 0.0001);
+        vec3 pNeg = texture2D(u_image, v_texCoord - normal * d * 0.75).rgb;
+        vec3 pPos = texture2D(u_image, v_texCoord + normal * d * 0.75).rgb;
+        
+        float lNeg = luma(pNeg);
+        float lPos = luma(pPos);
 
-        // Subtle contrast-adaptive enhancement
-        vec3 minCol = min(min(min(tl, tc), min(tr, ml)), min(min(mr, bl), min(bc, br)));
-        vec3 maxCol = max(max(max(tl, tc), max(tr, ml)), max(max(mr, bl), max(bc, br)));
-        vec3 sharp = refined + (refined - (tc + bc + ml + mr) * 0.25) * 0.35;
-        vec3 clamped = clamp(sharp, minCol, maxCol);
+        vec3 lineCore = lNeg < lPos ? pNeg : pPos;
+        float minLuma = min(lNeg, lPos);
+        
+        float factor = smoothstep(0.04, 0.35, edge);
+        vec3 sharpenedLine = lCC > minLuma ? mix(cc, lineCore, factor * 0.45) : cc;
 
-        vec3 result = mix(refined, clamped, 0.5);
+        // Anti-aliasing along tangent
+        vec2 tangent = vec2(-normal.y, normal.x);
+        vec3 tPos = texture2D(u_image, v_texCoord + tangent * d * 0.5).rgb;
+        vec3 tNeg = texture2D(u_image, v_texCoord - tangent * d * 0.5).rgb;
+        vec3 smoothedTangent = (sharpenedLine * 2.0 + tPos + tNeg) * 0.25;
+
+        vec3 result = mix(sharpenedLine, smoothedTangent, factor * 0.30);
         gl_FragColor = vec4(clamp(result, 0.0, 1.0), 1.0);
       }
     `;
