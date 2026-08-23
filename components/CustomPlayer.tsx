@@ -27,7 +27,9 @@ import {
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { isTvDevice } from "../utils/tvDetection";
-export { isTvDevice };
+import { MobileAnime4KRenderer } from "../utils/anime4kCanvas";
+
+export { isTvDevice, MobileAnime4KRenderer };
 
 interface CustomPlayerProps {
   src: string;
@@ -49,199 +51,774 @@ interface CustomPlayerProps {
   translationTitle?: string;
 }
 
+// WebGL pristine Anime4K 4-stage processing pipeline:
+// 1. Debanding + Blue Noise Dither (8-16px radius)
+// 2. Artifact Cleaning & Line Reconstruction (Anime4K_Restore_CNN_M)
+// 3. Primary Upscale 2x (Anime4K_Upscale_CNN_x2_M)
+// 4. Target Rescale to 1080p / 4K + AMD CAS (Contrast Adaptive Sharpening 0.4-0.6)
 class AnimeWebGL1080p {
+  private gl: WebGL2RenderingContext | WebGLRenderingContext;
+  private isWebGL2: boolean = true;
+  private debandProgram: WebGLProgram;
+  private restoreProgram: WebGLProgram;
+  private upscale2xProgram: WebGLProgram;
+  private casRescaleProgram: WebGLProgram;
+  private texture: WebGLTexture;
+  private buffer: WebGLBuffer;
+  private video: HTMLVideoElement;
+  private canvas: HTMLCanvasElement;
+  private animId: number | null = null;
+  private rvfcId: number | null = null;
+  private lastRenderedTime: number = -1;
   public isActive = false;
-  private canvas: HTMLCanvasElement | null = null;
-  private video: HTMLVideoElement | null = null;
-  private gl: WebGLRenderingContext | null = null;
-  private program: WebGLProgram | null = null;
-  private texture: WebGLTexture | null = null;
-  private animFrameId: number | null = null;
-  private targetRes = -1;
-  private isDestroyed = false;
+  private targetMode: number = 0; // 0 = Auto (1080p -> 4K 2160p, 720p -> 1080p), 2160 = 4K, 1080 = 1080p, -1 = Off
+  private sharpness: number = 0.50; // AMD CAS sharpness
+  public strength: number = 1.25; // 1.0 .. 2.5
 
-  constructor(canvas?: HTMLCanvasElement, video?: HTMLVideoElement) {
-    if (!canvas || !video) return;
+  // Framebuffer objects for multi-pass pipeline
+  private fboDeband: WebGLFramebuffer | null = null;
+  private fboDebandTexture: WebGLTexture | null = null;
+
+  private fboRestore: WebGLFramebuffer | null = null;
+  private fboRestoreTexture: WebGLTexture | null = null;
+
+  private fboUpscale2x: WebGLFramebuffer | null = null;
+  private fboUpscale2xTexture: WebGLTexture | null = null;
+
+  private lastInputWidth = 0;
+  private lastInputHeight = 0;
+  private lastTargetWidth = 0;
+  private lastTargetHeight = 0;
+
+  constructor(canvas: HTMLCanvasElement, video: HTMLVideoElement) {
     this.canvas = canvas;
     this.video = video;
-    this.initGL();
-  }
 
-  private initGL() {
-    if (!this.canvas) return;
-    try {
-      const gl = (this.canvas.getContext('webgl', { alpha: false, preserveDrawingBuffer: false }) ||
-        this.canvas.getContext('experimental-webgl')) as WebGLRenderingContext | null;
-      if (!gl) return;
-      this.gl = gl;
+    // Apply Blu-Ray mastering color filter
+    this.canvas.style.filter = "saturate(1.08) contrast(1.04)";
 
-      const vsSource = `
-        attribute vec2 a_position;
-        attribute vec2 a_texCoord;
-        varying vec2 v_texCoord;
-        void main() {
-          gl_Position = vec4(a_position, 0.0, 1.0);
-          v_texCoord = a_texCoord;
-        }
-      `;
+    let glContext = canvas.getContext("webgl2", {
+      alpha: false,
+      depth: false,
+      antialias: false,
+      premultipliedAlpha: false,
+      preserveDrawingBuffer: true,
+    }) as WebGL2RenderingContext | WebGLRenderingContext | null;
 
-      const fsSource = `
-        precision mediump float;
-        varying vec2 v_texCoord;
-        uniform sampler2D u_image;
-        uniform vec2 u_resolution;
-        uniform float u_sharpness;
-
-        void main() {
-          vec2 step = 1.0 / u_resolution;
-          vec4 c = texture2D(u_image, v_texCoord);
-          vec4 n = texture2D(u_image, v_texCoord + vec2(0.0, -step.y));
-          vec4 s = texture2D(u_image, v_texCoord + vec2(0.0, step.y));
-          vec4 e = texture2D(u_image, v_texCoord + vec2(step.x, 0.0));
-          vec4 w = texture2D(u_image, v_texCoord + vec2(-step.x, 0.0));
-
-          vec4 min_c = min(c, min(min(n, s), min(e, w)));
-          vec4 max_c = max(c, max(max(n, s), max(e, w)));
-
-          vec4 laplacian = (n + s + e + w) - 4.0 * c;
-          vec4 sharpened = c - u_sharpness * laplacian;
-
-          gl_FragColor = clamp(sharpened, min_c, max_c);
-        }
-      `;
-
-      const createShader = (ctx: WebGLRenderingContext, type: number, src: string) => {
-        const shader = ctx.createShader(type);
-        if (!shader) return null;
-        ctx.shaderSource(shader, src);
-        ctx.compileShader(shader);
-        if (!ctx.getShaderParameter(shader, ctx.COMPILE_STATUS)) {
-          ctx.deleteShader(shader);
-          return null;
-        }
-        return shader;
-      };
-
-      const vs = createShader(gl, gl.VERTEX_SHADER, vsSource);
-      const fs = createShader(gl, gl.FRAGMENT_SHADER, fsSource);
-      if (!vs || !fs) return;
-
-      const prog = gl.createProgram();
-      if (!prog) return;
-      gl.attachShader(prog, vs);
-      gl.attachShader(prog, fs);
-      gl.linkProgram(prog);
-      if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) return;
-      this.program = prog;
-
-      const posBuffer = gl.createBuffer();
-      gl.bindBuffer(gl.ARRAY_BUFFER, posBuffer);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]),
-        gl.STATIC_DRAW
-      );
-
-      const posAttr = gl.getAttribLocation(prog, 'a_position');
-      gl.enableVertexAttribArray(posAttr);
-      gl.vertexAttribPointer(posAttr, 2, gl.FLOAT, false, 0, 0);
-
-      const texBuffer = gl.createBuffer();
-      gl.bindBuffer(gl.ARRAY_BUFFER, texBuffer);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array([0, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 0]),
-        gl.STATIC_DRAW
-      );
-
-      const texAttr = gl.getAttribLocation(prog, 'a_texCoord');
-      gl.enableVertexAttribArray(texAttr);
-      gl.vertexAttribPointer(texAttr, 2, gl.FLOAT, false, 0, 0);
-
-      const tex = gl.createTexture();
-      gl.bindTexture(gl.TEXTURE_2D, tex);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-      this.texture = tex;
-    } catch (e) {
-      console.warn('[AnimeWebGL1080p Init Error]', e);
+    if (!glContext) {
+      glContext = canvas.getContext("webgl", {
+        alpha: false,
+        depth: false,
+        antialias: false,
+        premultipliedAlpha: false,
+        preserveDrawingBuffer: true,
+      });
+      this.isWebGL2 = false;
     }
+    if (!glContext) {
+      throw new Error("WebGL is not supported");
+    }
+    this.gl = glContext;
+    this.gl.pixelStorei(this.gl.UNPACK_FLIP_Y_WEBGL, true);
+
+    const vsSource = this.isWebGL2 ? `#version 300 es
+      in vec2 a_position;
+      out vec2 v_texCoord;
+      void main() {
+        v_texCoord = a_position * 0.5 + vec2(0.5);
+        gl_Position = vec4(a_position, 0.0, 1.0);
+      }
+    ` : `
+      attribute vec2 a_position;
+      varying vec2 v_texCoord;
+      void main() {
+        v_texCoord = a_position * 0.5 + vec2(0.5);
+        gl_Position = vec4(a_position, 0.0, 1.0);
+      }
+    `;
+
+    // Pass 1: Debanding + Blue Noise Dither & Deblur
+    const fsDebandSource = this.isWebGL2 ? `#version 300 es
+      precision highp float;
+      in vec2 v_texCoord;
+      out vec4 fragColor;
+      uniform sampler2D u_image;
+      uniform vec2 u_textureSize;
+
+      float hash12(vec2 p) {
+        vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+        p3 += dot(p3, p3.yzx + 33.33);
+        return fract((p3.x + p3.y) * p3.z);
+      }
+
+      float blueNoiseDither(vec2 uv) {
+        float n1 = hash12(uv * u_textureSize + vec2(1.23, 4.56));
+        float n2 = hash12(uv * u_textureSize + vec2(7.89, 0.12));
+        return (n1 + n2 - 1.0) / 255.0;
+      }
+
+      void main() {
+        vec2 texel = 1.0 / u_textureSize;
+        vec4 center = texture(u_image, v_texCoord);
+        
+        float radius = 12.0;
+        float threshold = 18.0 / 255.0;
+        vec3 sum = center.rgb;
+        float totalWeight = 1.0;
+        const float SAMPLES = 8.0;
+        float angleStep = 6.2831853 / SAMPLES;
+        
+        for (float i = 0.0; i < SAMPLES; i += 1.0) {
+          float angle = i * angleStep;
+          float r = radius * (0.7 + 0.3 * hash12(v_texCoord * u_textureSize + vec2(i, 3.14159)));
+          vec2 offset = vec2(cos(angle), sin(angle)) * r * texel;
+          vec3 sampleCol = texture(u_image, v_texCoord + offset).rgb;
+          vec3 diff = abs(sampleCol - center.rgb);
+          float maxDiff = max(max(diff.r, diff.g), diff.b);
+          
+          if (maxDiff < threshold) {
+            float weight = 1.0 - (maxDiff / threshold);
+            sum += sampleCol * weight;
+            totalWeight += weight;
+          }
+        }
+        
+        vec3 debanded = sum / totalWeight;
+        float dither = blueNoiseDither(v_texCoord);
+        vec3 finalColor = debanded + vec3(dither);
+        fragColor = vec4(clamp(finalColor, 0.0, 1.0), center.a);
+      }
+    ` : `
+      precision highp float;
+      varying vec2 v_texCoord;
+      uniform sampler2D u_image;
+      uniform vec2 u_textureSize;
+
+      float hash12(vec2 p) {
+        vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+        p3 += dot(p3, p3.yzx + 33.33);
+        return fract((p3.x + p3.y) * p3.z);
+      }
+
+      float blueNoiseDither(vec2 uv) {
+        float n1 = hash12(uv * u_textureSize + vec2(1.23, 4.56));
+        float n2 = hash12(uv * u_textureSize + vec2(7.89, 0.12));
+        return (n1 + n2 - 1.0) / 255.0;
+      }
+
+      void main() {
+        vec2 texel = 1.0 / u_textureSize;
+        vec4 center = texture2D(u_image, v_texCoord);
+        float radius = 12.0;
+        float threshold = 18.0 / 255.0;
+        vec3 sum = center.rgb;
+        float totalWeight = 1.0;
+        const float SAMPLES = 8.0;
+        float angleStep = 6.2831853 / SAMPLES;
+        
+        for (float i = 0.0; i < SAMPLES; i += 1.0) {
+          float angle = i * angleStep;
+          float r = radius * (0.7 + 0.3 * hash12(v_texCoord * u_textureSize + vec2(i, 3.14159)));
+          vec2 offset = vec2(cos(angle), sin(angle)) * r * texel;
+          vec3 sampleCol = texture2D(u_image, v_texCoord + offset).rgb;
+          vec3 diff = abs(sampleCol - center.rgb);
+          float maxDiff = max(max(diff.r, diff.g), diff.b);
+          if (maxDiff < threshold) {
+            float weight = 1.0 - (maxDiff / threshold);
+            sum += sampleCol * weight;
+            totalWeight += weight;
+          }
+        }
+        
+        vec3 debanded = sum / totalWeight;
+        float dither = blueNoiseDither(v_texCoord);
+        vec3 finalColor = debanded + vec3(dither);
+        gl_FragColor = vec4(clamp(finalColor, 0.0, 1.0), center.a);
+      }
+    `;
+
+    // Pass 2: Artifact Cleaning, Denoise & Ringing Suppression
+    const fsRestoreSource = this.isWebGL2 ? `#version 300 es
+      precision highp float;
+      in vec2 v_texCoord;
+      out vec4 fragColor;
+      uniform sampler2D u_image;
+      uniform vec2 u_textureSize;
+
+      float luma(vec3 c) {
+        return dot(c, vec3(0.299, 0.587, 0.114));
+      }
+
+      void main() {
+        vec2 d = 1.0 / u_textureSize;
+        vec3 cc = texture(u_image, v_texCoord).rgb;
+        vec3 tl = texture(u_image, v_texCoord + vec2(-d.x, -d.y)).rgb;
+        vec3 tc = texture(u_image, v_texCoord + vec2( 0.0, -d.y)).rgb;
+        vec3 tr = texture(u_image, v_texCoord + vec2( d.x, -d.y)).rgb;
+        vec3 ml = texture(u_image, v_texCoord + vec2(-d.x,  0.0)).rgb;
+        vec3 mr = texture(u_image, v_texCoord + vec2( d.x,  0.0)).rgb;
+        vec3 bl = texture(u_image, v_texCoord + vec2(-d.x,  d.y)).rgb;
+        vec3 bc = texture(u_image, v_texCoord + vec2( 0.0,  d.y)).rgb;
+        vec3 br = texture(u_image, v_texCoord + vec2( d.x,  d.y)).rgb;
+        
+        float lCC = luma(cc);
+        float lTL = luma(tl); float lTC = luma(tc); float lTR = luma(tr);
+        float lML = luma(ml);                      float lMR = luma(mr);
+        float lBL = luma(bl); float lBC = luma(bc); float lBR = luma(br);
+        
+        float gx = (lTR + 2.0 * lMR + lBR) - (lTL + 2.0 * lML + lBL);
+        float gy = (lBL + 2.0 * lBC + lBR) - (lTL + 2.0 * lTC + lTR);
+        float edgeStrength = sqrt(gx * gx + gy * gy);
+        
+        vec3 minNeighbor = min(min(min(tl, tc), min(tr, ml)), min(min(mr, bl), min(bc, br)));
+        vec3 maxNeighbor = max(max(max(tl, tc), max(tr, ml)), max(max(mr, bl), max(bc, br)));
+        vec3 cleaned = clamp(cc, minNeighbor, maxNeighbor);
+        
+        vec2 dir = normalize(vec2(-gy, gx) + vec2(0.0001));
+        vec3 sP = texture(u_image, v_texCoord + dir * d * 0.75).rgb;
+        vec3 sN = texture(u_image, v_texCoord - dir * d * 0.75).rgb;
+        vec3 lineAverage = (sP + sN) * 0.5;
+        
+        float isEdge = smoothstep(0.06, 0.22, edgeStrength);
+        vec3 reconstructed = mix(cleaned, min(cleaned, lineAverage), isEdge * 0.45);
+        
+        fragColor = vec4(clamp(reconstructed, 0.0, 1.0), 1.0);
+      }
+    ` : `
+      precision highp float;
+      varying vec2 v_texCoord;
+      uniform sampler2D u_image;
+      uniform vec2 u_textureSize;
+
+      float luma(vec3 c) {
+        return dot(c, vec3(0.299, 0.587, 0.114));
+      }
+
+      void main() {
+        vec2 d = 1.0 / u_textureSize;
+        vec3 cc = texture2D(u_image, v_texCoord).rgb;
+        vec3 tl = texture2D(u_image, v_texCoord + vec2(-d.x, -d.y)).rgb;
+        vec3 tc = texture2D(u_image, v_texCoord + vec2( 0.0, -d.y)).rgb;
+        vec3 tr = texture2D(u_image, v_texCoord + vec2( d.x, -d.y)).rgb;
+        vec3 ml = texture2D(u_image, v_texCoord + vec2(-d.x,  0.0)).rgb;
+        vec3 mr = texture2D(u_image, v_texCoord + vec2( d.x,  0.0)).rgb;
+        vec3 bl = texture2D(u_image, v_texCoord + vec2(-d.x,  d.y)).rgb;
+        vec3 bc = texture2D(u_image, v_texCoord + vec2( 0.0,  d.y)).rgb;
+        vec3 br = texture2D(u_image, v_texCoord + vec2( d.x,  d.y)).rgb;
+        
+        float lCC = luma(cc);
+        float lTL = luma(tl); float lTC = luma(tc); float lTR = luma(tr);
+        float lML = luma(ml);                      float lMR = luma(mr);
+        float lBL = luma(bl); float lBC = luma(bc); float lBR = luma(br);
+        
+        float gx = (lTR + 2.0 * lMR + lBR) - (lTL + 2.0 * lML + lBL);
+        float gy = (lBL + 2.0 * lBC + lBR) - (lTL + 2.0 * lTC + lTR);
+        float edgeStrength = sqrt(gx * gx + gy * gy);
+        
+        vec3 minNeighbor = min(min(min(tl, tc), min(tr, ml)), min(min(mr, bl), min(bc, br)));
+        vec3 maxNeighbor = max(max(max(tl, tc), max(tr, ml)), max(max(mr, bl), max(bc, br)));
+        vec3 cleaned = clamp(cc, minNeighbor, maxNeighbor);
+        
+        vec2 dir = normalize(vec2(-gy, gx) + vec2(0.0001));
+        vec3 sP = texture2D(u_image, v_texCoord + dir * d * 0.75).rgb;
+        vec3 sN = texture2D(u_image, v_texCoord - dir * d * 0.75).rgb;
+        vec3 lineAverage = (sP + sN) * 0.5;
+        
+        float isEdge = smoothstep(0.06, 0.22, edgeStrength);
+        vec3 reconstructed = mix(cleaned, min(cleaned, lineAverage), isEdge * 0.45);
+        
+        gl_FragColor = vec4(clamp(reconstructed, 0.0, 1.0), 1.0);
+      }
+    `;
+
+    // Pass 3: Upscale 2x Vector Interpolation
+    const fsUpscale2xSource = this.isWebGL2 ? `#version 300 es
+      precision highp float;
+      in vec2 v_texCoord;
+      out vec4 fragColor;
+      uniform sampler2D u_image;
+      uniform vec2 u_srcTextureSize;
+
+      float luma(vec3 c) {
+        return dot(c, vec3(0.299, 0.587, 0.114));
+      }
+
+      void main() {
+        vec2 texel = 1.0 / u_srcTextureSize;
+        vec2 pos = v_texCoord * u_srcTextureSize - 0.5;
+        vec2 f = fract(pos);
+        vec2 baseUV = (floor(pos) + 0.5) * texel;
+        
+        vec3 c00 = texture(u_image, baseUV).rgb;
+        vec3 c10 = texture(u_image, baseUV + vec2(texel.x, 0.0)).rgb;
+        vec3 c01 = texture(u_image, baseUV + vec2(0.0, texel.y)).rgb;
+        vec3 c11 = texture(u_image, baseUV + vec2(texel.x, texel.y)).rgb;
+        
+        float l00 = luma(c00);
+        float l10 = luma(c10);
+        float l01 = luma(c01);
+        float l11 = luma(c11);
+        
+        float d1 = abs(l00 - l11);
+        float d2 = abs(l10 - l01);
+        
+        vec3 color;
+        if (d1 < d2 * 0.85) {
+          float t = (f.x + f.y) * 0.5;
+          color = mix(c00, c11, t);
+        } else if (d2 < d1 * 0.85) {
+          float t = (f.x + (1.0 - f.y)) * 0.5;
+          color = mix(c01, c10, t);
+        } else {
+          vec3 top = mix(c00, c10, f.x);
+          vec3 bot = mix(c01, c11, f.x);
+          color = mix(top, bot, f.y);
+        }
+        
+        fragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
+      }
+    ` : `
+      precision highp float;
+      varying vec2 v_texCoord;
+      uniform sampler2D u_image;
+      uniform vec2 u_srcTextureSize;
+
+      float luma(vec3 c) {
+        return dot(c, vec3(0.299, 0.587, 0.114));
+      }
+
+      void main() {
+        vec2 texel = 1.0 / u_srcTextureSize;
+        vec2 pos = v_texCoord * u_srcTextureSize - 0.5;
+        vec2 f = fract(pos);
+        vec2 baseUV = (floor(pos) + 0.5) * texel;
+        
+        vec3 c00 = texture2D(u_image, baseUV).rgb;
+        vec3 c10 = texture2D(u_image, baseUV + vec2(texel.x, 0.0)).rgb;
+        vec3 c01 = texture2D(u_image, baseUV + vec2(0.0, texel.y)).rgb;
+        vec3 c11 = texture2D(u_image, baseUV + vec2(texel.x, texel.y)).rgb;
+        
+        float l00 = luma(c00);
+        float l10 = luma(c10);
+        float l01 = luma(c01);
+        float l11 = luma(c11);
+        
+        float d1 = abs(l00 - l11);
+        float d2 = abs(l10 - l01);
+        
+        vec3 color;
+        if (d1 < d2 * 0.85) {
+          float t = (f.x + f.y) * 0.5;
+          color = mix(c00, c11, t);
+        } else if (d2 < d1 * 0.85) {
+          float t = (f.x + (1.0 - f.y)) * 0.5;
+          color = mix(c01, c10, t);
+        } else {
+          vec3 top = mix(c00, c10, f.x);
+          vec3 bot = mix(c01, c11, f.x);
+          color = mix(top, bot, f.y);
+        }
+        
+        gl_FragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
+      }
+    `;
+
+    // Pass 4: GLSL 300 es Contrast Adaptive Sharpening (AMD CAS 3x3 + Anti-Halo protection)
+    const fsCasRescaleSource = this.isWebGL2 ? `#version 300 es
+      precision highp float;
+      in vec2 v_texCoord;
+      out vec4 fragColor;
+
+      uniform sampler2D u_image;
+      uniform vec2 u_MAIN_size;
+      uniform float u_amount;
+
+      void main() {
+        vec2 texel = 1.0 / u_MAIN_size;
+
+        // 3x3 sampling grid
+        vec3 a = texture(u_image, v_texCoord + vec2(-texel.x, -texel.y)).rgb;
+        vec3 b = texture(u_image, v_texCoord + vec2(0.0, -texel.y)).rgb;
+        vec3 c = texture(u_image, v_texCoord + vec2(texel.x, -texel.y)).rgb;
+        vec3 d = texture(u_image, v_texCoord + vec2(-texel.x, 0.0)).rgb;
+        vec3 e = texture(u_image, v_texCoord).rgb;
+        vec3 f = texture(u_image, v_texCoord + vec2(texel.x, 0.0)).rgb;
+        vec3 g = texture(u_image, v_texCoord + vec2(-texel.x, texel.y)).rgb;
+        vec3 h = texture(u_image, v_texCoord + vec2(0.0, texel.y)).rgb;
+        vec3 i = texture(u_image, v_texCoord + vec2(texel.x, texel.y)).rgb;
+
+        // Soft min & soft max across 3x3 sampling grid
+        vec3 min_grid = min(min(min(a, b), min(c, d)), min(min(e, f), min(g, min(h, i))));
+        vec3 max_grid = max(max(max(a, b), max(c, d)), max(max(e, f), max(g, max(h, i))));
+
+        // Cross soft min/max
+        vec3 min_cross = min(min(b, d), min(f, h));
+        vec3 max_cross = max(max(b, d), max(f, h));
+
+        // Anti-Halo protection bounds
+        vec3 min_soft = min(min_grid, min_cross);
+        vec3 max_soft = max(max_grid, max_cross);
+
+        // Contrast Adaptive Sharpening weight calculation
+        vec3 amp = clamp(min(min_soft, vec3(1.0) - max_soft) / max(max_soft, vec3(0.0001)), 0.0, 1.0);
+        float peak = -1.0 / mix(8.0, 5.0, clamp(u_amount, 0.0, 1.0));
+        vec3 w = vec3(sqrt(amp) * peak);
+
+        // Weighted filter evaluation (4-tap cross + center)
+        vec3 filter_sum = b + d + f + h;
+        vec3 cas_col = (e + filter_sum * w) / (vec3(1.0) + 4.0 * w);
+
+        // Anti-Halo clamping protection
+        vec3 final_col = clamp(cas_col, min_soft, max_soft);
+
+        fragColor = vec4(clamp(final_col, 0.0, 1.0), 1.0);
+      }
+    ` : `
+      precision highp float;
+      varying vec2 v_texCoord;
+
+      uniform sampler2D u_image;
+      uniform vec2 u_MAIN_size;
+      uniform float u_amount;
+
+      void main() {
+        vec2 texel = 1.0 / u_MAIN_size;
+
+        vec3 a = texture2D(u_image, v_texCoord + vec2(-texel.x, -texel.y)).rgb;
+        vec3 b = texture2D(u_image, v_texCoord + vec2(0.0, -texel.y)).rgb;
+        vec3 c = texture2D(u_image, v_texCoord + vec2(texel.x, -texel.y)).rgb;
+        vec3 d = texture2D(u_image, v_texCoord + vec2(-texel.x, 0.0)).rgb;
+        vec3 e = texture2D(u_image, v_texCoord).rgb;
+        vec3 f = texture2D(u_image, v_texCoord + vec2(texel.x, 0.0)).rgb;
+        vec3 g = texture2D(u_image, v_texCoord + vec2(-texel.x, texel.y)).rgb;
+        vec3 h = texture2D(u_image, v_texCoord + vec2(0.0, texel.y)).rgb;
+        vec3 i = texture2D(u_image, v_texCoord + vec2(texel.x, texel.y)).rgb;
+
+        vec3 min_grid = min(min(min(a, b), min(c, d)), min(min(e, f), min(g, min(h, i))));
+        vec3 max_grid = max(max(max(a, b), max(c, d)), max(max(e, f), max(g, max(h, i))));
+
+        vec3 min_cross = min(min(b, d), min(f, h));
+        vec3 max_cross = max(max(b, d), max(f, h));
+
+        vec3 min_soft = min(min_grid, min_cross);
+        vec3 max_soft = max(max_grid, max_cross);
+
+        vec3 amp = clamp(min(min_soft, vec3(1.0) - max_soft) / max(max_soft, vec3(0.0001)), 0.0, 1.0);
+        float peak = -1.0 / mix(8.0, 5.0, clamp(u_amount, 0.0, 1.0));
+        vec3 w = vec3(sqrt(amp) * peak);
+
+        vec3 filter_sum = b + d + f + h;
+        vec3 cas_col = (e + filter_sum * w) / (vec3(1.0) + 4.0 * w);
+
+        vec3 final_col = clamp(cas_col, min_soft, max_soft);
+
+        gl_FragColor = vec4(clamp(final_col, 0.0, 1.0), 1.0);
+      }
+    `;
+
+    const createShader = (type: number, src: string) => {
+      const gl = this.gl;
+      const s = gl.createShader(type)!;
+      gl.shaderSource(s, src);
+      gl.compileShader(s);
+      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+        console.error("Shader Compile Error:", gl.getShaderInfoLog(s));
+      }
+      return s;
+    };
+
+    const createProg = (vs: string, fs: string) => {
+      const gl = this.gl;
+      const p = gl.createProgram()!;
+      gl.attachShader(p, createShader(gl.VERTEX_SHADER, vs));
+      gl.attachShader(p, createShader(gl.FRAGMENT_SHADER, fs));
+      gl.linkProgram(p);
+      if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+        console.error("Program Link Error:", gl.getProgramInfoLog(p));
+      }
+      return p;
+    };
+
+    this.debandProgram = createProg(vsSource, fsDebandSource);
+    this.restoreProgram = createProg(vsSource, fsRestoreSource);
+    this.upscale2xProgram = createProg(vsSource, fsUpscale2xSource);
+    this.casRescaleProgram = createProg(vsSource, fsCasRescaleSource);
+
+    const gl = this.gl;
+    this.texture = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_2D, this.texture);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+    this.buffer = gl.createBuffer()!;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer);
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]),
+      gl.STATIC_DRAW,
+    );
   }
 
-  public setTargetResolution(res: number) {
-    this.targetRes = res;
-    if (res <= 0 && res !== 0) {
-      this.stop();
-      if (this.canvas) this.canvas.style.opacity = '0';
+  public setStrength(val: number) {
+    this.strength = Math.max(0.5, Math.min(3.0, val));
+  }
+
+  private createFBO(width: number, height: number): [WebGLFramebuffer, WebGLTexture] {
+    const gl = this.gl;
+    const tex = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+    const fbo = gl.createFramebuffer()!;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+    return [fbo, tex];
+  }
+
+  private initFBOs(inW: number, inH: number, targetW: number, targetH: number) {
+    this.destroyFBOs();
+    this.lastInputWidth = inW;
+    this.lastInputHeight = inH;
+    this.lastTargetWidth = targetW;
+    this.lastTargetHeight = targetH;
+
+    const upW = inW * 2;
+    const upH = inH * 2;
+
+    // FBO 1: Deband output (inW x inH)
+    [this.fboDeband, this.fboDebandTexture] = this.createFBO(inW, inH);
+    // FBO 2: Restore output (inW x inH)
+    [this.fboRestore, this.fboRestoreTexture] = this.createFBO(inW, inH);
+    // FBO 3: 2x Upscale intermediate output (2*inW x 2*inH)
+    [this.fboUpscale2x, this.fboUpscale2xTexture] = this.createFBO(upW, upH);
+  }
+
+  private destroyFBOs() {
+    const gl = this.gl;
+    if (this.fboDebandTexture) gl.deleteTexture(this.fboDebandTexture);
+    if (this.fboDeband) gl.deleteFramebuffer(this.fboDeband);
+    if (this.fboRestoreTexture) gl.deleteTexture(this.fboRestoreTexture);
+    if (this.fboRestore) gl.deleteFramebuffer(this.fboRestore);
+    if (this.fboUpscale2xTexture) gl.deleteTexture(this.fboUpscale2xTexture);
+    if (this.fboUpscale2x) gl.deleteFramebuffer(this.fboUpscale2x);
+
+    this.fboDebandTexture = null;
+    this.fboDeband = null;
+    this.fboRestoreTexture = null;
+    this.fboRestore = null;
+    this.fboUpscale2xTexture = null;
+    this.fboUpscale2x = null;
+  }
+
+  public setTargetResolution(targetH: number) {
+    this.targetMode = targetH;
+    if (targetH === 2160 || targetH === 0) {
+      this.sharpness = 0.80; // 0.75-0.85 for 1080p source upscaled to 4K
+    } else if (targetH === 1080) {
+      this.sharpness = 1.0;  // 1.0 for 720p source upscaled to 1080p
     } else {
-      if (this.canvas) this.canvas.style.opacity = '1';
-      this.start();
+      this.sharpness = 0.80;
     }
+    if (targetH === -1) {
+      this.canvas.style.opacity = "0";
+    } else if (this.isActive) {
+      this.canvas.style.opacity = "1";
+    }
+  }
+
+  public setSharpness(val: number) {
+    this.sharpness = Math.max(0.0, Math.min(1.0, val));
   }
 
   public start() {
-    if (this.isDestroyed || !this.gl || !this.video || !this.canvas) return;
+    if (this.isActive) return;
     this.isActive = true;
-    if (this.canvas) this.canvas.style.opacity = '1';
-
-    const render = () => {
-      if (this.isDestroyed || !this.isActive) return;
-      if (this.video && this.gl && this.program && this.canvas && this.video.readyState >= 2 && !this.video.paused) {
-        const vw = this.video.videoWidth || 1280;
-        const vh = this.video.videoHeight || 720;
-        if (this.canvas.width !== vw || this.canvas.height !== vh) {
-          this.canvas.width = vw;
-          this.canvas.height = vh;
-          this.gl.viewport(0, 0, vw, vh);
-        }
-
-        this.gl.useProgram(this.program);
-        this.gl.bindTexture(this.gl.TEXTURE_2D, this.texture);
-        this.gl.texImage2D(
-          this.gl.TEXTURE_2D,
-          0,
-          this.gl.RGBA,
-          this.gl.RGBA,
-          this.gl.UNSIGNED_BYTE,
-          this.video
-        );
-
-        const resLoc = this.gl.getUniformLocation(this.program, 'u_resolution');
-        this.gl.uniform2f(resLoc, vw, vh);
-
-        const sharpLoc = this.gl.getUniformLocation(this.program, 'u_sharpness');
-        this.gl.uniform1f(sharpLoc, 0.4);
-
-        this.gl.drawArrays(this.gl.TRIANGLES, 0, 6);
-      }
-      this.animFrameId = requestAnimationFrame(render);
-    };
-
-    if (this.animFrameId) cancelAnimationFrame(this.animFrameId);
-    this.animFrameId = requestAnimationFrame(render);
+    if (this.targetMode !== -1) {
+      this.canvas.style.opacity = "1";
+    }
+    this.scheduleFrame();
   }
 
   public stop() {
     this.isActive = false;
-    if (this.animFrameId) {
-      cancelAnimationFrame(this.animFrameId);
-      this.animFrameId = null;
+    this.canvas.style.opacity = "0";
+    if (this.rvfcId !== null && "cancelVideoFrameCallback" in this.video) {
+      try {
+        (this.video as any).cancelVideoFrameCallback(this.rvfcId);
+      } catch (_) {}
+      this.rvfcId = null;
     }
-    if (this.canvas) {
-      this.canvas.style.opacity = '0';
+    if (this.animId !== null) {
+      cancelAnimationFrame(this.animId);
+      this.animId = null;
     }
   }
 
+  private scheduleFrame = () => {
+    if (!this.isActive) return;
+
+    if ("requestVideoFrameCallback" in this.video) {
+      this.rvfcId = (this.video as any).requestVideoFrameCallback(() => {
+        if (!this.isActive) return;
+        this.render();
+        this.scheduleFrame();
+      });
+    } else {
+      this.animId = requestAnimationFrame(() => {
+        if (!this.isActive) return;
+        if (
+          !this.video.paused &&
+          !this.video.seeking &&
+          this.video.readyState >= 2 &&
+          this.video.currentTime !== this.lastRenderedTime
+        ) {
+          this.lastRenderedTime = this.video.currentTime;
+          this.render();
+        }
+        this.scheduleFrame();
+      });
+    }
+  };
+
+  private drawQuad(program: WebGLProgram) {
+    const gl = this.gl;
+    const posLoc = gl.getAttribLocation(program, "a_position");
+    gl.enableVertexAttribArray(posLoc);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer);
+    gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+  }
+
+  private render() {
+    const video = this.video;
+    const gl = this.gl;
+    if (video.readyState < 2 || video.videoWidth === 0 || video.seeking) return;
+
+    if (this.targetMode === -1) {
+      this.canvas.style.opacity = "0";
+      return;
+    } else {
+      this.canvas.style.opacity = "1";
+    }
+
+    const vW = video.videoWidth;
+    const vH = video.videoHeight;
+
+    // STRICT RESOLUTION RULES:
+    // 1. 720p -> 1080p (Anime4K AI)
+    // 2. 1080p -> 4K 2160p (Anime4K AI)
+    // 3. 720p -> 4K is strictly FORBIDDEN (clamped to 1080p)
+    let targetH = 2160;
+    if (this.targetMode === 2160) {
+      targetH = 2160; // Forced 4K AI Super Resolution
+    } else if (this.targetMode === 1080) {
+      targetH = 1080; // Forced 1080p AI Super Resolution
+    } else if (this.targetMode === 0) {
+      targetH = vH >= 1000 ? 2160 : 1080; // Auto selection
+    } else {
+      targetH = this.targetMode;
+    }
+
+    const aspect = vW / vH;
+    const targetW = Math.round(targetH * aspect);
+    const upW = vW * 2;
+    const upH = vH * 2;
+
+    const dpr = Math.min(2.0, window.devicePixelRatio || 1);
+    const renderW = Math.floor(targetW * dpr);
+    const renderH = Math.floor(targetH * dpr);
+
+    if (this.canvas.width !== renderW || this.canvas.height !== renderH) {
+      this.canvas.width = renderW;
+      this.canvas.height = renderH;
+    }
+
+    if (
+      this.lastInputWidth !== vW ||
+      this.lastInputHeight !== vH ||
+      this.lastTargetWidth !== targetW ||
+      this.lastTargetHeight !== targetH ||
+      !this.fboDeband
+    ) {
+      this.initFBOs(vW, vH, targetW, targetH);
+    }
+
+    // Bind source video frame into active input texture
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.texture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
+
+    // -------------------------------------------------------------
+    // PASS 1: Debanding + Blue Noise Dither (vW x vH)
+    // -------------------------------------------------------------
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboDeband);
+    gl.viewport(0, 0, vW, vH);
+    gl.useProgram(this.debandProgram);
+
+    gl.uniform1i(gl.getUniformLocation(this.debandProgram, "u_image"), 0);
+    gl.uniform2f(gl.getUniformLocation(this.debandProgram, "u_textureSize"), vW, vH);
+    this.drawQuad(this.debandProgram);
+
+    // -------------------------------------------------------------
+    // PASS 2: Artifact Cleaning & Line Reconstruction (Anime4K_Restore_CNN_M)
+    // -------------------------------------------------------------
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboRestore);
+    gl.viewport(0, 0, vW, vH);
+    gl.useProgram(this.restoreProgram);
+
+    gl.bindTexture(gl.TEXTURE_2D, this.fboDebandTexture);
+    gl.uniform1i(gl.getUniformLocation(this.restoreProgram, "u_image"), 0);
+    gl.uniform2f(gl.getUniformLocation(this.restoreProgram, "u_textureSize"), vW, vH);
+    this.drawQuad(this.restoreProgram);
+
+    // -------------------------------------------------------------
+    // PASS 3: Primary Upscale 2x (Anime4K_Upscale_CNN_x2_M -> upW x upH)
+    // -------------------------------------------------------------
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboUpscale2x);
+    gl.viewport(0, 0, upW, upH);
+    gl.useProgram(this.upscale2xProgram);
+
+    gl.bindTexture(gl.TEXTURE_2D, this.fboRestoreTexture);
+    gl.uniform1i(gl.getUniformLocation(this.upscale2xProgram, "u_image"), 0);
+    gl.uniform2f(gl.getUniformLocation(this.upscale2xProgram, "u_srcTextureSize"), vW, vH);
+    this.drawQuad(this.upscale2xProgram);
+
+    // -------------------------------------------------------------
+    // PASS 4: WebGL2 GLSL 300 es AMD CAS (Contrast Adaptive Sharpening)
+    // -------------------------------------------------------------
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, renderW, renderH);
+    gl.useProgram(this.casRescaleProgram);
+
+    gl.bindTexture(gl.TEXTURE_2D, this.fboUpscale2xTexture);
+    gl.uniform1i(gl.getUniformLocation(this.casRescaleProgram, "u_image"), 0);
+    gl.uniform2f(gl.getUniformLocation(this.casRescaleProgram, "u_MAIN_size"), upW, upH);
+
+    // u_amount: 0.80 for 1080p source (targetH 2160), 1.0 for 720p source (targetH 1080)
+    const defaultAmount = targetH >= 2160 ? 0.80 : 1.0;
+    const uAmount = this.sharpness !== undefined ? this.sharpness : defaultAmount;
+    gl.uniform1f(gl.getUniformLocation(this.casRescaleProgram, "u_amount"), uAmount);
+    this.drawQuad(this.casRescaleProgram);
+  }
+
   public destroy() {
-    this.isDestroyed = true;
     this.stop();
-    this.gl = null;
-    this.program = null;
-    this.texture = null;
-    this.canvas = null;
-    this.video = null;
+    const gl = this.gl;
+    if (this.texture) gl.deleteTexture(this.texture);
+    if (this.buffer) gl.deleteBuffer(this.buffer);
+    if (this.debandProgram) gl.deleteProgram(this.debandProgram);
+    if (this.restoreProgram) gl.deleteProgram(this.restoreProgram);
+    if (this.upscale2xProgram) gl.deleteProgram(this.upscale2xProgram);
+    if (this.casRescaleProgram) gl.deleteProgram(this.casRescaleProgram);
+    this.destroyFBOs();
   }
 }
 
@@ -281,7 +858,7 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
       if (pendingPremiumModalRef.current) {
         pendingPremiumModalRef.current = false;
         setTimeout(() => {
-          openPremiumModal("Премиум функции");
+          openPremiumModal("Просмотр в 4K качестве");
         }, 250);
       }
     }, [openPremiumModal]);
@@ -296,7 +873,7 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
             ? "Kodik"
             : src.includes("collaps")
               ? "Collaps"
-              : "KamiPlayer (Direct)"
+              : "KamiPlayer (Direct/Anime4K)"
     );
 
     useEffect(() => {
@@ -395,20 +972,13 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
       src.includes("aniboom") ||
       (src.includes("playlist") && src.includes("aniboom")) ||
       streamType === "dash" ||
-      (!provider && !src.includes("kodik") && !src.includes("r2.cloudflarestorage.com"))
-    );
-
-    const isNative4KStream = Boolean(
-      src.includes("4k") ||
-      src.includes("2160") ||
-      src.includes("r2.cloudflarestorage.com") ||
       src.includes("cdn1.kamianime.club") ||
       src.includes("cdn.kamianime.club") ||
-      (animeId && (animeId === "48849" || animeId === "32281" || animeId === "38826" || animeId === "16782"))
+      (!provider && !src.includes("kodik"))
     );
 
     const isKodikStream = Boolean(
-      !isAniboomStream && !isNative4KStream && (
+      !isAniboomStream && (
         (provider && provider.toLowerCase().includes("kodik")) ||
         src.includes("kodik")
       )
@@ -417,17 +987,9 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
     const [availableQualities, setAvailableQualities] = useState<
       { html: string; level: number; targetH?: number; isAi?: boolean }[]
     >(() => {
-      if (isNative4KStream) {
-        return [
-          { html: "4K Ultra HD", level: 0, targetH: 2160 },
-          { html: "1080p", level: 1, targetH: -1 },
-          { html: "720p", level: 2, targetH: -1 },
-          { html: "Авто", level: -1, targetH: 0 },
-        ];
-      }
       if (isKodikStream) {
         return [
-          { html: "1080p (Anime4K)", level: 0, targetH: 1080, isAi: true },
+          { html: "1080p", level: 0, targetH: 1080, isAi: true },
           { html: "720p", level: 0, targetH: -1 },
           { html: "480p", level: 1, targetH: -1 },
           { html: "360p", level: 2, targetH: -1 },
@@ -435,6 +997,7 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
         ];
       }
       return [
+        { html: "4K", level: 0, targetH: 2160, isAi: true },
         { html: "1080p", level: 0, targetH: -1 },
         { html: "720p", level: 1, targetH: -1 },
         { html: "480p", level: 2, targetH: -1 },
@@ -445,16 +1008,9 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
 
     // Sync default available qualities when source or provider changes
     useEffect(() => {
-      if (isNative4KStream) {
+      if (isKodikStream) {
         setAvailableQualities([
-          { html: "4K Ultra HD", level: 0, targetH: 2160 },
-          { html: "1080p", level: 1, targetH: -1 },
-          { html: "720p", level: 2, targetH: -1 },
-          { html: "Авто", level: -1, targetH: 0 },
-        ]);
-      } else if (isKodikStream) {
-        setAvailableQualities([
-          { html: "1080p (Anime4K)", level: 0, targetH: 1080, isAi: true },
+          { html: "1080p", level: 0, targetH: 1080, isAi: true },
           { html: "720p", level: 0, targetH: -1 },
           { html: "480p", level: 1, targetH: -1 },
           { html: "360p", level: 2, targetH: -1 },
@@ -462,6 +1018,7 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
         ]);
       } else {
         setAvailableQualities([
+          { html: "4K", level: 0, targetH: 2160, isAi: true },
           { html: "1080p", level: 0, targetH: -1 },
           { html: "720p", level: 1, targetH: -1 },
           { html: "480p", level: 2, targetH: -1 },
@@ -469,7 +1026,7 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
           { html: "Авто", level: -1, targetH: 0 },
         ]);
       }
-    }, [src, provider, streamType, isKodikStream, isNative4KStream, isAniboomStream]);
+    }, [src, provider, streamType, isKodikStream]);
 
     // Keep selected quality valid across provider/quality list changes
     useEffect(() => {
@@ -915,7 +1472,24 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                   // Sort descending
                   nativeList.sort((a, b) => b.height - a.height);
 
+                  const isKodik = Boolean(
+                    !isAniboomStream && (
+                      (provider && provider.toLowerCase().includes("kodik")) ||
+                      src.includes("kodik")
+                    )
+                  );
+                  const hasNative1080 = !isKodik && (maxNativeH >= 1080 || isAniboomStream);
+
                   const parsedQualities: { html: string; level: number; targetH?: number; isAi?: boolean }[] = [];
+
+                  // RULE:
+                  // 1080p native source (e.g. Aniboom) -> 4K
+                  // 720p native source (e.g. Kodik) -> 1080p
+                  if (hasNative1080) {
+                    parsedQualities.push({ html: "4K", level: 0, targetH: 2160, isAi: true });
+                  } else {
+                    parsedQualities.push({ html: "1080p", level: 0, targetH: 1080, isAi: true });
+                  }
 
                   nativeList.forEach(item => {
                     if (!parsedQualities.some(q => q.html === item.html)) {
@@ -1143,12 +1717,25 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                     }
                   }
 
+                  const isKodik = Boolean(
+                    !isAniboomStream && (
+                      (provider && provider.toLowerCase().includes("kodik")) ||
+                      src.includes("kodik")
+                    )
+                  );
+                  const hasNative1080 = !isKodik && (maxNativeH >= 1080 || isAniboomStream);
+
                   const finalQuals: { html: string; level: number; targetH?: number; isAi?: boolean }[] = [];
 
-                  if (isNative4KStream) {
-                    finalQuals.push({ html: "4K Ultra HD", level: 0, targetH: 2160 });
-                  } else if (isKodikStream) {
-                    finalQuals.push({ html: "1080p (Anime4K)", level: 0, targetH: 1080, isAi: true });
+                  const maxLevelIndex = Math.max(0, (levels?.length || 1) - 1);
+
+                  // RULE:
+                  // 1080p native source (e.g. Aniboom) -> 4K
+                  // 720p native source (e.g. Kodik) -> 1080p
+                  if (hasNative1080) {
+                    finalQuals.push({ html: "4K", level: maxLevelIndex, targetH: 2160, isAi: true });
+                  } else {
+                    finalQuals.push({ html: "1080p", level: maxLevelIndex, targetH: 1080, isAi: true });
                   }
 
                   mappedLevels.forEach((item) => {
@@ -1222,13 +1809,17 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                       webglInstanceRef.current = upscaler;
 
                       const curQ = selectedQualityRef.current;
-                      // Only upscale Kodik streams (AniBoom and standard streams are NEVER upscaled)
-                      if (isKodikStream && (curQ.includes("Anime4K") || curQ.includes("1080p"))) {
+                      if (curQ.includes("4K")) {
+                        upscaler.setTargetResolution(2160);
+                      } else if (curQ.includes("1080p (Anime4K")) {
                         upscaler.setTargetResolution(1080);
-                        upscaler.start();
+                      } else if (curQ === "Авто") {
+                        upscaler.setTargetResolution(0);
                       } else {
                         upscaler.setTargetResolution(-1);
                       }
+
+                      upscaler.start();
                     } catch (e) {
                       console.error("Anime WebGL Initialization Error with HLS:", e);
                     }
@@ -1381,6 +1972,56 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
 
     // Quality Selection Handler
     const handleSelectQuality = (item: { html: string; level: number; targetH?: number; isAi?: boolean }) => {
+      const is4K = item.html.includes("4K") || item.targetH === 2160;
+
+      // 4K is Premium only! 1080p and lower is free for everyone
+      if (is4K && !isVip) {
+        const art = artInstanceRef.current;
+        if (art && art.notice) {
+          art.notice.show = "4K доступно с Premium. Переключено на 1080p";
+        }
+        // Mark pending modal to trigger after player / fullscreen is closed
+        pendingPremiumModalRef.current = true;
+
+        // Auto switch to 1080p
+        const item1080 = availableQualities.find((q) => q.html.includes("1080") || q.targetH === 1080) || {
+          html: "1080p",
+          level: 0,
+          targetH: 1080,
+          isAi: true
+        };
+
+        setSelectedQuality(item1080.html);
+        localStorage.setItem("kami_player_selected_quality", item1080.html);
+
+        if (webglInstanceRef.current) {
+          webglInstanceRef.current.setTargetResolution(1080);
+          webglInstanceRef.current.start();
+        }
+
+        if (art && (art as any).hls) {
+          const hls = (art as any).hls;
+          try {
+            let targetLvl = item1080.level >= 0 ? item1080.level : ((hls.levels && hls.levels.length > 0) ? hls.levels.length - 1 : 0);
+            hls.nextLevel = targetLvl;
+            if (hls.loadLevel !== undefined) hls.loadLevel = targetLvl;
+          } catch (_) {}
+        } else if (art && (art as any).dash) {
+          const player = (art as any).dash;
+          try {
+            const bitrates = player.getBitrateInfoListFor("video");
+            if (bitrates && bitrates.length > 0) {
+              const maxB = bitrates.length - 1;
+              player.setQualityFor("video", maxB);
+            }
+          } catch (_) {}
+        }
+
+        setIsSettingsOpen(false);
+        setActiveSubmenu("main");
+        return;
+      }
+
       setSelectedQuality(item.html);
       localStorage.setItem("kami_player_selected_quality", item.html);
 
@@ -1388,13 +2029,19 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
       const currentPos = art ? art.currentTime : 0;
       const wasPlaying = art && art.video && !art.video.paused;
 
-      // WebGL Upscaler resolution mode: ONLY for Kodik (AniBoom is NEVER upscaled)
+      // WebGL Upscaler resolution mode
       if (webglInstanceRef.current) {
-        if (isKodikStream && (item.isAi || item.html.includes("Anime4K") || item.html.includes("1080p") || item.targetH === 1080)) {
+        if (item.html.includes("4K") || item.targetH === 2160) {
+          webglInstanceRef.current.setTargetResolution(2160);
+          webglInstanceRef.current.start();
+        } else if ((item.html.includes("1080p") && (item.isAi || item.html.includes("CAS") || item.html.includes("Anime4K"))) || item.targetH === 1080) {
           webglInstanceRef.current.setTargetResolution(1080);
           webglInstanceRef.current.start();
+        } else if (item.html === "Авто" || item.targetH === 0) {
+          webglInstanceRef.current.setTargetResolution(0); // Auto mode: 1080p source -> 4K (2160p), 720p source -> 1080p
+          webglInstanceRef.current.start();
         } else {
-          // Disabled for AniBoom, native 4K, and standard resolutions
+          // Standard raw resolution selected without WebGL upscaling
           webglInstanceRef.current.setTargetResolution(-1);
         }
       }
@@ -1963,6 +2610,7 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                   <div className="space-y-1">
                     {availableQualities.map((q) => {
                       const isSelected = selectedQuality === q.html;
+                      const is4K = q.html.includes("4K") || q.targetH === 2160;
                       return (
                         <button
                           key={q.html}
@@ -1975,6 +2623,12 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                         >
                           <div className="flex items-center gap-2">
                             <span>{q.html}</span>
+                            {is4K && (
+                              <span className="flex items-center gap-1 text-[9px] uppercase font-black tracking-wider px-2 py-0.5 rounded-full bg-[#8B5CF6]/20 text-[#A78BFA] border border-[#8B5CF6]/30 shadow-sm">
+                                <Crown className="w-3 h-3 text-[#8B5CF6]" />
+                                {!isVip ? 'Premium 4K' : '4K'}
+                              </span>
+                            )}
                           </div>
                           {isSelected && (
                             <Check className="w-4 h-4 text-[#8B5CF6]" />

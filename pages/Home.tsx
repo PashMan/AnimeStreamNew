@@ -15,9 +15,9 @@ import { Anime, ScheduleItem, NewsItem, ForumTopic, CommunityCollection } from '
 import { FALLBACK_IMAGE, COLLECTIONS_DATA } from '../constants';
 import CollectionCard from '../components/CollectionCard';
 import CreateCollectionModal from '../components/CreateCollectionModal';
+import Vote4KSection from '../components/Vote4KSection';
 import { KodikRecentUpdate, fetchRecentUpdates } from '../services/kodik';
 import { fetchHighResHeroBanner } from '../services/animeImages';
-import Vote4KSection from '../components/Vote4KSection';
 
 function formatKodikTime(dateStr: string): string {
   if (!dateStr) return "Только что";
@@ -615,17 +615,24 @@ const Home: React.FC = () => {
         {/* 4K Community Voting Section */}
         <Vote4KSection />
 
-        {/* 4K Section */}
+        {/* 4K Anime Section (Premium Exclusive) */}
         <section>
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6">
             <div>
-              <h2 className="text-xl md:text-2xl font-display font-extrabold text-white tracking-tight flex items-center gap-3 border-l-4 border-[#8B5CF6] pl-3">
+              <h2 className="text-xl md:text-2xl font-display font-extrabold text-white tracking-tight flex items-center gap-3 border-l-4 border-primary pl-3">
                 <span className="flex items-center gap-2">
-                  4K
+                  4K Аниме
+                  <span className="px-2 py-0.5 rounded-full bg-[#8B5CF6]/20 text-[#A78BFA] border border-[#8B5CF6]/40 text-[10px] font-black uppercase flex items-center gap-1">
+                    <Crown className="w-3 h-3 text-[#8B5CF6]" /> Premium
+                  </span>
                 </span>
               </h2>
             </div>
             <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
+               <Link to="/premium" className="text-[10px] font-black uppercase tracking-widest text-[#8B5CF6] hover:text-white transition-colors flex items-center gap-1.5 mr-3">
+                 {isVip ? 'Доступно с Premium' : 'Смотреть в 4K'} <ChevronRight className="w-4 h-4" />
+               </Link>
+               <div className="hidden sm:block w-px h-6 bg-white/10" />
                <div className="flex gap-2">
                  <button aria-label="Scroll left" onClick={() => scrollContainer(anime4kRef, 'left')} className="p-2.5 rounded-xl bg-[#1c1d21] border border-white/5 hover:border-white/10 hover:bg-white/5 text-white/40 hover:text-white transition-all"><ChevronLeft className="w-4 h-4" /></button>
                  <button aria-label="Scroll right" onClick={() => scrollContainer(anime4kRef, 'right')} className="p-2.5 rounded-xl bg-[#1c1d21] border border-white/5 hover:border-white/10 hover:bg-white/5 text-white/40 hover:text-white transition-all"><ChevronRight className="w-4 h-4" /></button>
@@ -634,8 +641,13 @@ const Home: React.FC = () => {
           </div>
           <div ref={anime4kRef} className="flex gap-6 overflow-x-auto hide-scrollbar scroll-smooth pb-4 px-1 snap-x min-h-[360px]">
             {animes4k.length > 0 ? animes4k.map((anime, idx) => (
-              <div key={`rec-${anime.id}-${idx}`} className="w-[180px] sm:w-[220px] 3xl:w-[260px] 4xl:w-[300px] flex-none snap-start relative group">
+              <div key={`4k-${anime.id}-${idx}`} className="w-[180px] sm:w-[220px] 3xl:w-[260px] 4xl:w-[300px] flex-none snap-start relative group">
                 <AnimeCard anime={anime} />
+                <div className="absolute top-3 right-3 z-20 pointer-events-none">
+                  <span className="px-2 py-0.5 rounded-md bg-black/80 backdrop-blur-md border border-[#8B5CF6]/40 text-[#A78BFA] text-[10px] font-black tracking-wider flex items-center gap-1 shadow-lg">
+                    <Crown className="w-2.5 h-2.5 text-[#8B5CF6]" /> 4K
+                  </span>
+                </div>
               </div>
             )) : Array.from({length: 6}).map((_, i) => (
               <div key={i} className="w-[180px] sm:w-[220px] 3xl:w-[260px] 4xl:w-[300px] flex-none snap-start animate-pulse">

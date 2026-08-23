@@ -905,53 +905,25 @@ const Manga: React.FC = () => {
     }
   };
 
-// Module-level cache for instant manga chapter rendering
-const clientChapterCache = new Map<string, { chapters: ChapterItem[]; isLicensed: boolean }>();
-
   // Fetch chapters for selected manga
   const selectMangaItem = async (manga: MangaItem, targetChapterNum?: string | number | null, autoLaunch = false) => {
+    setChaptersLoading(true);
+    setChapters([]);
     setIsMangaLicensed(false);
     fetchRelatedAndSimilar(manga);
-
-    // Fast-path: render instantly from memory cache if available
-    const cached = clientChapterCache.get(manga.id);
-    if (cached && cached.chapters.length > 0) {
-      setChapters(cached.chapters);
-      setIsMangaLicensed(cached.isLicensed);
-      setChaptersLoading(false);
-
-      if (targetChapterNum !== undefined && targetChapterNum !== null) {
-        const targetNum = parseFloat(String(targetChapterNum));
-        if (!isNaN(targetNum)) {
-          const matched = cached.chapters.find(c => {
-            const cNum = parseFloat(String(c.chapter || c.title || '0'));
-            return Math.abs(cNum - targetNum) < 0.6;
-          }) || cached.chapters.find(c => parseFloat(String(c.chapter || '0')) >= targetNum) || cached.chapters[0];
-
-          if (matched && autoLaunch) {
-            startReadingChapter(matched, manga);
-          }
-        }
-      }
-    } else {
-      setChaptersLoading(true);
-      setChapters([]);
-    }
 
     try {
       const titleParam = encodeURIComponent(manga.title || '');
       const origParam = encodeURIComponent(manga.originalTitle || '');
-      const res = await fetch(`/api/manga/${manga.id}/chapters?title=${titleParam}&orig=${origParam}`);
+      const res = await fetch(`/api/manga/${manga.id}/chapters?title=${titleParam}&orig=${origParam}&_t=${Date.now()}`);
       if (res.ok) {
         const data = await res.json();
         const chList: ChapterItem[] = data.chapters || [];
-        const licensed = !!data.isLicensed;
-        clientChapterCache.set(manga.id, { chapters: chList, isLicensed: licensed });
         setChapters(chList);
-        setIsMangaLicensed(licensed);
+        setIsMangaLicensed(!!data.isLicensed);
 
-        // Auto open chapter if target chapter is specified and not launched from cache
-        if (chList.length > 0 && !cached) {
+        // Auto open chapter if target chapter is specified
+        if (chList.length > 0) {
           if (targetChapterNum !== undefined && targetChapterNum !== null) {
             const targetNum = parseFloat(String(targetChapterNum));
             if (!isNaN(targetNum)) {

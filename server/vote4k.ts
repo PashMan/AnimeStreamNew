@@ -46,111 +46,6 @@ export async function initD1Vote4K(db: any): Promise<void> {
   }
 }
 
-const DEFAULT_INITIAL_SUGGESTIONS: Vote4KSuggestion[] = [
-  {
-    id: 'sug-40028',
-    animeId: '40028',
-    title: 'Атака титанов: Финал',
-    originalName: 'Shingeki no Kyojin: The Final Season',
-    image: 'https://desu.shikimori.one/system/animes/original/40028.jpg',
-    year: '2020',
-    genres: ['Экшен', 'Драма', 'Фэнтези'],
-    votes: 384,
-    voters: [],
-    suggestedBy: {
-      email: 'animemaster@kamianime.club',
-      name: 'AnimeMaster',
-      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80'
-    },
-    createdAt: Date.now() - 3600000 * 12
-  },
-  {
-    id: 'sug-40456',
-    animeId: '40456',
-    title: 'Клинок, рассекающий демонов: Поезд «Бесконечный»',
-    originalName: 'Kimetsu no Yaiba Movie: Mugen Ressha-hen',
-    image: 'https://desu.shikimori.one/system/animes/original/40456.jpg',
-    year: '2020',
-    genres: ['Экшен', 'Сверхъестественное', 'Исторический'],
-    votes: 421,
-    voters: [],
-    suggestedBy: {
-      email: 'zenitsu@kamianime.club',
-      name: 'ZenitsuFan',
-      avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&auto=format&fit=crop&q=80'
-    },
-    createdAt: Date.now() - 3600000 * 10
-  },
-  {
-    id: 'sug-51009',
-    animeId: '51009',
-    title: 'Магическая битва 2',
-    originalName: 'Jujutsu Kaisen 2nd Season',
-    image: 'https://desu.shikimori.one/system/animes/original/51009.jpg',
-    year: '2023',
-    genres: ['Экшен', 'Сверхъестественное', 'Сёнэн'],
-    votes: 356,
-    voters: [],
-    suggestedBy: {
-      email: 'gojo@kamianime.club',
-      name: 'Gojo_Sensei',
-      avatar: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=100&auto=format&fit=crop&q=80'
-    },
-    createdAt: Date.now() - 3600000 * 8
-  },
-  {
-    id: 'sug-44511',
-    animeId: '44511',
-    title: 'Человек-бензопила',
-    originalName: 'Chainsaw Man',
-    image: 'https://desu.shikimori.one/system/animes/original/44511.jpg',
-    year: '2022',
-    genres: ['Экшен', 'Сверхъестественное'],
-    votes: 298,
-    voters: [],
-    suggestedBy: {
-      email: 'denji@kamianime.club',
-      name: 'DenjiHero',
-      avatar: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=100&auto=format&fit=crop&q=80'
-    },
-    createdAt: Date.now() - 3600000 * 6
-  },
-  {
-    id: 'sug-37987',
-    animeId: '37987',
-    title: 'Вайолет Эвергарден: Фильм',
-    originalName: 'Violet Evergarden Movie',
-    image: 'https://desu.shikimori.one/system/animes/original/37987.jpg',
-    year: '2020',
-    genres: ['Драма', 'Фэнтези', 'Повседневность'],
-    votes: 275,
-    voters: [],
-    suggestedBy: {
-      email: 'violet@kamianime.club',
-      name: 'EvergardenLover',
-      avatar: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=100&auto=format&fit=crop&q=80'
-    },
-    createdAt: Date.now() - 3600000 * 4
-  },
-  {
-    id: 'sug-50594',
-    animeId: '50594',
-    title: 'Судзумэ, закрывающая двери',
-    originalName: 'Suzume no Tojimari',
-    image: 'https://desu.shikimori.one/system/animes/original/50594.jpg',
-    year: '2022',
-    genres: ['Приключения', 'Фэнтези'],
-    votes: 310,
-    voters: [],
-    suggestedBy: {
-      email: 'makoto@kamianime.club',
-      name: 'MakotoFan',
-      avatar: 'https://images.unsplash.com/photo-1501196354995-cbb51c65aaea?w=100&auto=format&fit=crop&q=80'
-    },
-    createdAt: Date.now() - 3600000 * 2
-  }
-];
-
 function createInitialSeason(): Vote4KSeason {
   const now = Date.now();
   return {
@@ -159,7 +54,7 @@ function createInitialSeason(): Vote4KSeason {
     cycleStartTime: now,
     stageStartTime: now,
     stageEndTime: now + STAGE_SUGGESTIONS_MS,
-    suggestions: [...DEFAULT_INITIAL_SUGGESTIONS],
+    suggestions: [], // Start empty - ONLY real user suggestions will appear!
     finalCandidates: [],
     winner: null,
     historyWinners: []

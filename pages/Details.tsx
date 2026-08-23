@@ -428,7 +428,8 @@ const Details: React.FC = () => {
     const override = translationQualityOverrides[baseTitle];
     if (override) return override;
 
-    const isFHD = true;
+    const isNative4KFilm = id === "50594" || id === "62568" || id === "38826" || id === "16782" || id === "32281";
+    if (isNative4KFilm || t.is_native_4k) return "4K";
 
     const hasAniboom = Boolean(
       t.aniboom_iframe ||
@@ -437,12 +438,12 @@ const Details: React.FC = () => {
       (t.sources && t.sources.some((s: any) => s.provider === "aniboom" && s.embedUrl))
     );
 
-    if (hasAniboom) return "1080p";
+    if (hasAniboom) return "4K";
 
     const match = (t.title || "").match(/\b(4K|1080|720)\b/i);
     if (match) {
       const val = match[0].toUpperCase();
-      if (val === "4K") return "1080p";
+      if (val === "4K") return "4K";
       if (val === "1080") return "1080p";
       if (val === "720") return "720p";
     }
@@ -1418,23 +1419,23 @@ const Details: React.FC = () => {
           : generatedSEO.title;
 
   const seoDescription = isYourName
-    ? `Смотреть аниме Твоё имя (Kimi no Na wa) в высоком качестве 1080p Full HD онлайн бесплатно без рекламы.`
+    ? `Смотреть аниме Твоё имя (Kimi no Na wa) в ультра-высоком качестве 4K (UHD) онлайн бесплатно. Потрясающая детализация шедевра Макото Синкая без рекламы.`
     : isSuzume
-      ? `Смотреть аниме Судзумэ, закрывающая двери (Suzume no Tojimari) в высоком качестве 1080p Full HD онлайн бесплатно без рекламы.`
+      ? `Смотреть аниме Судзумэ, закрывающая двери (Suzume no Tojimari) в ультра-высоком качестве 4K (UHD) онлайн бесплатно. Насладитесь потрясающей детализацией шедевра Макото Синкая в 2160p без рекламы.`
       : isWeathering
-        ? `Смотреть аниме Дитя погоды (Tenki no Ko) в высоком качестве 1080p Full HD онлайн бесплатно без рекламы.`
+        ? `Смотреть аниме Дитя погоды (Tenki no Ko) в ультра-высоком качестве 4K (UHD) онлайн бесплатно. Насладитесь потрясающей детализацией шедевра Макото Синкая в 2160p без рекламы.`
         : isGardenOfWords
-          ? `Смотреть аниме Сад изящных слов (Kotonoha no Niwa) в высоком качестве 1080p Full HD онлайн бесплатно без рекламы.`
+          ? `Смотреть аниме Сад изящных слов (Kotonoha no Niwa) в ультра-высоком качестве 4K (UHD) онлайн бесплатно. Насладитесь потрясающей детализацией шедевра Макото Синкая в 2160p без рекламы.`
           : generatedSEO.description;
 
   const seoKeywords = isYourName
-    ? `смотреть твоё имя 1080p, твое имя full hd онлайн, kimi no na wa, макото синкай твое имя, ${anime.title}, ${anime.originalName}`
+    ? `смотреть твоё имя в 4к, твое имя 4k онлайн, kimi no na wa 4k, макото синкай твое имя 4к, смотреть аниме в 4к, ${anime.title}, ${anime.originalName}`
     : isSuzume
-      ? `смотреть судзумэ 1080p, судзумэ закрывающая двери онлайн, suzume no tojimari, макото синкай судзумэ, ${anime.title}, ${anime.originalName}`
+      ? `смотреть судзумэ в 4к, судзумэ закрывающая двери 4k онлайн, suzume no tojimari 4k, макото синкай судзумэ 4к, смотреть аниме в 4к, 2160p, uhd, ${anime.title}, ${anime.originalName}`
       : isWeathering
-        ? `смотреть дитя погоды 1080p, дитя погоды онлайн, tenki no ko, макото синкай дитя погоды, ${anime.title}, ${anime.originalName}`
+        ? `смотреть дитя погоды в 4к, дитя погоды 4k онлайн, tenki no ko 4k, макото синкай дитя погоды 4к, смотреть аниме в 4к, 2160p, uhd, ${anime.title}, ${anime.originalName}`
         : isGardenOfWords
-          ? `смотреть сад изящных слов 1080p, сад изящных слов онлайн, kotonoha no niwa, макото синкай сад изящных слов, ${anime.title}, ${anime.originalName}`
+          ? `смотреть сад изящных слов в 4к, сад изящных слов 4k онлайн, kotonoha no niwa 4k, макото синкай сад изящных слов 4к, смотреть аниме в 4к, 2160p, uhd, ${anime.title}, ${anime.originalName}`
           : generatedSEO.keywords;
 
   const isHentai =
@@ -1648,7 +1649,10 @@ const Details: React.FC = () => {
             </span>
           </div>
           <h1 className="text-4xl md:text-6xl font-display font-black text-white leading-tight mb-2 uppercase tracking-tighter drop-shadow-2xl">
-            {isYourName ? "Твоё имя (Kimi no Na wa)" : isSuzume ? "Судзумэ, закрывающая двери" : isWeathering ? "Дитя погоды" : isGardenOfWords ? "Сад изящных слов" :
+            {isYourName ? "Твоё имя (Kimi no Na wa) в 4K" : 
+             isSuzume ? "Судзумэ, закрывающая двери в 4K" :
+             isWeathering ? "Дитя погоды в 4K" :
+             isGardenOfWords ? "Сад изящных слов в 4K" :
              generatedSEO.h1Text}
           </h1>
           {anime.originalName && (
@@ -1869,7 +1873,7 @@ const Details: React.FC = () => {
                     </span>
                   </div>
                   <p className="text-xs text-slate-300 font-medium mt-1 leading-relaxed max-w-2xl">
-                    Зарегистрируйтесь прямо сейчас и получите <strong>1 месяц Premium</strong> бесплатно: просмотр в 1080p Full HD качестве, чтение манги с момента конца серии и скачивание в .MP4 без ограничений!
+                    Зарегистрируйтесь прямо сейчас и получите <strong>1 месяц Premium</strong> бесплатно: просмотр в 4K качестве, чтение манги с момента конца серии и скачивание в .MP4 без ограничений!
                   </p>
                 </div>
               </div>
