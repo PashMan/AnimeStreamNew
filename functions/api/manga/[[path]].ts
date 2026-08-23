@@ -1,4 +1,4 @@
-import { checkIsMangaLicensed, LICENSED_MANGA_LIST } from '../../data/licensedManga';
+import { checkIsMangaLicensed, LICENSED_MANGA_LIST } from '../../../data/licensedManga';
 
 export const onRequest = async (context: any) => {
   const { request } = context;
