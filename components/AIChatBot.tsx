@@ -158,13 +158,20 @@ export const AIChatBot: React.FC = () => {
         content: m.content
       }));
 
-      const res = await fetch('/api/ai/chat', {
+      let res = await fetch('/api/ai/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: historyForApi
-        })
+        body: JSON.stringify({ messages: historyForApi })
       });
+
+      if (!res.ok) {
+        // Fallback retry with recommend route if 405 or route issue
+        res = await fetch('/api/ai/recommend', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ messages: historyForApi })
+        });
+      }
 
       const data = await res.json().catch(() => ({}));
 

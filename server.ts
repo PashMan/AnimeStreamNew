@@ -334,8 +334,20 @@ app.use('/api/ai/*', async (c, next) => {
   return next();
 });
 
-app.all('/api/ai/chat', handleAiChatRequest);
-app.all('/api/ai/recommend', handleAiChatRequest);
+app.options('/api/ai/chat', (c) => c.text('', 204));
+app.options('/api/ai/chat/', (c) => c.text('', 204));
+app.post('/api/ai/chat', handleAiChatRequest);
+app.post('/api/ai/chat/', handleAiChatRequest);
+app.get('/api/ai/chat', handleAiChatRequest);
+app.get('/api/ai/chat/', handleAiChatRequest);
+app.all('/api/ai/chat/*', handleAiChatRequest);
+
+app.options('/api/ai/recommend', (c) => c.text('', 204));
+app.options('/api/ai/recommend/', (c) => c.text('', 204));
+app.post('/api/ai/recommend', handleAiChatRequest);
+app.post('/api/ai/recommend/', handleAiChatRequest);
+app.get('/api/ai/recommend', handleAiChatRequest);
+app.get('/api/ai/recommend/', handleAiChatRequest);
 
 // In-memory cache for anime image URLs & AniList data
 const animeImageCache = new Map<string, { url: string; buffer?: ArrayBuffer; contentType?: string }>();

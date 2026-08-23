@@ -2413,33 +2413,7 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
           className="absolute inset-0 w-full h-full object-contain opacity-0 z-10"
         />
 
-        {/* Dynamic Quick Skip Opening Badge (Strictly based on database/API timings from Kodik/AniBoom/AniSkip) */}
-        {skipOpening && showSkipOpBtn && skipTimings.end !== null && (
-          <div className="absolute bottom-16 left-6 z-30 animate-in fade-in slide-in-from-bottom-2 duration-200">
-            <button
-              onClick={handleSkipOpening}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-black/90 hover:bg-[#8B5CF6] text-white border border-white/20 hover:border-[#8B5CF6] font-sans font-bold text-xs shadow-2xl backdrop-blur-md transition-all active:scale-95 cursor-pointer"
-            >
-              <FastForward className="w-4 h-4 text-[#8B5CF6] group-hover:text-white" />
-              <span>Пропустить опенинг</span>
-            </button>
-          </div>
-        )}
-
-        {/* Dynamic Quick Skip Ending Badge (Strictly based on database/API timings from Kodik/AniBoom/AniSkip) */}
-        {skipEnding && showSkipEdBtn && (
-          <div className="absolute bottom-16 right-6 z-30 animate-in fade-in slide-in-from-bottom-2 duration-200">
-            <button
-              onClick={handleSkipEnding}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#8B5CF6] hover:bg-[#7C3AED] text-white border border-[#8B5CF6] font-sans font-bold text-xs shadow-2xl transition-all active:scale-95 cursor-pointer"
-            >
-              <span>Пропустить эндинг</span>
-              <SkipForward className="w-4 h-4" />
-            </button>
-          </div>
-        )}
-
-        {/* Top Overlay Bar with Title and Quick Action Buttons */}
+        {/* Top Overlay Bar with Title and Settings Button */}
         <div className="absolute top-4 left-4 right-4 z-20 flex items-center justify-between pointer-events-none opacity-0 group-hover/player:opacity-100 transition-opacity duration-300">
           {/* Top Left: Title Badge */}
           <div className="flex items-center gap-2 px-3 py-1.5 bg-black/70 border border-white/10 rounded-xl backdrop-blur-md shadow-lg pointer-events-auto">
@@ -2454,24 +2428,8 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
             )}
           </div>
 
-          {/* Top Right: Skip Quick Buttons & Player Settings Button */}
+          {/* Top Right: Player Settings Button */}
           <div className="flex items-center gap-2 pointer-events-auto">
-            <button
-              onClick={handleSkipOpening}
-              className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-xl bg-black/80 hover:bg-[#8B5CF6] text-white border border-white/15 hover:border-[#8B5CF6] text-xs font-bold backdrop-blur-md transition-all cursor-pointer shadow-lg active:scale-95"
-              title="Пропустить опенинг"
-            >
-              <FastForward className="w-3.5 h-3.5 text-[#8B5CF6] group-hover:text-white" />
-              <span>Скип опенинга</span>
-            </button>
-            <button
-              onClick={handleSkipEnding}
-              className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-xl bg-black/80 hover:bg-[#8B5CF6] text-white border border-white/15 hover:border-[#8B5CF6] text-xs font-bold backdrop-blur-md transition-all cursor-pointer shadow-lg active:scale-95"
-              title="Пропустить эндинг"
-            >
-              <SkipForward className="w-3.5 h-3.5 text-[#8B5CF6] group-hover:text-white" />
-              <span>Скип эндинга</span>
-            </button>
             <button
               onClick={() => {
                 setActiveSubmenu("main");
@@ -2600,67 +2558,7 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                     </button>
                   </div>
 
-                  {/* 4. Пропуск опенинга */}
-                  <div className="flex items-center justify-between py-2.5 px-2.5 rounded-xl">
-                    <div className="flex items-center gap-3.5">
-                      <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-white/80">
-                        <FastForward className="w-4 h-4" />
-                      </div>
-                      <span className="text-sm font-bold text-white">
-                        Пропуск опенинга
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => {
-                        const newVal = !skipOpening;
-                        setSkipOpening(newVal);
-                        localStorage.setItem(
-                          "kami_player_skip_op",
-                          String(newVal),
-                        );
-                      }}
-                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                        skipOpening ? "bg-[#8B5CF6]" : "bg-white/20"
-                      }`}
-                    >
-                      <span
-                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
-                          skipOpening ? "translate-x-5" : "translate-x-0"
-                        }`}
-                      />
-                    </button>
-                  </div>
 
-                  {/* 5. Пропуск эндинга */}
-                  <div className="flex items-center justify-between py-2.5 px-2.5 rounded-xl">
-                    <div className="flex items-center gap-3.5">
-                      <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-white/80">
-                        <SkipForward className="w-4 h-4" />
-                      </div>
-                      <span className="text-sm font-bold text-white">
-                        Пропуск эндинга
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => {
-                        const newVal = !skipEnding;
-                        setSkipEnding(newVal);
-                        localStorage.setItem(
-                          "kami_player_skip_ed",
-                          String(newVal),
-                        );
-                      }}
-                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                        skipEnding ? "bg-[#8B5CF6]" : "bg-white/20"
-                      }`}
-                    >
-                      <span
-                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
-                          skipEnding ? "translate-x-5" : "translate-x-0"
-                        }`}
-                      />
-                    </button>
-                  </div>
 
                   {/* 6. Мини-плеер при скролле */}
                   <div className="flex items-center justify-between py-2.5 px-2.5 rounded-xl">
@@ -2755,41 +2653,7 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                     <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-white transition-colors" />
                   </button>
 
-                  {/* 9. Перейти к манге */}
-                  {animeTitle && (
-                    <button
-                      onClick={() => {
-                        setIsSettingsOpen(false);
-                        const targetChap = mangaBridge?.mappedChapter || episodeNumber || 1;
-                        openMangaPage(animeTitle, episodeNumber || 1, targetChap);
-                      }}
-                      className="flex items-center justify-between py-3 px-2.5 rounded-xl hover:bg-white/5 transition-colors cursor-pointer text-left group"
-                    >
-                      <div className="flex items-center gap-3.5">
-                        <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-400 group-hover:text-emerald-300 transition-colors">
-                          <BookOpen className="w-4 h-4" />
-                        </div>
-                        <div className="flex flex-col">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-bold text-white">
-                              Читать мангу
-                            </span>
-                            {mangaBridge?.mappedChapter && (
-                              <span className="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-extrabold border border-emerald-500/30">
-                                Гл. {mangaBridge.mappedChapter}
-                              </span>
-                            )}
-                          </div>
-                          <span className="text-[10px] text-slate-400 font-medium">
-                            {mangaBridge?.mappedChapter
-                              ? `${episodeNumber || 1} серия ➔ ${mangaBridge.mappedChapter} глава манги`
-                              : `Продолжить с ${episodeNumber || 1} серии`}
-                          </span>
-                        </div>
-                      </div>
-                      <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-white transition-colors" />
-                    </button>
-                  )}
+
                 </div>
               )}
 

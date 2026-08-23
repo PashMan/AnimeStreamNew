@@ -307,7 +307,8 @@ export const mapAnime = async (data: any): Promise<Anime> => {
       return data as Anime;
   }
   
-  const russian = data.russian || data.name || 'Без названия';
+  const rawTitle = data.russian || data.name || data.english || data.originalName || data.license_name_ru || '';
+  const russian = (rawTitle && rawTitle.trim().length > 0) ? rawTitle.trim() : 'Без названия';
   
   let image = PLACEHOLDER_IMAGE;
   let image_preview = PLACEHOLDER_IMAGE;
@@ -517,6 +518,14 @@ export const enrichAnimeWithKodik = async (anime: Anime, id: string, searchTitle
         const best = data.results.find((r: any) => r.material_data?.description || r.material_data?.anime_description) || data.results[0];
         const mat = best.material_data || {};
 
+        // Title fallback from Kodik if missing
+        if (!anime.title || anime.title.toLowerCase() === 'без названия') {
+          const kodikTitle = mat.title || mat.anime_title || mat.title_orig || best.title;
+          if (kodikTitle && kodikTitle.trim()) {
+            anime.title = kodikTitle.trim();
+          }
+        }
+
         // Description fallback from Kodik
         if (needsDescription) {
           const desc = mat.anime_description || mat.description || '';
@@ -626,7 +635,7 @@ export const fetchAnimeDetails = async (id: string, includeScreenshots = false):
   if (!id) return null;
   const cacheKey = `anime_details_v4_${id}`;
   const cached = getFromStorage(cacheKey);
-  if (cached) {
+  if (cached && cached.data && cached.data.title && cached.data.title.toLowerCase() !== 'без названия') {
     const isCompleted = cached.data?.status === 'Completed';
     // Very long cache: 1 year (365 days) for completed, 30 days for ongoing
     const ttl = isCompleted ? 365 * 24 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000;
