@@ -422,11 +422,16 @@ const Details: React.FC = () => {
   };
 
   const getTranslationQuality = (t: any) => {
-    if (!t) return "720p";
-    if (t.quality_label) return t.quality_label;
+    if (!t) return "1080p";
+    if (t.quality_label) {
+      if (t.quality_label.toLowerCase().includes("4k")) return "4K";
+      return "1080p";
+    }
     const baseTitle = getCleanTitle(t.title || "");
     const override = translationQualityOverrides[baseTitle];
-    if (override) return override;
+    if (override) {
+      return override.toLowerCase().includes("4k") ? "4K" : "1080p";
+    }
 
     const isNative4KFilm = id === "50594" || id === "62568" || id === "38826" || id === "16782" || id === "32281";
     if (isNative4KFilm || t.is_native_4k) return "4K";
@@ -444,11 +449,10 @@ const Details: React.FC = () => {
     if (match) {
       const val = match[0].toUpperCase();
       if (val === "4K") return "4K";
-      if (val === "1080") return "1080p";
-      if (val === "720") return "720p";
+      return "1080p";
     }
 
-    return "720p";
+    return "1080p";
   };
 
   const getDisplayTitle = (title: string) => {
@@ -2408,7 +2412,11 @@ const Details: React.FC = () => {
                                       <span className={`text-[10px] font-black px-2 py-0.5 rounded uppercase tracking-wider ${
                                         tQuality === "4K"
                                           ? isSelected
-                                          : "bg-slate-700/40 text-slate-400 border border-slate-600/40"
+                                            ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40"
+                                            : "bg-emerald-950/40 text-emerald-400/90 border border-emerald-500/20"
+                                          : isSelected
+                                            ? "bg-purple-500/20 text-purple-300 border border-purple-500/40"
+                                            : "bg-slate-800 text-slate-300 border border-white/10"
                                       }`}>
                                         {tQuality}
                                       </span>

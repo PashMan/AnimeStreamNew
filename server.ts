@@ -589,10 +589,9 @@ function isCandidateRelevant(candPath: string, queries: string[]): boolean {
       }
     }
     
-    // For 1 or 2 meaningful words: must match ALL (e.g. both "reinkarnaciya" and "bezrabotn")
-    // For 3+ words: must match at least 80% of words
-    const required = meaningfulWords.length <= 2 ? meaningfulWords.length : Math.ceil(meaningfulWords.length * 0.8);
-    if (matched >= required) {
+    // Require matching at least 90% of meaningful words to avoid matching other anime
+    const required = meaningfulWords.length <= 2 ? meaningfulWords.length : Math.ceil(meaningfulWords.length * 0.9);
+    if (matched >= required && matched > 0) {
       return true;
     }
   }
@@ -1325,7 +1324,7 @@ app.get('/api/balancer', async (c) => {
             kodik_iframe: kt.iframe,
             episodes_count: maxEpisodes,
             last_episode: maxEpisodes,
-            quality_label: '720p',
+            quality_label: '1080p',
             is_native_4k: false
           });
         }
@@ -1361,16 +1360,16 @@ app.get('/api/balancer', async (c) => {
           kodik_iframe: kodik_iframe,
           episodes_count: 1,
           last_episode: 1,
-          quality_label: '720p',
+          quality_label: '1080p',
           is_native_4k: false
         });
       }
     }
 
-    // Step 4: Sort translations so 4K (AniBoom) top priority voices come FIRST, then other 4K, then 720p Kodik
+    // Step 4: Sort translations so 4K (AniBoom) top priority voices come FIRST, then other 4K, then 1080p Kodik
     const priorityVoices = ['anilibria', 'дубляж', 'shiza', 'studioband', 'anidub', 'dreamcast', 'субтитры'];
     unifiedTranslations.sort((a, b) => {
-      // 1. AniBoom 4K before Kodik 720p
+      // 1. AniBoom 4K before Kodik 1080p
       const aIs4k = a.quality_label === '4K' || a.is_native_4k || a.provider === 'AniBoom';
       const bIs4k = b.quality_label === '4K' || b.is_native_4k || b.provider === 'AniBoom';
       if (aIs4k && !bIs4k) return -1;
