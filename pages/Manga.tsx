@@ -17,6 +17,7 @@ import {
   deleteOfflineChapter, 
   OfflineChapter 
 } from '../services/offlineManga';
+import { checkIsMangaLicensed } from '../data/licensedManga';
 
 export interface MangaRelatedItem {
   relation: string;
@@ -645,18 +646,20 @@ const Manga: React.FC = () => {
     setLoadingNovinki(true);
     setLoadingLists5(true);
     try {
+      const isUnlicensed = (m: MangaItem) => !checkIsMangaLicensed([m.title, m.originalTitle, m.id]).isLicensed;
+
       // 1. Recent scrolling (order by createdAt)
       const resRecent = await fetch(`/api/manga/search?limit=24&order=createdAt&source=all&_t=${Date.now()}`);
       if (resRecent.ok) {
         const data = await resRecent.json();
-        setRecentAdditions(data.results || []);
+        setRecentAdditions((data.results || []).filter(isUnlicensed));
       }
 
       // 2. Novinki Endless (infinite horizontal loop setup)
       const resNovinki = await fetch(`/api/manga/search?limit=24&offset=24&order=createdAt&source=all&_t=${Date.now()}`);
       if (resNovinki.ok) {
         const data = await resNovinki.json();
-        setNovinkiEndless(data.results || []);
+        setNovinkiEndless((data.results || []).filter(isUnlicensed));
       }
 
       // 3. Three Columns of 5
@@ -665,9 +668,9 @@ const Manga: React.FC = () => {
       const resRead5 = await fetch(`/api/manga/search?limit=5&order=latestUploadedChapter&source=all&_t=${t}`);
       const resPop5 = await fetch(`/api/manga/search?limit=5&order=followedCount&source=all&_t=${t}`);
 
-      if (resNov5.ok) setNovinki5((await resNov5.json()).results || []);
-      if (resRead5.ok) setNowReading5((await resRead5.json()).results || []);
-      if (resPop5.ok) setPopular5((await resPop5.json()).results || []);
+      if (resNov5.ok) setNovinki5(((await resNov5.json()).results || []).filter(isUnlicensed));
+      if (resRead5.ok) setNowReading5(((await resRead5.json()).results || []).filter(isUnlicensed));
+      if (resPop5.ok) setPopular5(((await resPop5.json()).results || []).filter(isUnlicensed));
 
     } catch (e) {
       console.error("Home feed fetch error", e);
@@ -690,7 +693,7 @@ const Manga: React.FC = () => {
       );
       if (res.ok) {
         const data = await res.json();
-        const apiResults = data.results || [];
+        const apiResults = (data.results || []).filter((m: MangaItem) => !checkIsMangaLicensed([m.title, m.originalTitle, m.id]).isLicensed);
 
         // Apply visual front-end filtering
         let filtered = apiResults.filter((m: MangaItem) => {
@@ -744,7 +747,7 @@ const Manga: React.FC = () => {
       const res = await fetch(`/api/manga/search?limit=24&offset=${nextOfs}&order=createdAt&source=all&_t=${Date.now()}`);
       if (res.ok) {
         const data = await res.json();
-        const results = data.results || [];
+        const results = (data.results || []).filter((m: MangaItem) => !checkIsMangaLicensed([m.title, m.originalTitle, m.id]).isLicensed);
         if (results.length > 0) {
           setRecentAdditions(prev => [...prev, ...results]);
           setRecentOffset(nextOfs);
@@ -766,7 +769,7 @@ const Manga: React.FC = () => {
       const res = await fetch(`/api/manga/search?limit=24&offset=${nextOfs}&order=createdAt&source=all&_t=${Date.now()}`);
       if (res.ok) {
         const data = await res.json();
-        const results = data.results || [];
+        const results = (data.results || []).filter((m: MangaItem) => !checkIsMangaLicensed([m.title, m.originalTitle, m.id]).isLicensed);
         if (results.length > 0) {
           setNovinkiEndless(prev => [...prev, ...results]);
           setNovinkiOffset(nextOfs);
@@ -902,25 +905,53 @@ const Manga: React.FC = () => {
     }
   };
 
+// Module-level cache for instant manga chapter rendering
+const clientChapterCache = new Map<string, { chapters: ChapterItem[]; isLicensed: boolean }>();
+
   // Fetch chapters for selected manga
   const selectMangaItem = async (manga: MangaItem, targetChapterNum?: string | number | null, autoLaunch = false) => {
-    setChaptersLoading(true);
-    setChapters([]);
     setIsMangaLicensed(false);
     fetchRelatedAndSimilar(manga);
+
+    // Fast-path: render instantly from memory cache if available
+    const cached = clientChapterCache.get(manga.id);
+    if (cached && cached.chapters.length > 0) {
+      setChapters(cached.chapters);
+      setIsMangaLicensed(cached.isLicensed);
+      setChaptersLoading(false);
+
+      if (targetChapterNum !== undefined && targetChapterNum !== null) {
+        const targetNum = parseFloat(String(targetChapterNum));
+        if (!isNaN(targetNum)) {
+          const matched = cached.chapters.find(c => {
+            const cNum = parseFloat(String(c.chapter || c.title || '0'));
+            return Math.abs(cNum - targetNum) < 0.6;
+          }) || cached.chapters.find(c => parseFloat(String(c.chapter || '0')) >= targetNum) || cached.chapters[0];
+
+          if (matched && autoLaunch) {
+            startReadingChapter(matched, manga);
+          }
+        }
+      }
+    } else {
+      setChaptersLoading(true);
+      setChapters([]);
+    }
 
     try {
       const titleParam = encodeURIComponent(manga.title || '');
       const origParam = encodeURIComponent(manga.originalTitle || '');
-      const res = await fetch(`/api/manga/${manga.id}/chapters?title=${titleParam}&orig=${origParam}&_t=${Date.now()}`);
+      const res = await fetch(`/api/manga/${manga.id}/chapters?title=${titleParam}&orig=${origParam}`);
       if (res.ok) {
         const data = await res.json();
         const chList: ChapterItem[] = data.chapters || [];
+        const licensed = !!data.isLicensed;
+        clientChapterCache.set(manga.id, { chapters: chList, isLicensed: licensed });
         setChapters(chList);
-        setIsMangaLicensed(!!data.isLicensed);
+        setIsMangaLicensed(licensed);
 
-        // Auto open chapter if target chapter is specified
-        if (chList.length > 0) {
+        // Auto open chapter if target chapter is specified and not launched from cache
+        if (chList.length > 0 && !cached) {
           if (targetChapterNum !== undefined && targetChapterNum !== null) {
             const targetNum = parseFloat(String(targetChapterNum));
             if (!isNaN(targetNum)) {

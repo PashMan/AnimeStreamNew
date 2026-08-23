@@ -1,3 +1,5 @@
+import { checkIsMangaLicensed, LICENSED_MANGA_LIST } from '../../data/licensedManga';
+
 export const onRequest = async (context: any) => {
   const { request } = context;
   const url = new URL(request.url);
@@ -965,10 +967,20 @@ export const onRequest = async (context: any) => {
         }).filter(Boolean);
       }
 
+      const isLicensedItem = (item: any) => {
+        if (!item) return false;
+        return checkIsMangaLicensed([item.title, item.originalTitle, item.id]).isLicensed;
+      };
+
+      mdResults = mdResults.filter(item => !isLicensedItem(item));
+      shikiResults = shikiResults.filter(item => !isLicensedItem(item));
+      rmResults = rmResults.filter(item => !isLicensedItem(item));
+
       const seenTitles = new Set();
       const interleaved: any[] = [];
       const pushIfUnique = (item: any) => {
         if (!item || !item.title) return;
+        if (isLicensedItem(item)) return;
         const canonical = item.title.toLowerCase().trim();
         if (!seenTitles.has(canonical)) {
           seenTitles.add(canonical);
@@ -981,6 +993,16 @@ export const onRequest = async (context: any) => {
         if (i < shikiResults.length) pushIfUnique(shikiResults[i]);
         if (i < rmResults.length) pushIfUnique(rmResults[i]);
         if (i < mdResults.length) pushIfUnique(mdResults[i]);
+      }
+
+      if (query && checkIsMangaLicensed([query]).isLicensed) {
+        return new Response(JSON.stringify({ results: [] }), {
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+            'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0'
+          }
+        });
       }
 
       return new Response(JSON.stringify({ results: interleaved }), {
@@ -1035,6 +1057,9 @@ export const onRequest = async (context: any) => {
       } catch (err: any) {}
 
       if (mangaResponse) {
+        if (checkIsMangaLicensed([mangaResponse.title, mangaResponse.originalTitle, mangaId, rawId]).isLicensed) {
+          return new Response(JSON.stringify({ error: 'Манга официально лицензирована в РФ и полностью скрыта', isLicensed: true }), { status: 404, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
+        }
         return new Response(JSON.stringify({ manga: mangaResponse }), { headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
       }
     }
@@ -1049,12 +1074,17 @@ export const onRequest = async (context: any) => {
           }
         });
         const m: any = await res.json();
+        const title = m.russian || m.name;
+        const originalTitle = m.name;
+        if (checkIsMangaLicensed([title, originalTitle, mangaId, rawId]).isLicensed) {
+          return new Response(JSON.stringify({ error: 'Манга официально лицензирована в РФ и полностью скрыта', isLicensed: true }), { status: 404, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
+        }
         const cover = m.image?.original ? `/api/manga/page-proxy?url=${encodeURIComponent(`https://shikimori.one${m.image.original}`)}&_cb=3` : 'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=600&auto=format&fit=crop&q=80';
         return new Response(JSON.stringify({
           manga: {
             id: mangaId,
-            title: m.russian || m.name,
-            originalTitle: m.name,
+            title,
+            originalTitle,
             rating: m.score ? parseFloat(m.score) : 8.0,
             status: m.status === 'released' ? 'Завершен' : 'Онгоинг',
             description: m.description || 'Описание отсутствует.',
@@ -1079,6 +1109,9 @@ export const onRequest = async (context: any) => {
       const m = data.data;
       const attrs = m.attributes;
       const { title, originalTitle } = extractBestMangaTitle(attrs);
+      if (checkIsMangaLicensed([title, originalTitle, mangaId]).isLicensed) {
+        return new Response(JSON.stringify({ error: 'Манга официально лицензирована в РФ и полностью скрыта', isLicensed: true }), { status: 404, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
+      }
       let cover = '';
       const coverRel = m.relationships?.find((r: any) => r.type === 'cover_art');
       if (coverRel && coverRel.attributes?.fileName) {
@@ -1186,6 +1219,10 @@ export const onRequest = async (context: any) => {
           };
         } else if (item.manga) {
           const m = item.manga;
+          const mTitle = m.russian || m.name;
+          if (checkIsMangaLicensed([mTitle, m.name, `shiki-${m.id}`]).isLicensed) {
+            return null;
+          }
           const imgUrl = m.image ? (m.image.original || m.image.preview || '') : '';
           const fullImg = imgUrl.startsWith('http') ? imgUrl : `https://shikimori.one${imgUrl}`;
           return {
@@ -1206,6 +1243,10 @@ export const onRequest = async (context: any) => {
       }).filter(Boolean) : [];
 
       const similar = Array.isArray(simData) ? simData.map((m: any) => {
+        const mTitle = m.russian || m.name;
+        if (checkIsMangaLicensed([mTitle, m.name, `shiki-${m.id}`]).isLicensed) {
+          return null;
+        }
         const imgUrl = m.image ? (m.image.original || m.image.preview || '') : '';
         const fullImg = imgUrl.startsWith('http') ? imgUrl : `https://shikimori.one${imgUrl}`;
         const kindLabel = m.kind === 'manhwa' ? 'Манхва' : (m.kind === 'manhua' ? 'Маньхуа' : 'Манга');
@@ -1219,7 +1260,7 @@ export const onRequest = async (context: any) => {
           genres: [kindLabel],
           chapters: m.chapters || 0
         };
-      }) : [];
+      }).filter(Boolean) : [];
 
       return new Response(JSON.stringify({ success: true, related, similar }), {
         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
@@ -1236,6 +1277,16 @@ export const onRequest = async (context: any) => {
   if (chaptersMatch) {
     let mangaId = chaptersMatch[1];
     let searchTitles: string[] = [];
+    const qTitle = url.searchParams.get('title');
+    const qOrig = url.searchParams.get('orig');
+    if (qTitle) searchTitles.push(qTitle);
+    if (qOrig) searchTitles.push(qOrig);
+
+    if (checkIsMangaLicensed([qTitle, qOrig, mangaId]).isLicensed) {
+      return new Response(JSON.stringify({ chapters: [], isLicensed: true, message: 'Манга официально лицензирована в РФ и полностью скрыта.' }), {
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+      });
+    }
     let mdMangaId = mangaId;
 
     if (mangaId.startsWith('remanga-')) {
@@ -1471,6 +1522,16 @@ export const onRequest = async (context: any) => {
   const chapterPagesMatch = pathname.match(/^\/chapter\/(.+)\/pages\/?$/);
   if (chapterPagesMatch) {
     const chapterId = chapterPagesMatch[1];
+    const reqTitle = url.searchParams.get('title') || '';
+    const reqOrig = url.searchParams.get('orig') || '';
+    const reqChTitle = url.searchParams.get('chTitle') || '';
+
+    if (checkIsMangaLicensed([reqTitle, reqOrig, reqChTitle, chapterId]).isLicensed) {
+      return new Response(JSON.stringify({ error: 'Манга официально лицензирована в РФ и полностью скрыта.', pages: [], isLicensed: true }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+      });
+    }
 
     if (chapterId.startsWith('mc-')) {
       const rawUrl = atob(chapterId.replace('mc-', ''));

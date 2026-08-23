@@ -1,0 +1,268 @@
+[
+  {
+    "id": "attack-on-titan",
+    "titleRu": "Атака на титанов",
+    "titleEn": "Attack on Titan",
+    "publisher": "Азбука",
+    "type": "manga"
+  },
+  {
+    "id": "chainsaw-man",
+    "titleRu": "Человек-бензопила",
+    "titleEn": "Chainsaw Man",
+    "publisher": "Азбука",
+    "type": "manga"
+  },
+  {
+    "id": "jujutsu-kaisen",
+    "titleRu": "Магическая битва",
+    "titleEn": "Jujutsu Kaisen",
+    "publisher": "Азбука",
+    "type": "manga"
+  },
+  {
+    "id": "one-piece",
+    "titleRu": "One Piece. Большой куш",
+    "titleEn": "One Piece",
+    "publisher": "Азбука",
+    "type": "manga"
+  },
+  {
+    "id": "naruto",
+    "titleRu": "Наруто",
+    "titleEn": "Naruto",
+    "publisher": "Азбука",
+    "type": "manga"
+  },
+  {
+    "id": "death-note",
+    "titleRu": "Тетрадь смерти",
+    "titleEn": "Death Note",
+    "publisher": "Азбука",
+    "type": "manga"
+  },
+  {
+    "id": "tokyo-ghoul",
+    "titleRu": "Токийский гуль",
+    "titleEn": "Tokyo Ghoul",
+    "publisher": "Азбука",
+    "type": "manga"
+  },
+  {
+    "id": "fullmetal-alchemist",
+    "titleRu": "Стальной алхимик",
+    "titleEn": "Fullmetal Alchemist",
+    "publisher": "Азбука",
+    "type": "manga"
+  },
+  {
+    "id": "my-hero-academia",
+    "titleRu": "Моя геройская академия",
+    "titleEn": "My Hero Academia",
+    "publisher": "Азбука",
+    "type": "manga"
+  },
+  {
+    "id": "one-punch-man",
+    "titleRu": "One-Punch Man",
+    "titleEn": "One-Punch Man",
+    "publisher": "Азбука",
+    "type": "manga"
+  },
+  {
+    "id": "blue-lock",
+    "titleRu": "Синяя тюрьма: Блю Лок",
+    "titleEn": "Blue Lock",
+    "publisher": "Азбука",
+    "type": "manga"
+  },
+  {
+    "id": "berserk",
+    "titleRu": "Берсерк",
+    "titleEn": "Berserk",
+    "publisher": "XL Media",
+    "type": "manga"
+  },
+  {
+    "id": "tokyo-revengers",
+    "titleRu": "Токийские мстители",
+    "titleEn": "Tokyo Revengers",
+    "publisher": "XL Media",
+    "type": "manga"
+  },
+  {
+    "id": "sailor-moon",
+    "titleRu": "Сейлор Мун",
+    "titleEn": "Pretty Guardian Sailor Moon",
+    "publisher": "XL Media",
+    "type": "manga"
+  },
+  {
+    "id": "fairy-tail",
+    "titleRu": "Fairy Tail. Хвост Феи",
+    "titleEn": "Fairy Tail",
+    "publisher": "XL Media",
+    "type": "manga"
+  },
+  {
+    "id": "seven-deadly-sins",
+    "titleRu": "Семь смертных грехов",
+    "titleEn": "The Seven Deadly Sins",
+    "publisher": "XL Media",
+    "type": "manga"
+  },
+  {
+    "id": "gantz",
+    "titleRu": "Ганц",
+    "titleEn": "Gantz",
+    "publisher": "XL Media",
+    "type": "manga"
+  },
+  {
+    "id": "made-in-abyss",
+    "titleRu": "Созданный в Бездне",
+    "titleEn": "Made in Abyss",
+    "publisher": "XL Media",
+    "type": "manga"
+  },
+  {
+    "id": "noragami",
+    "titleRu": "Бездомный бог",
+    "titleEn": "Noragami",
+    "publisher": "XL Media",
+    "type": "manga"
+  },
+  {
+    "id": "shield-hero",
+    "titleRu": "Восхождение Героя Щита",
+    "titleEn": "The Rising of the Shield Hero",
+    "publisher": "XL Media",
+    "type": "manga"
+  },
+  {
+    "id": "kamisama-kiss",
+    "titleRu": "Очень приятно, Бог",
+    "titleEn": "Kamisama Kiss",
+    "publisher": "XL Media",
+    "type": "manga"
+  },
+  {
+    "id": "demon-slayer",
+    "titleRu": "Клинок, рассекающий демонов",
+    "titleEn": "Demon Slayer: Kimetsu no Yaiba",
+    "publisher": "Истари Комикс",
+    "type": "manga"
+  },
+  {
+    "id": "vinland-saga",
+    "titleRu": "Сага о Винланде",
+    "titleEn": "Vinland Saga",
+    "publisher": "Истари Комикс",
+    "type": "manga"
+  },
+  {
+    "id": "promised-neverland",
+    "titleRu": "Обещанный Неверленд",
+    "titleEn": "The Promised Neverland",
+    "publisher": "Истари Комикс",
+    "type": "manga"
+  },
+  {
+    "id": "spy-x-family",
+    "titleRu": "Семья шпиона",
+    "titleEn": "Spy x Family",
+    "publisher": "Истари Комикс",
+    "type": "manga"
+  },
+  {
+    "id": "evangelion",
+    "titleRu": "Евангелион",
+    "titleEn": "Neon Genesis Evangelion",
+    "publisher": "Истари Комикс",
+    "type": "manga"
+  },
+  {
+    "id": "solo-leveling",
+    "titleRu": "Поднятие уровня в одиночку",
+    "titleEn": "Solo Leveling",
+    "publisher": "АСТ Mainstream",
+    "type": "manhwa"
+  },
+  {
+    "id": "omniscient-reader",
+    "titleRu": "Всеведущий читатель",
+    "titleEn": "Omniscient Reader's Viewpoint",
+    "publisher": "АСТ Mainstream",
+    "type": "manhwa"
+  },
+  {
+    "id": "bastard",
+    "titleRu": "Ублюдок",
+    "titleEn": "Bastard",
+    "publisher": "АСТ Mainstream",
+    "type": "manhwa"
+  },
+  {
+    "id": "sweet-home",
+    "titleRu": "Милый дом",
+    "titleEn": "Sweet Home",
+    "publisher": "АСТ Mainstream",
+    "type": "manhwa"
+  },
+  {
+    "id": "tower-of-god",
+    "titleRu": "Башня Бога",
+    "titleEn": "Tower of God",
+    "publisher": "АСТ Mainstream",
+    "type": "manhwa"
+  },
+  {
+    "id": "villains-destined-to-die",
+    "titleRu": "Единственный исход злодейки — смерть",
+    "titleEn": "Villains Are Destined to Die",
+    "publisher": "АСТ Mainstream",
+    "type": "manhwa"
+  },
+  {
+    "id": "who-made-me-a-princess",
+    "titleRu": "Однажды я стала принцессой",
+    "titleEn": "Who Made Me a Princess",
+    "publisher": "АСТ Mainstream",
+    "type": "manhwa"
+  },
+  {
+    "id": "dorohedoro",
+    "titleRu": "Дорохедоро",
+    "titleEn": "Dorohedoro",
+    "publisher": "Alt Graph",
+    "type": "manga"
+  },
+  {
+    "id": "oyasumi-punpun",
+    "titleRu": "Спокойной ночи, Пунпун",
+    "titleEn": "Goodnight Punpun",
+    "publisher": "Alt Graph",
+    "type": "manga"
+  },
+  {
+    "id": "hellsing",
+    "titleRu": "Хеллсинг",
+    "titleEn": "Hellsing",
+    "publisher": "Фабрика комиксов",
+    "type": "manga"
+  },
+  {
+    "id": "bleach",
+    "titleRu": "Блич",
+    "titleEn": "Bleach",
+    "publisher": "Эксмо / Азбука",
+    "type": "manga"
+  },
+  {
+    "id": "frieren",
+    "titleRu": "Фрирен, провожающая в последний путь",
+    "titleEn": "Frieren: Beyond Journey's End",
+    "publisher": "АСТ / Эксмо",
+    "type": "manga"
+  }
+]

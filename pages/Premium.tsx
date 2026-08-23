@@ -28,12 +28,12 @@ interface Plan {
 }
 
 const COMMON_PREMIUM_FEATURES = [
-  'Просмотр всех аниме в 4K качестве',
+  'Максимальное Full HD 1080p качество и высокий битрейт',
   'Скачивание любых серий на устройство',
   'Оффлайн-загрузка глав и томов манги для чтения без интернета',
   'Анимированные GIF-аватарки и баннеры в профиле',
-  'Доступ к эксклюзивному каталогу 4K аниме',
-  'Голосование за добавление 4K аниме',
+  'Синхронизация прогресса и истории на всех устройствах',
+  'Переход к чтению манги с момента в серии',
   'Значок Premium в профиле и комментариях'
 ];
 
@@ -107,11 +107,11 @@ const Premium: React.FC = () => {
         </div>
 
         <h1 className="text-3xl sm:text-5xl md:text-6xl font-display font-black tracking-tight uppercase">
-          Максимум качества в <span className="text-[#8B5CF6]">4K</span>
+          Максимум возможностей с <span className="text-[#8B5CF6]">Premium</span>
         </h1>
         
         <p className="text-slate-400 max-w-2xl mx-auto font-medium text-sm sm:text-base leading-relaxed">
-          Смотрите любимое аниме в 4K качестве, скачивайте серии на устройство, голосуйте за добавление новых тайтлов в 4K и наслаждайтесь аниме без ограничений.
+          Смотрите любимое аниме в максимальном качестве Full HD, скачивайте серии на устройство, читайте мангу оффлайн и наслаждайтесь аниме без ограничений.
         </p>
 
         {/* Free Registration Banner */}
@@ -129,7 +129,7 @@ const Premium: React.FC = () => {
           <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto mb-3" />
           <h2 className="text-2xl font-black uppercase text-white">Premium подписка успешно активирована!</h2>
           <p className="text-slate-300 text-sm mt-1">
-            Теперь вам доступен просмотр в 4K, скачивание любых серий, голосование за тайтлы и все возможности Premium.
+            Теперь вам доступен просмотр в максимальном качестве, скачивание любых серий и все возможности Premium.
           </p>
         </div>
       )}
@@ -404,10 +404,10 @@ const Premium: React.FC = () => {
             <div className="grid grid-cols-3 p-4 sm:p-5 items-center">
               <div className="font-bold text-white flex items-center gap-2">
                 <Tv className="w-4 h-4 text-[#8B5CF6] shrink-0" />
-                <span>Качество 4K</span>
+                <span>Качество 1080p FHD</span>
               </div>
-              <div className="text-center text-slate-500 font-bold">1080p</div>
-              <div className="text-center text-emerald-400 font-black">4K</div>
+              <div className="text-center text-slate-500 font-bold">720p</div>
+              <div className="text-center text-emerald-400 font-black">1080p FHD</div>
             </div>
 
             <div className="grid grid-cols-3 p-4 sm:p-5 items-center">
@@ -422,19 +422,10 @@ const Premium: React.FC = () => {
             <div className="grid grid-cols-3 p-4 sm:p-5 items-center">
               <div className="font-bold text-white flex items-center gap-2">
                 <Tv className="w-4 h-4 text-emerald-400 shrink-0" />
-                <span>Каталог 4K аниме</span>
+                <span>Оффлайн режим манги</span>
               </div>
               <div className="text-center text-slate-500 font-bold">—</div>
               <div className="text-center text-emerald-400 font-black">Полный доступ</div>
-            </div>
-
-            <div className="grid grid-cols-3 p-4 sm:p-5 items-center">
-              <div className="font-bold text-white flex items-center gap-2">
-                <Vote className="w-4 h-4 text-[#A78BFA] shrink-0" />
-                <span>Голосование за 4K</span>
-              </div>
-              <div className="text-center text-slate-500 font-bold">—</div>
-              <div className="text-center text-emerald-400 font-black">Доступно</div>
             </div>
 
             <div className="grid grid-cols-3 p-4 sm:p-5 items-center">
