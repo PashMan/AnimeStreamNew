@@ -29,14 +29,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   }
 
   try {
-    const KNOWN_MAPPINGS: Record<string, any> = {
-      "39535": { aniboom_id: "1718", animego_slug: "reinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-1718", title_ru: "Реинкарнация безработного: История о приключениях в другом мире", aniboom_map: '[{"voice":"AniLibria","url":"https://aniboom.one/embed/6XvYpL45p6e?episode=1&translation=2"},{"voice":"Studio Band","url":"https://aniboom.one/embed/6XvYpL45p6e?episode=1&translation=16"}]' },
-      "45576": { aniboom_id: "1845", animego_slug: "reinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-chast-2-1845", title_ru: "Реинкарнация безработного: История о приключениях в другом мире. Часть 2", aniboom_map: '[{"voice":"AniLibria","url":"https://aniboom.one/embed/M0l7qA5Wov7?episode=1&translation=2"},{"voice":"Studio Band","url":"https://aniboom.one/embed/M0l7qA5Wov7?episode=1&translation=16"}]' },
-      "51179": { aniboom_id: "2292", animego_slug: "reinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-2-2292", title_ru: "Реинкарнация безработного: История о приключениях в другом мире 2", aniboom_map: '[{"voice":"AniLibria","url":"https://aniboom.one/embed/N0r7wP6Qov9?episode=1&translation=2"},{"voice":"Studio Band","url":"https://aniboom.one/embed/N0r7wP6Qov9?episode=1&translation=16"}]' },
-      "55888": { aniboom_id: "2575", animego_slug: "reinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-2-chast-2-2575", title_ru: "Реинкарнация безработного: История о приключениях в другом мире 2. Часть 2", aniboom_map: '[{"voice":"AniLibria","url":"https://aniboom.one/embed/z68qnBAqNvg?episode=1&translation=2"},{"voice":"Studio Band","url":"https://aniboom.one/embed/z68qnBAqNvg?episode=1&translation=16"}]' },
-      "59193": { aniboom_id: "2575", animego_slug: "reinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-2-chast-2-2575", title_ru: "Реинкарнация безработного: История о приключениях в другом мире 2. Часть 2", aniboom_map: '[{"voice":"AniLibria","url":"https://aniboom.one/embed/z68qnBAqNvg?episode=1&translation=2"},{"voice":"Studio Band","url":"https://aniboom.one/embed/z68qnBAqNvg?episode=1&translation=16"}]' },
-      "49926": { aniboom_id: "2035", animego_slug: "reinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-eris-ohota-na-goblinov-2035", title_ru: "Реинкарнация безработного: Эрис — охота на гоблинов", aniboom_map: '[{"voice":"Studio Band","url":"https://aniboom.one/embed/k8Rq2b08awe?episode=1&translation=16"}]' }
-    };
+    const KNOWN_MAPPINGS: Record<string, any> = {};
 
     let row: any = null;
     if (env && env.DB) {

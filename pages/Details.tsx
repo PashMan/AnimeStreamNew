@@ -436,15 +436,6 @@ const Details: React.FC = () => {
     const isNative4KFilm = id === "50594" || id === "62568" || id === "38826" || id === "16782" || id === "32281";
     if (isNative4KFilm || t.is_native_4k) return "4K";
 
-    const hasAniboom = Boolean(
-      t.aniboom_iframe ||
-      t.provider === "AniBoom" ||
-      t.provider === "aniboom" ||
-      (t.sources && t.sources.some((s: any) => s.provider === "aniboom" && s.embedUrl))
-    );
-
-    if (hasAniboom) return "4K";
-
     const match = (t.title || "").match(/\b(4K|1080|720)\b/i);
     if (match) {
       const val = match[0].toUpperCase();
@@ -2333,7 +2324,7 @@ const Details: React.FC = () => {
                 </div>
 
                 {/* Voice Translations & Clean Episode List Widget */}
-                {anime && (
+                {anime && selectedPlayer !== "Kodik" && (
                   <div className="bg-[#1c1d21]/80 border border-white/10 p-5 md:p-6 rounded-[1.5rem] md:rounded-[2rem] flex flex-col gap-6 font-sans shadow-xl backdrop-blur-sm relative z-20">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-white/5">
                       <div className="relative flex-1 max-w-md z-30">
