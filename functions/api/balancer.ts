@@ -12,6 +12,9 @@ const animegoCache = new Map<string, AnimegoData>();
 
 const KNOWN_ANIMEGO_MAPPINGS: Record<string, AnimegoData> = {};
 
+// Shikimori IDs that MUST NOT query AniBoom (e.g. unreleased seasons like 59193 Mushoku Tensei III)
+const ANIBOOM_BLACKLIST_SHIKIMORI_IDS = new Set(["59193", "55888"]);
+
 function cyrillicToTranslit(str: string): string {
   const ruMap: Record<string, string> = {
     'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'e', 'ж': 'zh',
@@ -60,6 +63,7 @@ function isCandidateRelevant(candPath: string, queries: string[]): boolean {
 
 async function fetchAnimegoData(shikimoriId: string, searchTitle?: string): Promise<AnimegoData | null> {
   if (!shikimoriId) return null;
+  if (ANIBOOM_BLACKLIST_SHIKIMORI_IDS.has(String(shikimoriId))) return null;
   if (KNOWN_ANIMEGO_MAPPINGS[shikimoriId]) return KNOWN_ANIMEGO_MAPPINGS[shikimoriId];
   if (animegoCache.has(shikimoriId)) return animegoCache.get(shikimoriId)!;
 
@@ -285,7 +289,9 @@ export async function onRequest(context: any) {
   let animego_aniboom_map: Array<{ voice: string; url: string; episodesCount?: number }> = [];
   let animego_total_episodes: number | undefined = undefined;
 
-  if (shikimori_id) {
+  const isAniboomBlacklisted = shikimori_id && ANIBOOM_BLACKLIST_SHIKIMORI_IDS.has(String(shikimori_id));
+
+  if (shikimori_id && !isAniboomBlacklisted) {
     if (context?.env?.DB) {
       try {
         const row: any = await context.env.DB.prepare(

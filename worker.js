@@ -54,8 +54,6 @@ export default {
         "39535": { aniboom_id: "1718", animego_slug: "reinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-1718", title_ru: "Реинкарнация безработного: История о приключениях в другом мире" },
         "45576": { aniboom_id: "1845", animego_slug: "reinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-chast-2-1845", title_ru: "Реинкарнация безработного: История о приключениях в другом мире. Часть 2" },
         "51179": { aniboom_id: "2292", animego_slug: "reinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-2-2292", title_ru: "Реинкарнация безработного: История о приключениях в другом мире 2" },
-        "55888": { aniboom_id: "2575", animego_slug: "reinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-2-chast-2-2575", title_ru: "Реинкарнация безработного: История о приключениях в другом мире 2. Часть 2" },
-        "59193": { aniboom_id: "2575", animego_slug: "reinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-2-chast-2-2575", title_ru: "Реинкарнация безработного: История о приключениях в другом мире 2. Часть 2" },
         "49926": { aniboom_id: "2035", animego_slug: "reinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-eris-ohota-na-goblinov-2035", title_ru: "Реинкарнация безработного: Эрис — охота на гоблинов" }
       };
 

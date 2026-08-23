@@ -468,15 +468,14 @@ export const onRequest = async (context: any) => {
               if (score < 750) continue;
 
               const mdId = mangaItem.id;
-              const feedRes = await fetch(`https://api.mangadex.org/manga/${mdId}/feed?translatedLanguage[]=ru&translatedLanguage[]=en&limit=500&order[chapter]=asc`);
+              const feedRes = await fetch(`https://api.mangadex.org/manga/${mdId}/feed?translatedLanguage[]=ru&limit=500&order[chapter]=asc`);
               if (feedRes.ok) {
                 const feedData: any = await feedRes.json();
                 if (feedData.data && Array.isArray(feedData.data)) {
                   const isNumMatch = (chNum: any) => String(chNum) === String(targetChapNum) || Math.abs(parseFloat(chNum || '0') - parseFloat(targetChapNum)) < 0.01;
                   const validChaps = feedData.data.filter((ch: any) => isNumMatch(ch.attributes?.chapter) && (ch.attributes?.pages > 0 && !ch.attributes?.externalUrl));
 
-                  let matchedDex = validChaps.find((ch: any) => ch.attributes?.translatedLanguage === 'ru');
-                  if (!matchedDex) matchedDex = validChaps.find((ch: any) => ch.attributes?.translatedLanguage === 'en');
+                  const matchedDex = validChaps.find((ch: any) => ch.attributes?.translatedLanguage === 'ru');
 
                   if (matchedDex?.id) {
                     const srvRes = await fetch(`https://api.mangadex.org/at-home/server/${matchedDex.id}`);
@@ -1021,17 +1020,23 @@ export const onRequest = async (context: any) => {
   }
 
   // 1.5. SINGLE DETAILS: /api/manga/:id
-  const singleMangaMatch = pathname.match(/^\/([a-zA-Z0-9\-_]{3,40})\/?$/);
-  if (singleMangaMatch && !singleMangaMatch[1].endsWith('search') && !singleMangaMatch[1].endsWith('chapters') && !singleMangaMatch[1].endsWith('pages')) {
+  const singleMangaMatch = pathname.match(/^\/([^\/]+)\/?$/);
+  if (singleMangaMatch && !['search', 'chapters', 'pages', 'related-similar', 'licensed', 'anime-bridge', 'page-proxy'].includes(singleMangaMatch[1])) {
     const mangaId = singleMangaMatch[1];
     
     if (mangaId.startsWith('remanga-')) {
       const rawId = mangaId.replace('remanga-', '');
+      const cleanSlug = rawId.replace(/<[^>]*>/g, '').replace(/^_+|_+$/g, '');
       let mangaResponse: any = null;
       try {
-        const res = await fetch(`https://api.remanga.org/api/titles/${rawId}/`, {
+        let res = await fetch(`https://api.remanga.org/api/titles/${rawId}/`, {
           headers: { 'User-Agent': 'Mozilla/5.0' }
         });
+        if (!res.ok && cleanSlug && cleanSlug !== rawId) {
+          res = await fetch(`https://api.remanga.org/api/titles/${cleanSlug}/`, {
+            headers: { 'User-Agent': 'Mozilla/5.0' }
+          });
+        }
         const data: any = await res.json();
         const content = data?.content;
         if (content) {
@@ -1145,7 +1150,7 @@ export const onRequest = async (context: any) => {
   }
 
   // 2.5 RELATED & SIMILAR: /api/manga/:id/related-similar or /api/manga/related-similar
-  const relSimMatch = pathname.match(/^\/([a-zA-Z0-9\-_]+)\/related-similar\/?$/) || (pathname === '/related-similar' ? [null, ''] : null);
+  const relSimMatch = pathname.match(/^\/(.+)\/related-similar\/?$/) || (pathname === '/related-similar' ? [null, ''] : null);
   if (relSimMatch || pathname === '/related-similar') {
     const mangaId = relSimMatch ? relSimMatch[1] : (url.searchParams.get('id') || '');
     const titleHint = url.searchParams.get('title') || '';
@@ -1273,9 +1278,9 @@ export const onRequest = async (context: any) => {
   }
 
   // 3. CHAPTERS LIST: /api/manga/:id/chapters
-  const chaptersMatch = pathname.match(/^\/([a-zA-Z0-9\-_]+)\/chapters\/?$/);
+  const chaptersMatch = pathname.match(/^\/(.+)\/chapters\/?$/);
   if (chaptersMatch) {
-    let mangaId = chaptersMatch[1];
+    let mangaId = decodeURIComponent(chaptersMatch[1]);
     let searchTitles: string[] = [];
     const qTitle = url.searchParams.get('title');
     const qOrig = url.searchParams.get('orig');
@@ -1455,8 +1460,8 @@ export const onRequest = async (context: any) => {
         return [];
       };
 
-      const [ru, en] = await Promise.all([getFeed('ru'), getFeed('en')]);
-      return [...ru, ...en];
+      const ru = await getFeed('ru');
+      return ru;
     };
 
     // 3. Fetch ReadManga / Zaza Chapters

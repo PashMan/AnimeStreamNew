@@ -552,6 +552,9 @@ const animegoCache = new Map<string, AnimegoData>();
 
 const KNOWN_ANIMEGO_MAPPINGS: Record<string, AnimegoData> = {};
 
+// Shikimori IDs that MUST NOT query AniBoom (e.g. unreleased seasons like 59193 Mushoku Tensei III)
+const ANIBOOM_BLACKLIST_SHIKIMORI_IDS = new Set(["59193", "55888"]);
+
 function cyrillicToTranslit(str: string): string {
   const ruMap: Record<string, string> = {
     'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'e', 'ж': 'zh',
@@ -600,6 +603,7 @@ function isCandidateRelevant(candPath: string, queries: string[]): boolean {
 
 async function fetchAnimegoData(shikimoriId: string, searchTitle?: string): Promise<AnimegoData | null> {
   if (!shikimoriId) return null;
+  if (ANIBOOM_BLACKLIST_SHIKIMORI_IDS.has(String(shikimoriId))) return null;
   
   if (KNOWN_ANIMEGO_MAPPINGS[shikimoriId]) {
     return KNOWN_ANIMEGO_MAPPINGS[shikimoriId];
@@ -1837,15 +1841,14 @@ async function resolveFallbackPages(
             if (scoreTitleMatch(candTitles, titles) < 750) continue; // STRICT validation
 
             const mdId = mangaItem.id;
-            const feedRes = await fetch(`https://api.mangadex.org/manga/${mdId}/feed?translatedLanguage[]=ru&translatedLanguage[]=en&limit=500&order[chapter]=asc`);
+            const feedRes = await fetch(`https://api.mangadex.org/manga/${mdId}/feed?translatedLanguage[]=ru&limit=500&order[chapter]=asc`);
             if (feedRes.ok) {
               const feedData: any = await feedRes.json();
               if (feedData.data && Array.isArray(feedData.data)) {
                 const isNumMatch = (chNum: any) => String(chNum) === String(targetChapNum) || Math.abs(parseFloat(chNum || '0') - parseFloat(targetChapNum)) < 0.01;
                 const validChaps = feedData.data.filter((ch: any) => isNumMatch(ch.attributes?.chapter) && (ch.attributes?.pages > 0 && !ch.attributes?.externalUrl));
 
-                let matchedDex = validChaps.find((ch: any) => ch.attributes?.translatedLanguage === 'ru');
-                if (!matchedDex) matchedDex = validChaps.find((ch: any) => ch.attributes?.translatedLanguage === 'en');
+                const matchedDex = validChaps.find((ch: any) => ch.attributes?.translatedLanguage === 'ru');
 
                 if (matchedDex?.id) {
                   const srvRes = await fetch(`https://api.mangadex.org/at-home/server/${matchedDex.id}`);
@@ -2455,15 +2458,22 @@ app.get('/api/manga/licensed', (c) => {
 });
 
 app.get('/api/manga/:id', async (c) => {
-  const mangaId = c.req.param('id');
+  const rawParamId = c.req.param('id') || '';
+  const mangaId = decodeURIComponent(rawParamId);
   
   if (mangaId.startsWith('remanga-')) {
     const rawId = mangaId.replace('remanga-', '');
+    const cleanSlug = rawId.replace(/<[^>]*>/g, '').replace(/^_+|_+$/g, '');
     let mangaResponse: any = null;
     try {
-      const res = await fetch(`https://api.remanga.org/api/titles/${rawId}/`, {
+      let res = await fetch(`https://api.remanga.org/api/titles/${rawId}/`, {
         headers: { 'User-Agent': 'Mozilla/5.0' }
       });
+      if (!res.ok && cleanSlug && cleanSlug !== rawId) {
+        res = await fetch(`https://api.remanga.org/api/titles/${cleanSlug}/`, {
+          headers: { 'User-Agent': 'Mozilla/5.0' }
+        });
+      }
       const data = await res.json();
       const content = data?.content;
       if (content) {
@@ -2491,7 +2501,8 @@ app.get('/api/manga/:id', async (c) => {
     // Fallback to MD
     if (!mangaResponse) {
       try {
-        const mdSearchUrl = `https://api.mangadex.org/manga?limit=3&title=${encodeURIComponent(rawId.replace(/-/g, ' '))}&availableTranslatedLanguage[]=ru&includes[]=cover_art`;
+        const searchTitleQuery = cleanSlug || rawId;
+        const mdSearchUrl = `https://api.mangadex.org/manga?limit=3&title=${encodeURIComponent(searchTitleQuery.replace(/-/g, ' '))}&availableTranslatedLanguage[]=ru&includes[]=cover_art`;
         const mdRes = await fetch(mdSearchUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
         const mdData = await mdRes.json();
         if (mdData && mdData.data && mdData.data.length > 0) {
@@ -2945,7 +2956,8 @@ app.get('/api/manga/:id/related-similar', async (c) => {
 });
 
 app.get('/api/manga/:id/chapters', async (c) => {
-  let mangaId = c.req.param('id');
+  const rawParamId = c.req.param('id') || '';
+  let mangaId = decodeURIComponent(rawParamId);
   let searchTitles: string[] = [];
   const qTitle = c.req.query('title');
   const qOrig = c.req.query('orig');
@@ -2965,14 +2977,27 @@ app.get('/api/manga/:id/chapters', async (c) => {
   let explicitRemangaDir = '';
   if (mangaId.startsWith('remanga-')) {
     explicitRemangaDir = mangaId.replace('remanga-', '');
+    const cleanSlug = explicitRemangaDir.replace(/<[^>]*>/g, '').replace(/^_+|_+$/g, '');
     try {
-      const rmRes = await fetch(`https://api.remanga.org/api/titles/${explicitRemangaDir}/`, {
+      let rmRes = await fetch(`https://api.remanga.org/api/titles/${explicitRemangaDir}/`, {
         headers: {
           'User-Agent': 'Mozilla/5.0',
           'Referer': 'https://remanga.org/',
           'Accept': 'application/json, text/plain, */*'
         }
       });
+      if (!rmRes.ok && cleanSlug && cleanSlug !== explicitRemangaDir) {
+        rmRes = await fetch(`https://api.remanga.org/api/titles/${cleanSlug}/`, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0',
+            'Referer': 'https://remanga.org/',
+            'Accept': 'application/json, text/plain, */*'
+          }
+        });
+        if (rmRes.ok) {
+          explicitRemangaDir = cleanSlug;
+        }
+      }
       if (rmRes.ok) {
         const cType = rmRes.headers.get('content-type') || '';
         if (cType.includes('application/json')) {
@@ -2986,7 +3011,7 @@ app.get('/api/manga/:id/chapters', async (c) => {
     } catch(e) {}
     
     if (searchTitles.length === 0 && explicitRemangaDir) {
-      searchTitles.push(explicitRemangaDir.replace(/-/g, ' '));
+      searchTitles.push(explicitRemangaDir.replace(/<[^>]*>/g, '').replace(/-/g, ' '));
     }
 
     const matchedId = await findBestMangaDexMatch(searchTitles);
@@ -3125,8 +3150,8 @@ app.get('/api/manga/:id/chapters', async (c) => {
         return [];
       };
 
-      const [ru, en] = await Promise.all([getChapters('ru'), getChapters('en')]);
-      return [...ru, ...en];
+      const ruChapters = await getChapters('ru');
+      return ruChapters;
     }
     return [];
   };
