@@ -38,7 +38,7 @@ export const fetchPlayersClientSide = async (shikimoriId: string, title: string,
       const keysToRemove: string[] = [];
       for (let i = 0; i < localStorage.length; i++) {
         const k = localStorage.key(i);
-        if (k && (k.startsWith('as_cache_balancer_v') || k.startsWith('balancer_v')) && !k.includes('balancer_v16_')) {
+        if (k && (k.startsWith('as_cache_balancer_v') || k.startsWith('balancer_v')) && !k.includes('balancer_v17_')) {
           keysToRemove.push(k);
         }
       }
@@ -46,7 +46,7 @@ export const fetchPlayersClientSide = async (shikimoriId: string, title: string,
     } catch (_) {}
   }
 
-  const cacheKey = `balancer_v16_${shikimoriId}`;
+  const cacheKey = `balancer_v17_${shikimoriId}`;
   const cached = getFromStorage(cacheKey);
 
   // TTL: 6 hours for balancer data
@@ -75,8 +75,8 @@ export const fetchPlayersClientSide = async (shikimoriId: string, title: string,
          playersList = data;
       }
 
-      // Filter out standalone Anilibria iframe (unified via Kodik)
-      playersList = playersList.filter(p => p.name !== 'Anilibria');
+      // Filter out standalone Anilibria and Aniboom (Aniboom streams are extracted into voiceovers for KamiPlayer)
+      playersList = playersList.filter(p => p.name !== 'Anilibria' && p.name !== 'Aniboom');
 
       // Add custom player for 1080p encodes OR any anime containing Kodik/Aniboom stream/voiceovers
       const hasKodik = playersList.some(p => p.name === 'Kodik' && p.iframe);

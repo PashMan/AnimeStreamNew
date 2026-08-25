@@ -1352,13 +1352,10 @@ app.get('/api/balancer', async (c) => {
     // Resolve all promises concurrently
     await Promise.allSettled(jobs);
 
-    // Build list of successfully resolved players
+    // Build list of successfully resolved players (Aniboom streams are extracted into voiceovers, not as a standalone player)
     const players: any[] = [];
     if (kodik_iframe) {
       players.push({ name: 'Kodik', iframe: kodik_iframe });
-    }
-    if (aniboom_iframe) {
-      players.push({ name: 'Aniboom', iframe: aniboom_iframe });
     }
     if (collaps_iframe) players.push({ name: 'Collaps', iframe: collaps_iframe });
     if (bhcesh_iframe) players.push({ name: 'Bhcesh', iframe: bhcesh_iframe });
