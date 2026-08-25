@@ -2082,12 +2082,10 @@ const Details: React.FC = () => {
               )}
 
               <div className="flex flex-col gap-6">
-                {players.filter((p) => p.name !== "Aniboom").length > 0 && (
+                {players.length > 0 && (
                   <div className="flex items-center justify-between gap-3 flex-wrap">
                     <div className="flex items-center gap-2 overflow-x-auto pb-1 max-w-full custom-scrollbar">
-                      {players
-                        .filter((p) => p.name !== "Aniboom")
-                        .map((p) => {
+                      {players.map((p) => {
                           const isSelected = selectedPlayer === p.name;
                           return (
                             <button

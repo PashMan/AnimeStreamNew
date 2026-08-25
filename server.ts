@@ -1352,10 +1352,13 @@ app.get('/api/balancer', async (c) => {
     // Resolve all promises concurrently
     await Promise.allSettled(jobs);
 
-    // Build list of successfully resolved players (Aniboom button removed, parsed into unified player voiceovers)
+    // Build list of successfully resolved players
     const players: any[] = [];
     if (kodik_iframe) {
       players.push({ name: 'Kodik', iframe: kodik_iframe });
+    }
+    if (aniboom_iframe) {
+      players.push({ name: 'Aniboom', iframe: aniboom_iframe });
     }
     if (collaps_iframe) players.push({ name: 'Collaps', iframe: collaps_iframe });
     if (bhcesh_iframe) players.push({ name: 'Bhcesh', iframe: bhcesh_iframe });
@@ -4071,37 +4074,6 @@ app.get('/api/media/skip-timings', async (c) => {
       }
     } catch (err: any) {
       console.warn('[SkipTimings] Player parse error:', err.message);
-    }
-  }
-
-  // 2. If Kodik / AniBoom is missing intro or outro, fall back to / cross-check with AniSkip
-  if ((normalized.start === null || normalized.outro_start === null) && animeId && episode) {
-    try {
-      const aniSkipUrl = `https://api.aniskip.com/v2/skip-times/${animeId}/${episode}?types[]=op&types[]=ed&episodeLength=0`;
-      const aniRes = await fetch(aniSkipUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-      });
-      if (aniRes.ok) {
-        const aniData = await aniRes.json() as any;
-        if (aniData && aniData.found && aniData.results) {
-          const opResult = aniData.results.find((r: any) => r.skipType === 'op');
-          const edResult = aniData.results.find((r: any) => r.skipType === 'ed');
-
-          if (normalized.start === null && opResult?.interval) {
-            normalized.start = opResult.interval.startTime;
-            normalized.end = opResult.interval.endTime;
-          }
-          if (normalized.outro_start === null && edResult?.interval) {
-            normalized.outro_start = edResult.interval.startTime;
-            normalized.outro_end = edResult.interval.endTime;
-          }
-          if (providerName === 'none') providerName = 'aniskip';
-        }
-      }
-    } catch (err: any) {
-      console.warn('[ANISKIP] Fetch error:', err.message);
     }
   }
 
