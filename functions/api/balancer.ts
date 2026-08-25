@@ -10,7 +10,74 @@ interface AnimegoData {
 
 const animegoCache = new Map<string, AnimegoData>();
 
-const KNOWN_ANIMEGO_MAPPINGS: Record<string, AnimegoData> = {};
+const KNOWN_ANIMEGO_MAPPINGS: Record<string, AnimegoData> = {
+  // Re:Zero 4th Season (Жизнь в альтернативном мире с нуля 4) - AnimeGO 3279
+  "61316": {
+    animegoId: "3279",
+    aniboomMap: [
+      { voice: "AniLibria", url: "https://aniboom.one/embed/38kMR9yqEO4?episode=1&translation=2", episodesCount: 16 },
+      { voice: "Dream Cast", url: "https://aniboom.one/embed/38kMR9yqEO4?episode=1&translation=30", episodesCount: 16 },
+      { voice: "AniMaunt", url: "https://aniboom.one/embed/38kMR9yqEO4?episode=1&translation=46", episodesCount: 16 }
+    ],
+    defaultAniboomUrl: "https://aniboom.one/embed/38kMR9yqEO4?episode=1&translation=2",
+    quality: "1080",
+    totalEpisodes: 16
+  },
+  // Re:Zero 3rd Season (Жизнь в альтернативном мире с нуля 3) - AnimeGO 2680
+  "54857": {
+    animegoId: "2680",
+    aniboomMap: [
+      { voice: "AniLibria", url: "https://aniboom.one/embed/9ZLq9l4dN5G?episode=1&translation=2", episodesCount: 8 },
+      { voice: "Studio Band", url: "https://aniboom.one/embed/9ZLq9l4dN5G?episode=1&translation=16", episodesCount: 8 }
+    ],
+    defaultAniboomUrl: "https://aniboom.one/embed/9ZLq9l4dN5G?episode=1&translation=2",
+    quality: "1080",
+    totalEpisodes: 8
+  },
+  // Mushoku Tensei: Isekai Ittara Honki Dasu (Season 1) - AnimeGO 1718
+  "39535": {
+    animegoId: "1718",
+    aniboomMap: [
+      { voice: "AniLibria", url: "https://aniboom.one/embed/6XvYpL45p6e?episode=1&translation=2", episodesCount: 11 },
+      { voice: "Studio Band", url: "https://aniboom.one/embed/6XvYpL45p6e?episode=1&translation=16", episodesCount: 11 }
+    ],
+    defaultAniboomUrl: "https://aniboom.one/embed/6XvYpL45p6e?episode=1&translation=2",
+    quality: "1080",
+    totalEpisodes: 11
+  },
+  // Mushoku Tensei: Isekai Ittara Honki Dasu Part 2 - AnimeGO 1845
+  "45576": {
+    animegoId: "1845",
+    aniboomMap: [
+      { voice: "AniLibria", url: "https://aniboom.one/embed/M0l7qA5Wov7?episode=1&translation=2", episodesCount: 12 },
+      { voice: "Studio Band", url: "https://aniboom.one/embed/M0l7qA5Wov7?episode=1&translation=16", episodesCount: 12 }
+    ],
+    defaultAniboomUrl: "https://aniboom.one/embed/M0l7qA5Wov7?episode=1&translation=2",
+    quality: "1080",
+    totalEpisodes: 12
+  },
+  // Mushoku Tensei II: Isekai Ittara Honki Dasu - AnimeGO 2292
+  "51179": {
+    animegoId: "2292",
+    aniboomMap: [
+      { voice: "AniLibria", url: "https://aniboom.one/embed/N0r7wP6Qov9?episode=1&translation=2", episodesCount: 12 },
+      { voice: "Studio Band", url: "https://aniboom.one/embed/N0r7wP6Qov9?episode=1&translation=16", episodesCount: 12 }
+    ],
+    defaultAniboomUrl: "https://aniboom.one/embed/N0r7wP6Qov9?episode=1&translation=2",
+    quality: "1080",
+    totalEpisodes: 12
+  },
+  // Mushoku Tensei: Eris the Goblin Slayer OVA - AnimeGO 2035
+  "49926": {
+    animegoId: "2035",
+    aniboomMap: [
+      { voice: "Studio Band", url: "https://aniboom.one/embed/k8Rq2b08awe?episode=1&translation=16", episodesCount: 1 }
+    ],
+    defaultAniboomUrl: "https://aniboom.one/embed/k8Rq2b08awe?episode=1&translation=16",
+    quality: "1080",
+    totalEpisodes: 1
+  }
+};
 
 // Shikimori IDs that MUST NOT query AniBoom (e.g. unreleased seasons like 59193 Mushoku Tensei III)
 const ANIBOOM_BLACKLIST_SHIKIMORI_IDS = new Set(["59193", "55888"]);

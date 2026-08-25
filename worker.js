@@ -51,6 +51,8 @@ export default {
     try {
       // Known verified fallback mappings if not yet synced in D1
       const KNOWN_MAPPINGS = {
+        "61316": { aniboom_id: "38kMR9yqEO4", animego_slug: "re-zhizn-v-al-ternativnom-mire-s-nulya-4-3279", title_ru: "Re:Zero. Жизнь с нуля в альтернативном мире 4" },
+        "54857": { aniboom_id: "9ZLq9l4dN5G", animego_slug: "re-zhizn-v-alternativnom-mire-s-nulya-3-2680", title_ru: "Re:Zero. Жизнь с нуля в альтернативном мире 3" },
         "39535": { aniboom_id: "1718", animego_slug: "reinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-1718", title_ru: "Реинкарнация безработного: История о приключениях в другом мире" },
         "45576": { aniboom_id: "1845", animego_slug: "reinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-chast-2-1845", title_ru: "Реинкарнация безработного: История о приключениях в другом мире. Часть 2" },
         "51179": { aniboom_id: "2292", animego_slug: "reinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-2-2292", title_ru: "Реинкарнация безработного: История о приключениях в другом мире 2" },

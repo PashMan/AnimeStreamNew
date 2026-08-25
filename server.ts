@@ -607,7 +607,74 @@ interface AnimegoData {
 
 const animegoCache = new Map<string, AnimegoData>();
 
-const KNOWN_ANIMEGO_MAPPINGS: Record<string, AnimegoData> = {};
+const KNOWN_ANIMEGO_MAPPINGS: Record<string, AnimegoData> = {
+  // Re:Zero 4th Season (Жизнь в альтернативном мире с нуля 4) - AnimeGO 3279
+  "61316": {
+    animegoId: "3279",
+    aniboomMap: [
+      { voice: "AniLibria", url: "https://aniboom.one/embed/38kMR9yqEO4?episode=1&translation=2", episodesCount: 16 },
+      { voice: "Dream Cast", url: "https://aniboom.one/embed/38kMR9yqEO4?episode=1&translation=30", episodesCount: 16 },
+      { voice: "AniMaunt", url: "https://aniboom.one/embed/38kMR9yqEO4?episode=1&translation=46", episodesCount: 16 }
+    ],
+    defaultAniboomUrl: "https://aniboom.one/embed/38kMR9yqEO4?episode=1&translation=2",
+    quality: "1080",
+    totalEpisodes: 16
+  },
+  // Re:Zero 3rd Season (Жизнь в альтернативном мире с нуля 3) - AnimeGO 2680
+  "54857": {
+    animegoId: "2680",
+    aniboomMap: [
+      { voice: "AniLibria", url: "https://aniboom.one/embed/9ZLq9l4dN5G?episode=1&translation=2", episodesCount: 8 },
+      { voice: "Studio Band", url: "https://aniboom.one/embed/9ZLq9l4dN5G?episode=1&translation=16", episodesCount: 8 }
+    ],
+    defaultAniboomUrl: "https://aniboom.one/embed/9ZLq9l4dN5G?episode=1&translation=2",
+    quality: "1080",
+    totalEpisodes: 8
+  },
+  // Mushoku Tensei: Isekai Ittara Honki Dasu (Season 1) - AnimeGO 1718
+  "39535": {
+    animegoId: "1718",
+    aniboomMap: [
+      { voice: "AniLibria", url: "https://aniboom.one/embed/6XvYpL45p6e?episode=1&translation=2", episodesCount: 11 },
+      { voice: "Studio Band", url: "https://aniboom.one/embed/6XvYpL45p6e?episode=1&translation=16", episodesCount: 11 }
+    ],
+    defaultAniboomUrl: "https://aniboom.one/embed/6XvYpL45p6e?episode=1&translation=2",
+    quality: "1080",
+    totalEpisodes: 11
+  },
+  // Mushoku Tensei: Isekai Ittara Honki Dasu Part 2 - AnimeGO 1845
+  "45576": {
+    animegoId: "1845",
+    aniboomMap: [
+      { voice: "AniLibria", url: "https://aniboom.one/embed/M0l7qA5Wov7?episode=1&translation=2", episodesCount: 12 },
+      { voice: "Studio Band", url: "https://aniboom.one/embed/M0l7qA5Wov7?episode=1&translation=16", episodesCount: 12 }
+    ],
+    defaultAniboomUrl: "https://aniboom.one/embed/M0l7qA5Wov7?episode=1&translation=2",
+    quality: "1080",
+    totalEpisodes: 12
+  },
+  // Mushoku Tensei II: Isekai Ittara Honki Dasu - AnimeGO 2292
+  "51179": {
+    animegoId: "2292",
+    aniboomMap: [
+      { voice: "AniLibria", url: "https://aniboom.one/embed/N0r7wP6Qov9?episode=1&translation=2", episodesCount: 12 },
+      { voice: "Studio Band", url: "https://aniboom.one/embed/N0r7wP6Qov9?episode=1&translation=16", episodesCount: 12 }
+    ],
+    defaultAniboomUrl: "https://aniboom.one/embed/N0r7wP6Qov9?episode=1&translation=2",
+    quality: "1080",
+    totalEpisodes: 12
+  },
+  // Mushoku Tensei: Eris the Goblin Slayer OVA - AnimeGO 2035
+  "49926": {
+    animegoId: "2035",
+    aniboomMap: [
+      { voice: "Studio Band", url: "https://aniboom.one/embed/k8Rq2b08awe?episode=1&translation=16", episodesCount: 1 }
+    ],
+    defaultAniboomUrl: "https://aniboom.one/embed/k8Rq2b08awe?episode=1&translation=16",
+    quality: "1080",
+    totalEpisodes: 1
+  }
+};
 
 // Shikimori IDs that MUST NOT query AniBoom (e.g. unreleased seasons like 59193 Mushoku Tensei III)
 const ANIBOOM_BLACKLIST_SHIKIMORI_IDS = new Set(["59193", "55888"]);
@@ -3731,14 +3798,20 @@ app.options('/api/proxy-4k', (c) => {
 
 app.get('/api/proxy-4k', async (c) => {
   let targetUrl = c.req.query('url');
-  const rawUrl = c.req.url;
-  const urlIndex = rawUrl.indexOf('url=');
-  if (urlIndex !== -1) {
-    const extracted = rawUrl.substring(urlIndex + 4);
-    try {
-      targetUrl = decodeURIComponent(extracted);
-    } catch (err) {
-      targetUrl = c.req.query('url');
+  if (targetUrl) {
+    targetUrl = safeUnescapeUrl(targetUrl);
+    if (targetUrl.includes('&referer=')) {
+      targetUrl = targetUrl.split('&referer=')[0];
+    }
+  } else {
+    const rawUrl = c.req.url;
+    const urlIndex = rawUrl.indexOf('url=');
+    if (urlIndex !== -1) {
+      let extracted = rawUrl.substring(urlIndex + 4);
+      if (extracted.includes('&referer=')) {
+        extracted = extracted.split('&referer=')[0];
+      }
+      targetUrl = safeUnescapeUrl(extracted);
     }
   }
 
@@ -5200,24 +5273,15 @@ app.get('/api/media/playlist', async (c) => {
   const requestedQuality = c.req.query('quality');
 
   let cleanTargetUrl = '';
-  if (reqUrl.includes('aniboom.one')) {
-    const rawAniboom = reqUrl.substring(reqUrl.indexOf('http'));
-    let decoded = rawAniboom;
-    for (let i = 0; i < 4; i++) {
-      if (decoded.includes('%')) {
-        try { decoded = decodeURIComponent(decoded); } catch (_) { break; }
-      } else { break; }
-    }
-    if (decoded.includes('&fallback_url=')) {
-      decoded = decoded.split('&fallback_url=')[0];
-    }
-    cleanTargetUrl = decoded;
-  } else if (targetUrl) {
-    try {
-      cleanTargetUrl = decodeURIComponent(targetUrl);
-    } catch (_) {
-      cleanTargetUrl = targetUrl;
-    }
+  if (targetUrl) {
+    cleanTargetUrl = safeUnescapeUrl(targetUrl);
+  } else if (reqUrl.includes('url=')) {
+    const rawParam = reqUrl.substring(reqUrl.indexOf('url=') + 4);
+    cleanTargetUrl = safeUnescapeUrl(rawParam);
+  }
+
+  if (cleanTargetUrl.includes('&fallback_url=')) {
+    cleanTargetUrl = cleanTargetUrl.split('&fallback_url=')[0];
   }
 
   if (!cleanTargetUrl) {
@@ -5615,14 +5679,14 @@ app.get('/api/media/playlist', async (c) => {
 
 app.get('/api/media/segment', async (c) => {
   let segmentUrl = c.req.query('url');
-  const rawUrl = c.req.url;
-  const urlIndex = rawUrl.indexOf('url=');
-  if (urlIndex !== -1) {
-    const extracted = rawUrl.substring(urlIndex + 4);
-    try {
-      segmentUrl = decodeURIComponent(extracted);
-    } catch (err) {
-      segmentUrl = c.req.query('url');
+  if (segmentUrl) {
+    segmentUrl = safeUnescapeUrl(segmentUrl);
+  } else {
+    const rawUrl = c.req.url;
+    const urlIndex = rawUrl.indexOf('url=');
+    if (urlIndex !== -1) {
+      const extracted = rawUrl.substring(urlIndex + 4);
+      segmentUrl = safeUnescapeUrl(extracted);
     }
   }
 

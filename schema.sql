@@ -267,8 +267,10 @@ CREATE TABLE IF NOT EXISTS animego_catalog (
   aniboom_map TEXT
 );
 
--- Seed entries for Mushoku Tensei (Реинкарнация безработного) & core catalog titles
+-- Seed entries for Mushoku Tensei (Реинкарнация безработного) & Re:Zero (Жизнь в альтернативном мире с нуля)
 INSERT OR REPLACE INTO animego_catalog (shikimori_id, animego_slug, title_ru, aniboom_id, aniboom_map) VALUES
+(61316, 're-zhizn-v-al-ternativnom-mire-s-nulya-4-3279', 'Re:Zero. Жизнь с нуля в альтернативном мире 4', '38kMR9yqEO4', '[{"voice":"AniLibria","url":"https://aniboom.one/embed/38kMR9yqEO4?episode=1&translation=2"},{"voice":"Dream Cast","url":"https://aniboom.one/embed/38kMR9yqEO4?episode=1&translation=30"},{"voice":"AniMaunt","url":"https://aniboom.one/embed/38kMR9yqEO4?episode=1&translation=46"}]'),
+(54857, 're-zhizn-v-alternativnom-mire-s-nulya-3-2680', 'Re:Zero. Жизнь с нуля в альтернативном мире 3', '9ZLq9l4dN5G', '[{"voice":"AniLibria","url":"https://aniboom.one/embed/9ZLq9l4dN5G?episode=1&translation=2"},{"voice":"Studio Band","url":"https://aniboom.one/embed/9ZLq9l4dN5G?episode=1&translation=16"}]'),
 (39535, 'reinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-1718', 'Реинкарнация безработного: История о приключениях в другом мире', '1718', '[{"voice":"AniLibria","url":"https://aniboom.one/embed/6XvYpL45p6e?episode=1&translation=2"},{"voice":"Studio Band","url":"https://aniboom.one/embed/6XvYpL45p6e?episode=1&translation=16"}]'),
 (45576, 'reinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-chast-2-1845', 'Реинкарнация безработного: История о приключениях в другом мире. Часть 2', '1845', '[{"voice":"AniLibria","url":"https://aniboom.one/embed/M0l7qA5Wov7?episode=1&translation=2"},{"voice":"Studio Band","url":"https://aniboom.one/embed/M0l7qA5Wov7?episode=1&translation=16"}]'),
 (51179, 'reinkarnaciya-bezrabotnogo-istoriya-o-priklyucheniyah-v-drugom-mire-2-2292', 'Реинкарнация безработного: История о приключениях в другом мире 2', '2292', '[{"voice":"AniLibria","url":"https://aniboom.one/embed/N0r7wP6Qov9?episode=1&translation=2"},{"voice":"Studio Band","url":"https://aniboom.one/embed/N0r7wP6Qov9?episode=1&translation=16"}]'),

@@ -1184,7 +1184,7 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
       setShowSkipEdBtn(false);
 
       const targetUrl = iframeUrl || (src && src.includes("http") ? src : null);
-      if (!targetUrl && !animeId) return;
+      if (!targetUrl) return;
 
       const params = new URLSearchParams();
       if (targetUrl) params.set("url", targetUrl);

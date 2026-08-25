@@ -120,8 +120,17 @@ export async function onRequest(context: any) {
   const urlParam = urlObj.searchParams.get('url');
 
   if (!urlParam) {
-    return new Response(JSON.stringify({ error: 'url parameter is required' }), {
-      status: 400,
+    return new Response(JSON.stringify({ 
+      provider: 'none',
+      skip_buttons: null,
+      normalized: {
+        start: null,
+        end: null,
+        outro_start: null,
+        outro_end: null
+      }
+    }), {
+      status: 200,
       headers: {
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': '*'
