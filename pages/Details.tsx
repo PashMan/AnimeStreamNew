@@ -112,6 +112,14 @@ const getResolvedAniboomUrl = (t: any, epNum: number, defaultUrl?: string | null
     target = defaultUrl;
   }
 
+  // Also check if any item in translationsList has an aniboom iframe as fallback
+  if (!target && translationsList && translationsList.length > 0) {
+    const anyAniboom = translationsList.find((tr: any) => tr.aniboom_iframe || (tr.iframe && tr.iframe.includes('aniboom')));
+    if (anyAniboom) {
+      target = anyAniboom.aniboom_iframe || anyAniboom.iframe;
+    }
+  }
+
   if (!target || !target.includes('aniboom.one/embed/')) {
     return null;
   }
@@ -468,17 +476,14 @@ const Details: React.FC = () => {
     let isCurrent = true;
     const epNum = parseInt(paramEpisode || "1") || 1;
     const defaultAniboom = players.find((p) => p.name === "Aniboom" || (p.iframe && p.iframe.includes("aniboom")))?.iframe;
-    const isAniboomTranslation = Boolean(
-      selectedTranslation?.aniboom_iframe ||
-      selectedTranslation?.provider === "AniBoom" ||
-      selectedTranslation?.provider === "aniboom" ||
-      selectedTranslation?.quality_label === "4K"
-    );
+    
+    // Check if AniBoom embed is available for this voiceover or anime
+    const embedToResolve = getResolvedAniboomUrl(selectedTranslation, epNum, defaultAniboom, translations);
 
     const abortController = new AbortController();
 
-    if (!isAniboomTranslation) {
-      // Kodik translation selected (720p)
+    if (!embedToResolve) {
+      // No AniBoom available for this translation -> fallback to Kodik direct HLS in KamiPlayer
       const defaultKodik = players.find((p) => p.name === "Kodik")?.iframe;
       const kodikIframeUrl = getResolvedKodikUrl(selectedTranslation, epNum, defaultKodik, translations);
       if (kodikIframeUrl) {
@@ -496,31 +501,6 @@ const Details: React.FC = () => {
         if (isCurrent) {
           setResolvedStream(null);
           setIsResolvingStream(false);
-        }
-      }
-      return;
-    }
-
-    // AniBoom translation selected (4K)
-    const embedToResolve = getResolvedAniboomUrl(selectedTranslation, epNum, defaultAniboom, translations);
-
-    if (!embedToResolve) {
-      if (isCurrent) {
-        setIsResolvingStream(false);
-        // Fallback to Kodik HLS if AniBoom embed is not available
-        const defaultKodik = players.find((p) => p.name === "Kodik")?.iframe;
-        const kodikIframeUrl = getResolvedKodikUrl(selectedTranslation, epNum, defaultKodik, translations);
-        if (kodikIframeUrl) {
-          const kodikHlsUrl = getCleanPlaylistUrl(kodikIframeUrl, null, null, false);
-          setResolvedStream({
-            url: kodikHlsUrl,
-            streamType: "hls",
-            provider: "kodik"
-          });
-          setSelectedPlayer("KamiPlayer (1080p)");
-          console.log(`🔄 [KamiPlayer] AniBoom embed отсутствует, активирован прямой поток Kodik HLS:`, kodikHlsUrl);
-        } else {
-          setResolvedStream(null);
         }
       }
       return;

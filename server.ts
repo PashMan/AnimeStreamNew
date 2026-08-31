@@ -734,8 +734,11 @@ async function fetchAnimegoData(shikimoriId: string, searchTitle?: string): Prom
   }
 
   if (animegoCache.has(shikimoriId)) {
-    console.log(`[AnimeGo Scraper] Cache hit for Shikimori ID: ${shikimoriId}`);
-    return animegoCache.get(shikimoriId)!;
+    const cached = animegoCache.get(shikimoriId)!;
+    if (cached && cached.aniboomMap && cached.aniboomMap.length > 0) {
+      console.log(`[AnimeGo Scraper] Cache hit for Shikimori ID: ${shikimoriId}`);
+      return cached;
+    }
   }
 
   console.log(`[AnimeGo Scraper] Starting resolution for Shikimori ID: ${shikimoriId}, title query: ${searchTitle}`);
@@ -769,7 +772,7 @@ async function fetchAnimegoData(shikimoriId: string, searchTitle?: string): Prom
     console.log(`[AnimeGo Scraper] Querying Cloudflare Worker for Shikimori ID: ${shikimoriId}`);
     const workerRes = await fetch(`https://parser.oshxycfdjab.workers.dev/?shikimori_id=${shikimoriId}`, {
       headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-      signal: AbortSignal.timeout(3500)
+      signal: AbortSignal.timeout(6000)
     });
     if (workerRes.ok) {
       const workerData = await workerRes.json() as any;
@@ -1063,7 +1066,7 @@ app.get('/api/balancer', async (c) => {
 
   const title = c.req.query('title');
   const year = c.req.query('year');
-  const shikimori_id = c.req.query('shikimori_id');
+  const shikimori_id = c.req.query('shikimori_id') || c.req.query('id') || c.req.query('shikimori');
   
   console.log(`[API] Balancer: title=${title}, year=${year}, shiki=${shikimori_id}`);
   addLog('Balancer Request Started', { title, year, shikimori_id });
@@ -3883,7 +3886,14 @@ app.get('/api/proxy-4k', async (c) => {
       }
 
       const parentUrl = targetUrl.substring(0, targetUrl.lastIndexOf('/') + 1);
-      const safeReferer = refererParam ? `&referer=${encodeURIComponent(refererParam)}` : '&referer=https%3A%2F%2Faniboom.one%2F';
+      const reqUrlObj = new URL(c.req.url);
+      const proto = c.req.header('x-forwarded-proto') || reqUrlObj.protocol.replace(':', '') || 'http';
+      let host = c.req.header('x-forwarded-host') || c.req.header('host') || reqUrlObj.host || 'localhost:3000';
+      const proxyOrigin = (host.startsWith('http://') || host.startsWith('https://')) ? host : `${proto}://${host}`;
+
+      const safeReferer = isAniboomHost 
+        ? (refererParam ? `&referer=${encodeURIComponent(refererParam)}` : '&referer=https%3A%2F%2Faniboom.one%2F') 
+        : (refererParam ? `&referer=${encodeURIComponent(refererParam)}` : '');
       
       // Clean CRLF and split cleanly to avoid breaking tags
       const lines = text.replace(/\r/g, '').split('\n');
@@ -3897,7 +3907,7 @@ app.get('/api/proxy-4k', async (c) => {
               if (!p1.startsWith('http')) {
                 absUrl = p1.startsWith('/') ? new URL(p1, targetUrl).toString() : parentUrl + p1;
               }
-              return `URI="/api/proxy-4k?url=${encodeURIComponent(absUrl)}${safeReferer}"`;
+              return `URI="${proxyOrigin}/api/proxy-4k?url=${encodeURIComponent(absUrl)}${safeReferer}"`;
             });
           }
           return line;
@@ -3909,7 +3919,7 @@ app.get('/api/proxy-4k', async (c) => {
             ? new URL(trimmed, targetUrl).toString()
             : parentUrl + trimmed;
         }
-        return `/api/proxy-4k?url=${encodeURIComponent(absUrl)}${safeReferer}`;
+        return `${proxyOrigin}/api/proxy-4k?url=${encodeURIComponent(absUrl)}${safeReferer}`;
       });
       
       return new Response(rewrittenLines.join('\n'), {

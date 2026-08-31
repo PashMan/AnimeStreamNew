@@ -285,7 +285,7 @@ export async function onRequest(context: any) {
   const url = new URL(request.url);
   const title = url.searchParams.get('title');
   const year = url.searchParams.get('year');
-  const shikimori_id = url.searchParams.get('shikimori_id');
+  const shikimori_id = url.searchParams.get('shikimori_id') || url.searchParams.get('id') || url.searchParams.get('shikimori');
 
   if (!title && !shikimori_id) {
     return new Response(JSON.stringify({ error: 'Title or Shikimori ID is required' }), {
@@ -372,7 +372,12 @@ export async function onRequest(context: any) {
   const isAniboomBlacklisted = shikimori_id && ANIBOOM_BLACKLIST_SHIKIMORI_IDS.has(String(shikimori_id));
 
   if (shikimori_id && !isAniboomBlacklisted) {
-    if (context?.env?.DB) {
+    if (KNOWN_ANIMEGO_MAPPINGS[shikimori_id]) {
+      const kData = KNOWN_ANIMEGO_MAPPINGS[shikimori_id];
+      aniboom_iframe = kData.defaultAniboomUrl;
+      animego_aniboom_map = kData.aniboomMap;
+      animego_total_episodes = kData.totalEpisodes;
+    } else if (context?.env?.DB) {
       try {
         const row: any = await context.env.DB.prepare(
           'SELECT aniboom_id, animego_slug, title_ru, aniboom_map FROM animego_catalog WHERE shikimori_id = ?'
@@ -438,8 +443,8 @@ export async function onRequest(context: any) {
         kodik_iframe: matchedKt?.iframe || (kodik_iframe || null),
         episodes_count: maxEpisodes,
         last_episode: maxEpisodes,
-        quality_label: '1080p',
-        is_native_4k: false
+        quality_label: '4K',
+        is_native_4k: true
       });
     });
   }

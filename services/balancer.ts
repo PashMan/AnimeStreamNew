@@ -38,7 +38,7 @@ export const fetchPlayersClientSide = async (shikimoriId: string, title: string,
       const keysToRemove: string[] = [];
       for (let i = 0; i < localStorage.length; i++) {
         const k = localStorage.key(i);
-        if (k && (k.startsWith('as_cache_balancer_v') || k.startsWith('balancer_v')) && !k.includes('balancer_v17_')) {
+        if (k && (k.startsWith('as_cache_balancer_v') || k.startsWith('balancer_v')) && !k.includes('balancer_v22_')) {
           keysToRemove.push(k);
         }
       }
@@ -46,7 +46,7 @@ export const fetchPlayersClientSide = async (shikimoriId: string, title: string,
     } catch (_) {}
   }
 
-  const cacheKey = `balancer_v17_${shikimoriId}`;
+  const cacheKey = `balancer_v22_${shikimoriId}`;
   const cached = getFromStorage(cacheKey);
 
   // TTL: 6 hours for balancer data

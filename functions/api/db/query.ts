@@ -123,26 +123,58 @@ export const onRequestPost = async (context: any) => {
     } catch (e: any) {
       console.error("DB Query error: " + e.message + ' | query: ' + query);
       // Auto-migrate if column is missing
-      if (e.message && e.message.includes('cover_image')) {
+      const colMatch = e.message ? e.message.match(/no such column:\s*([a-zA-Z0-9_\.]+)/i) : null;
+      if (colMatch && colMatch[1]) {
+        let missingCol = colMatch[1];
+        if (missingCol.includes('.')) {
+          missingCol = missingCol.split('.').pop() || missingCol;
+        }
+        try {
+          let defVal = '';
+          if (['watched_anime_ids', 'watching_anime_ids', 'dropped_anime_ids', 'friends'].includes(missingCol)) {
+            defVal = " DEFAULT '[]'";
+          } else if (missingCol === 'unlocked_prefixes') {
+            defVal = " DEFAULT '[\"newgen\"]'";
+          } else if (missingCol === 'custom_prefix') {
+            defVal = " DEFAULT 'Ньюген'";
+          }
+          await db.prepare(`ALTER TABLE ${table} ADD COLUMN "${missingCol}" TEXT${defVal}`).run();
+          result = await db.prepare(query).bind(...params).all();
+        } catch (err2: any) {
+          console.error(`Auto-migration for ${table}.${missingCol} failed:`, err2?.message || err2);
+          // Retry static fallbacks if dynamic alter failed
+          try {
+            if (missingCol === 'unlocked_prefixes' || missingCol === 'custom_prefix' || missingCol === 'custom_title_text') {
+              try { await db.prepare("ALTER TABLE profiles ADD COLUMN custom_prefix TEXT DEFAULT 'Ньюген'").run(); } catch (_) {}
+              try { await db.prepare("ALTER TABLE profiles ADD COLUMN unlocked_prefixes TEXT DEFAULT '[\"newgen\"]'").run(); } catch (_) {}
+              try { await db.prepare("ALTER TABLE profiles ADD COLUMN custom_title_text TEXT").run(); } catch (_) {}
+              result = await db.prepare(query).bind(...params).all();
+            } else {
+              throw e;
+            }
+          } catch (_) {
+            throw e;
+          }
+        }
+      } else if (e.message && e.message.includes('cover_image')) {
         try {
           await db.prepare('ALTER TABLE community_collections ADD COLUMN cover_image TEXT').run();
-          // Retry the original query
           result = await db.prepare(query).bind(...params).all();
         } catch (e2) {
-          throw e; // throw original error if migration fails
+          throw e;
         }
       } else if (e.message && (e.message.includes('watching_anime_ids') || e.message.includes('dropped_anime_ids') || e.message.includes('watched_anime_ids') || e.message.includes('friends'))) {
         try {
-          await db.prepare('ALTER TABLE profiles ADD COLUMN watched_anime_ids TEXT DEFAULT "[]"').run();
+          await db.prepare("ALTER TABLE profiles ADD COLUMN watched_anime_ids TEXT DEFAULT '[]'").run();
         } catch(skip) {}
         try {
-          await db.prepare('ALTER TABLE profiles ADD COLUMN watching_anime_ids TEXT DEFAULT "[]"').run();
+          await db.prepare("ALTER TABLE profiles ADD COLUMN watching_anime_ids TEXT DEFAULT '[]'").run();
         } catch(skip) {}
         try {
-          await db.prepare('ALTER TABLE profiles ADD COLUMN dropped_anime_ids TEXT DEFAULT "[]"').run();
+          await db.prepare("ALTER TABLE profiles ADD COLUMN dropped_anime_ids TEXT DEFAULT '[]'").run();
         } catch(skip) {}
         try {
-          await db.prepare('ALTER TABLE profiles ADD COLUMN friends TEXT DEFAULT "[]"').run();
+          await db.prepare("ALTER TABLE profiles ADD COLUMN friends TEXT DEFAULT '[]'").run();
         } catch(skip) {}
         try {
            result = await db.prepare(query).bind(...params).all();
@@ -178,7 +210,6 @@ export const onRequestPost = async (context: any) => {
           await db.prepare('ALTER TABLE profiles ADD COLUMN shikimori_id TEXT').run();
           result = await db.prepare(query).bind(...params).all();
         } catch (e2) {
-          // If columns already exist or other error, just retry
           try {
              result = await db.prepare(query).bind(...params).all();
           } catch(e3) {
@@ -187,10 +218,10 @@ export const onRequestPost = async (context: any) => {
         }
       } else if (e.message && (e.message.includes('custom_prefix') || e.message.includes('unlocked_prefixes') || e.message.includes('custom_title_text'))) {
         try {
-          await db.prepare('ALTER TABLE profiles ADD COLUMN custom_prefix TEXT DEFAULT "Ньюген"').run();
+          await db.prepare("ALTER TABLE profiles ADD COLUMN custom_prefix TEXT DEFAULT 'Ньюген'").run();
         } catch(skip) {}
         try {
-          await db.prepare('ALTER TABLE profiles ADD COLUMN unlocked_prefixes TEXT DEFAULT "[\"newgen\"]"').run();
+          await db.prepare("ALTER TABLE profiles ADD COLUMN unlocked_prefixes TEXT DEFAULT '[\"newgen\"]'").run();
         } catch(skip) {}
         try {
           await db.prepare('ALTER TABLE profiles ADD COLUMN custom_title_text TEXT').run();
@@ -202,7 +233,6 @@ export const onRequestPost = async (context: any) => {
         }
       } else if (e.message && (e.message.includes('from_email') || e.message.includes('to_email') || e.message.includes('text'))) {
         try {
-          // Rename sender_id and receiver_id if they exist, or just add the columns
           await db.prepare('ALTER TABLE private_messages ADD COLUMN from_email TEXT').run();
         } catch(skip) {}
         try {

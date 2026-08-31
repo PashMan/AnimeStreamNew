@@ -146,7 +146,10 @@ export async function onRequest(context: any) {
       }
 
       const parentUrl = targetUrl.substring(0, targetUrl.lastIndexOf('/') + 1);
-      const safeReferer = refererParam ? `&referer=${encodeURIComponent(refererParam)}` : '&referer=https%3A%2F%2Faniboom.one%2F';
+      const proxyOrigin = getProxyOrigin(request);
+      const safeReferer = isAniboomHost 
+        ? (refererParam ? `&referer=${encodeURIComponent(refererParam)}` : '&referer=https%3A%2F%2Faniboom.one%2F') 
+        : (refererParam ? `&referer=${encodeURIComponent(refererParam)}` : '');
       
       // Clean CRLF and split cleanly to avoid breaking tags
       const lines = text.replace(/\r/g, '').split('\n');
@@ -160,7 +163,7 @@ export async function onRequest(context: any) {
               if (!p1.startsWith('http')) {
                 absUrl = p1.startsWith('/') ? new URL(p1, targetUrl).toString() : parentUrl + p1;
               }
-              return `URI="/api/proxy-4k?url=${encodeURIComponent(absUrl)}${safeReferer}"`;
+              return `URI="${proxyOrigin}/api/proxy-4k?url=${encodeURIComponent(absUrl)}${safeReferer}"`;
             });
           }
           return line;
@@ -172,7 +175,7 @@ export async function onRequest(context: any) {
             ? new URL(trimmed, targetUrl).toString()
             : parentUrl + trimmed;
         }
-        return `/api/proxy-4k?url=${encodeURIComponent(absUrl)}${safeReferer}`;
+        return `${proxyOrigin}/api/proxy-4k?url=${encodeURIComponent(absUrl)}${safeReferer}`;
       });
       
       return new Response(rewrittenLines.join('\n'), {
