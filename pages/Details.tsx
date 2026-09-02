@@ -444,41 +444,28 @@ const Details: React.FC = () => {
   const [translationQualityOverrides, setTranslationQualityOverrides] = useState<Record<string, string>>({});
 
   const getCleanTitle = (title: string) => {
-    return (title || "").replace(/\s*\((4K|1080|720|4к|1080p|720p)\)\s*/gi, "").trim();
+    return (title || "")
+      .replace(/\s*[\(\[](4K|1080|720|4к|1080p|720p|KamiBDRip|BDRip)[\)\]]\s*/gi, "")
+      .replace(/\s*\((4K|1080|720|4к|1080p|720p|KamiBDRip|BDRip)\)\s*/gi, "")
+      .trim();
   };
 
   const getTranslationQuality = (t: any) => {
     if (!t) return "1080p";
     if (
-      t.is_native_4k ||
-      (t.quality_label && /4k|4к/i.test(String(t.quality_label))) ||
-      (t.badge && /4k|4к/i.test(String(t.badge))) ||
-      (t.title && /4k|4к/i.test(String(t.title)))
-    ) {
-      return "4K";
-    }
-    if (
       t.provider === "Kami BDRip R2" ||
       t.isBdrip ||
       (t.quality_label && String(t.quality_label).includes("BDRip"))
     ) {
-      return "KamiBDRip";
-    }
-    if (
-      t.provider === "AniBoom" ||
-      t.provider === "aniboom" ||
-      t.aniboom_iframe ||
-      (t.title && String(t.title).toLowerCase().includes("aniboom")) ||
-      (t.quality_label && String(t.quality_label).includes("1080"))
-    ) {
-      return "1080p";
+      return t.is_native_4k || t.quality_label === "4K" ? "4K BDRip" : "BDRip";
     }
     if (
       t.provider === "kodik" ||
+      t.provider === "Kodik" ||
       t.kodik_iframe ||
       (t.iframe && String(t.iframe).includes("kodik"))
     ) {
-      return "720p";
+      return t.quality_label && t.quality_label.includes("1080") ? "1080p" : "720p";
     }
     return "1080p";
   };

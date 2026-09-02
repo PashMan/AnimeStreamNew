@@ -3901,9 +3901,30 @@ app.get('/api/proxy-4k', async (c) => {
         ? (refererParam ? `&referer=${encodeURIComponent(refererParam)}` : '&referer=https%3A%2F%2Faniboom.one%2F') 
         : (refererParam ? `&referer=${encodeURIComponent(refererParam)}` : '');
       
-      // Clean CRLF and split cleanly to avoid breaking tags
-      const lines = text.replace(/\r/g, '').split('\n');
-      const rewrittenLines = lines.map(line => {
+      // Clean CRLF/CR and split cleanly to avoid breaking squished tags or single-line playlists
+      let rawText = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+      rawText = rawText.replace(/([^\n])#(EXT[A-Z0-9-_]*)/g, '$1\n#$2');
+      rawText = rawText.replace(/([^\n])#(EXT[A-Z0-9-_]*)/g, '$1\n#$2');
+
+      const splitLines = rawText.split('\n');
+      const normalizedLines: string[] = [];
+      for (const l of splitLines) {
+        const trimmed = l.trim();
+        if (!trimmed) continue;
+        if (trimmed.startsWith('#EXTINF:')) {
+          const commaIdx = trimmed.indexOf(',');
+          if (commaIdx !== -1 && commaIdx < trimmed.length - 1) {
+            const tagPart = trimmed.substring(0, commaIdx + 1);
+            const uriPart = trimmed.substring(commaIdx + 1).trim();
+            normalizedLines.push(tagPart);
+            if (uriPart) normalizedLines.push(uriPart);
+            continue;
+          }
+        }
+        normalizedLines.push(trimmed);
+      }
+
+      const rewrittenLines = normalizedLines.map(line => {
         const trimmed = line.trim();
         if (!trimmed) return line;
         if (trimmed.startsWith('#')) {
