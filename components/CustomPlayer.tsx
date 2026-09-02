@@ -1399,7 +1399,7 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
           moreVideoAttr: {
             crossOrigin: "anonymous",
           },
-          autoplay: autoPlay || false,
+          autoplay: false,
           ...(defaultSub?.url
             ? {
                 subtitle: {
@@ -1665,10 +1665,8 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                   ? url
                   : `${window.location.origin}${url.startsWith('/') ? '' : '/'}${url}`;
 
+                hls.loadSource(streamUrl);
                 hls.attachMedia(video);
-                hls.on(Hls.Events.MEDIA_ATTACHED, () => {
-                  hls.loadSource(streamUrl);
-                });
 
                 let mediaErrorRetries = 0;
                 hls.on(Hls.Events.ERROR, function (event, data) {
@@ -1818,21 +1816,28 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                 };
 
                 hls.on(Hls.Events.MANIFEST_PARSED, (_, data) => {
-                  if (isQualityAdded) return;
-                  isQualityAdded = true;
-                  const parsedLevels = data.levels || hls.levels || [];
-                  updateQualitiesFromLevels(parsedLevels);
+                  if (!isQualityAdded) {
+                    isQualityAdded = true;
+                    const parsedLevels = data.levels || hls.levels || [];
+                    updateQualitiesFromLevels(parsedLevels);
 
-                  const curQ = selectedQualityRef.current;
-                  if (curQ && curQ !== "Авто") {
-                    const numericH = parseInt(curQ.replace(/\D/g, ""), 10);
-                    if (!isNaN(numericH) && numericH > 0) {
-                      const matchedIdx = parsedLevels.findIndex((l: any) => l.height === numericH);
-                      if (matchedIdx !== -1) {
-                        hls.nextLevel = matchedIdx;
-                        if (hls.loadLevel !== undefined) hls.loadLevel = matchedIdx;
+                    const curQ = selectedQualityRef.current;
+                    if (curQ && curQ !== "Авто") {
+                      const numericH = parseInt(curQ.replace(/\D/g, ""), 10);
+                      if (!isNaN(numericH) && numericH > 0) {
+                        const matchedIdx = parsedLevels.findIndex((l: any) => l.height === numericH);
+                        if (matchedIdx !== -1) {
+                          hls.nextLevel = matchedIdx;
+                          if (hls.loadLevel !== undefined) hls.loadLevel = matchedIdx;
+                        }
                       }
                     }
+                  }
+
+                  if (autoPlay || wasPlayingRef.current) {
+                    artInstance.play().catch((err: any) => {
+                      console.warn("[HLS Autoplay Handled]", err);
+                    });
                   }
                 });
 
@@ -1849,6 +1854,11 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                 });
               } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
                 video.src = url;
+                if (autoPlay || wasPlayingRef.current) {
+                  video.play().catch((err: any) => {
+                    console.warn("[Native HLS Autoplay Handled]", err);
+                  });
+                }
               }
             },
           },
