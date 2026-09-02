@@ -1444,17 +1444,22 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
             crossOrigin: "anonymous",
           },
           autoplay: autoPlay || false,
-          subtitle: defaultSub ? {
-            url: defaultSub.url,
-            type: "vtt",
-            style: {
-              color: "#ffffff",
-              fontSize: "22px",
-              textShadow: "0 2px 4px rgba(0,0,0,0.95), 0 0 8px rgba(0,0,0,0.85)",
-              fontWeight: "700",
-            },
-            encoding: "utf-8",
-          } : undefined,
+          ...(defaultSub?.url
+            ? {
+                subtitle: {
+                  url: defaultSub.url,
+                  type: "vtt",
+                  style: {
+                    color: "#ffffff",
+                    fontSize: "22px",
+                    textShadow:
+                      "0 2px 4px rgba(0,0,0,0.95), 0 0 8px rgba(0,0,0,0.85)",
+                    fontWeight: "700",
+                  },
+                  encoding: "utf-8",
+                },
+              }
+            : {}),
           pip: false,
           autoSize: true,
           autoMini: false,
