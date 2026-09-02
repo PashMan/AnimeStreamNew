@@ -458,7 +458,7 @@ const Details: React.FC = () => {
       selectedPlayer === "KamiBDRip" ||
       (t.quality_label && String(t.quality_label).includes("BDRip"))
     ) {
-      return t.is_native_4k || t.quality_label === "4K" ? "4K BDRip" : "BDRip";
+      return t.is_native_4k || t.quality_label === "4K" || t.quality_label === "4K BDRip" ? "4K BDRip" : "1080p BDRip";
     }
     if (selectedPlayer === "KamiPlayer" || selectedPlayer === "Aniboom" || t.aniboom_iframe || t.provider === "AniBoom") {
       return "1080p";
@@ -1298,12 +1298,36 @@ const Details: React.FC = () => {
             }
             setPlayers(playersList);
             const bdrip = id ? getBDRipRelease(id) : null;
-            if (bdrip) {
+            setHasFetchedPlayers(true);
+            const isTv = isTvDevice();
+            const bdripPlayer = playersList.find((p) => p.name === "KamiBDRip");
+            const customPlayer = playersList.find((p) => p.isCustom);
+            const kodikPlayer = playersList.find((p) => p.name === "Kodik");
+            
+            const isCurrentPlayerValid = selectedPlayer && playersList.some((p) => p.name === selectedPlayer);
+            
+            let chosenPlayer = "KamiPlayer";
+            if (isCurrentPlayerValid) {
+              chosenPlayer = selectedPlayer;
+            } else if (isTv && kodikPlayer) {
+              chosenPlayer = "Kodik";
+            } else if (bdripPlayer && isVip) {
+              chosenPlayer = "KamiBDRip";
+            } else if (customPlayer) {
+              chosenPlayer = customPlayer.name;
+            } else if (playersList.length > 0) {
+              chosenPlayer = playersList[0].name;
+            } else {
+              chosenPlayer = "KamiPlayer";
+            }
+            setSelectedPlayer(chosenPlayer);
+
+            if (chosenPlayer === "KamiBDRip" && bdrip) {
               const bdripTranslations: KodikTranslation[] = (bdrip.defaultAudioTrackNames || []).map((track, idx) => ({
                 id: `bdrip_track_${idx}`,
                 title: track,
                 type: "voice",
-                quality_label: bdrip.is4K ? "4K" : "KamiBDRip",
+                quality_label: bdrip.is4K ? "4K BDRip" : "1080p BDRip",
                 is_native_4k: !!bdrip.is4K,
                 episodes_count: bdrip.totalEpisodes || (anime?.episodes || 1),
                 last_episode: bdrip.totalEpisodes || (anime?.episodes || 1),
@@ -1313,41 +1337,15 @@ const Details: React.FC = () => {
                 kodik_iframe: null
               }));
               setTranslations(bdripTranslations);
-              if (bdripTranslations.length > 0) {
-                const matchedTranslation = selectedTranslation
-                  ? bdripTranslations.find((t: any) => getCleanTitle(t.title) === getCleanTitle(selectedTranslation.title))
-                  : null;
-                setSelectedTranslation(matchedTranslation || bdripTranslations[0]);
-              }
+              setSelectedTranslation(bdripTranslations[0] || null);
             } else {
               setTranslations(translationsList);
               if (translationsList.length > 0) {
-                const matchedTranslation = selectedTranslation
+                const matchedTranslation = selectedTranslation && !selectedTranslation.id?.startsWith("bdrip_track_")
                   ? translationsList.find((t: any) => getCleanTitle(t.title) === getCleanTitle(selectedTranslation.title))
                   : null;
                 setSelectedTranslation(matchedTranslation || translationsList[0]);
               }
-            }
-            setHasFetchedPlayers(true);
-            const isTv = isTvDevice();
-            const bdripPlayer = playersList.find((p) => p.name === "KamiBDRip");
-            const customPlayer = playersList.find((p) => p.isCustom);
-            const kodikPlayer = playersList.find((p) => p.name === "Kodik");
-            
-            const isCurrentPlayerValid = selectedPlayer && playersList.some((p) => p.name === selectedPlayer);
-            
-            if (isCurrentPlayerValid) {
-              // Сохраняем текущий плеер
-            } else if (isTv && kodikPlayer) {
-              setSelectedPlayer("Kodik");
-            } else if (bdripPlayer && isVip) {
-              setSelectedPlayer("KamiBDRip");
-            } else if (customPlayer) {
-              setSelectedPlayer(customPlayer.name);
-            } else if (playersList.length > 0) {
-              setSelectedPlayer(playersList[0].name);
-            } else {
-              setSelectedPlayer("KamiPlayer");
             }
           } else {
             setHasFetchedPlayers(true);
@@ -1375,7 +1373,7 @@ const Details: React.FC = () => {
         id: `bdrip_track_${idx}`,
         title: track,
         type: "voice",
-        quality_label: bdrip.is4K ? "4K" : "KamiBDRip",
+        quality_label: bdrip.is4K ? "4K BDRip" : "1080p BDRip",
         is_native_4k: !!bdrip.is4K,
         episodes_count: bdrip.totalEpisodes || (anime?.episodes || 1),
         last_episode: bdrip.totalEpisodes || (anime?.episodes || 1),
@@ -1392,7 +1390,8 @@ const Details: React.FC = () => {
     } else if (standardTranslationsRef.current.length > 0) {
       setTranslations(standardTranslationsRef.current);
       setSelectedTranslation((prev) => {
-        const matched = prev ? standardTranslationsRef.current.find((t) => getCleanTitle(t.title) === getCleanTitle(prev.title)) : null;
+        const isPrevBdrip = prev && (prev.provider === "Kami BDRip R2" || prev.id?.startsWith("bdrip_track_"));
+        const matched = prev && !isPrevBdrip ? standardTranslationsRef.current.find((t) => getCleanTitle(t.title) === getCleanTitle(prev.title)) : null;
         return matched || standardTranslationsRef.current[0] || null;
       });
     }

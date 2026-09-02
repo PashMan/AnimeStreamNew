@@ -1697,24 +1697,28 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                         break;
                       case Hls.ErrorTypes.MEDIA_ERROR:
                         mediaErrorRetries++;
-                        if (mediaErrorRetries <= 2) {
+                        if (mediaErrorRetries <= 3) {
                           hls.recoverMediaError();
-                        } else if (mediaErrorRetries === 3) {
+                        } else if (mediaErrorRetries === 4) {
                           hls.swapAudioCodec();
                           hls.recoverMediaError();
                         } else {
-                          if (onPlayerErrorRef.current) {
+                          if (!isBdrip && onPlayerErrorRef.current) {
                             onPlayerErrorRef.current();
+                          } else if (artInstance && artInstance.notice) {
+                            artInstance.notice.show = "Ошибка воспроизведения потока.";
                           }
                         }
                         break;
                       default:
-                        if (artInstance && artInstance.notice) {
-                          artInstance.notice.show =
-                            "Ошибка потока. Переключаем на запасной плеер...";
-                        }
-                        if (onPlayerErrorRef.current) {
-                          onPlayerErrorRef.current();
+                        if (!isBdrip) {
+                          if (artInstance && artInstance.notice) {
+                            artInstance.notice.show =
+                              "Ошибка потока. Переключаем на запасной плеер...";
+                          }
+                          if (onPlayerErrorRef.current) {
+                            onPlayerErrorRef.current();
+                          }
                         }
                         break;
                     }
