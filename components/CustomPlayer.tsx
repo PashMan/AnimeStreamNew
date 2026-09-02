@@ -1381,11 +1381,35 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
 
         if (isCancelled || !artRef.current) return;
 
+        // Cleanup any existing player instance before building a new one
+        if (artInstanceRef.current) {
+          const oldArt = artInstanceRef.current as any;
+          try {
+            if (oldArt.hls) {
+              oldArt.hls.stopLoad();
+              oldArt.hls.detachMedia();
+              oldArt.hls.destroy();
+              oldArt.hls = null;
+            }
+            if (oldArt.dash) {
+              oldArt.dash.destroy();
+              oldArt.dash = null;
+            }
+            if (oldArt.destroy) {
+              oldArt.destroy(true);
+            }
+          } catch (_) {}
+          artInstanceRef.current = null;
+        }
+
         const isDashStream = Boolean(
           streamType === "dash" ||
           src.includes(".mpd") ||
           (src.includes("url=") && decodeURIComponent(src).includes(".mpd"))
         );
+
+        // Explicit stream type detection so ArtPlayer never falls back to native video src for proxy URLs
+        const targetType = isDashStream ? "mpd" : "m3u8";
 
         const defaultSub = subtitles?.find((s) => s.default) || (subtitles && subtitles.length > 0 ? subtitles[0] : null);
 
@@ -1393,7 +1417,7 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
           container: artRef.current,
           url: finalUrl,
           poster: "",
-          type: isDashStream ? "mpd" : "m3u8",
+          type: targetType,
           theme: "#8B5CF6", // KamiAnime Signature Violet Color
           volume: 0.7,
           moreVideoAttr: {
@@ -1638,12 +1662,21 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
               });
             },
             m3u8: function (video, url, artInstance) {
+              // Clear any direct native video src set by browser or ArtPlayer before attaching HLS media
+              try {
+                if (video.hasAttribute("src")) {
+                  video.removeAttribute("src");
+                  video.load();
+                }
+              } catch (_) {}
+
               if (Hls.isSupported()) {
                 if ((artInstance as any).hls) {
                   try {
                     (artInstance as any).hls.stopLoad();
                     (artInstance as any).hls.detachMedia();
                     (artInstance as any).hls.destroy();
+                    (artInstance as any).hls = null;
                   } catch (_) {}
                 }
                 const hls = new Hls({
@@ -1987,6 +2020,20 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
       return () => {
         isCancelled = true;
         if (art) {
+          if ((art as any).hls) {
+            try {
+              (art as any).hls.stopLoad();
+              (art as any).hls.detachMedia();
+              (art as any).hls.destroy();
+              (art as any).hls = null;
+            } catch (_) {}
+          }
+          if ((art as any).dash) {
+            try {
+              (art as any).dash.destroy();
+              (art as any).dash = null;
+            } catch (_) {}
+          }
           if (art.currentTime > 0) {
             lastPlaybackPosRef.current = art.currentTime;
             wasPlayingRef.current = !art.video?.paused;
@@ -1995,7 +2042,7 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
             saveProgress(art.currentTime, art.duration);
           }
           if (art.destroy) {
-            art.destroy(false);
+            art.destroy(true);
           }
         }
         artInstanceRef.current = null;
