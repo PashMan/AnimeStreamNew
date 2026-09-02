@@ -487,14 +487,7 @@ const Details: React.FC = () => {
 
   // Плавное получение потока (AniBoom 4K или Kodik 720p) при выборе озвучки
   useEffect(() => {
-    const isSuzume = id === "50594" || id === "62568";
-    const isWeathering = id === "38826";
-    const isGardenOfWords = id === "16782";
-    const isKimiNoNaWa = id === "32281";
-    const isBDRip = isBDRipAvailable(id);
-    const isNative1080 = isSuzume || isWeathering || isGardenOfWords || isKimiNoNaWa || isBDRip;
-
-    if (isNative1080 && selectedPlayer === "KamiBDRip") {
+    if (selectedPlayer !== "KamiPlayer") {
       setResolvedStream(null);
       setIsResolvingStream(false);
       return;
@@ -2240,7 +2233,7 @@ const Details: React.FC = () => {
                             const currentEpNum = parseInt(paramEpisode || "1") || 1;
                             const episodesCount = bdripConfig?.totalEpisodes || (anime ? (anime.episodesAired || anime.episodes || 1) : 1);
                             const rawStreamUrl = bdripConfig ? bdripConfig.getStreamUrl(currentEpNum) : "";
-                            const customSrc = rawStreamUrl ? `/api/proxy-4k?url=${encodeURIComponent(rawStreamUrl)}` : "";
+                            const customSrc = rawStreamUrl;
                             const audioTrackNames = bdripConfig?.defaultAudioTrackNames;
                             const subtitles = bdripConfig?.getSubtitles ? bdripConfig.getSubtitles(currentEpNum) : undefined;
                             const maxTracks = bdripConfig?.maxAudioTracks;
