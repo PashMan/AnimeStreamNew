@@ -432,17 +432,26 @@ const Details: React.FC = () => {
   };
 
   const getTranslationQuality = (t: any) => {
-    if (!t) return "1080";
+    if (!t) return "1080p";
     if (
       t.provider === "AniBoom" ||
+      t.provider === "aniboom" ||
       t.aniboom_iframe ||
-      t.is_native_4k ||
-      (t.quality_label && String(t.quality_label).toLowerCase().includes("4k")) ||
-      (t.title && String(t.title).toLowerCase().includes("aniboom"))
+      t.provider === "Kami BDRip R2" ||
+      t.isBdrip ||
+      (t.title && String(t.title).toLowerCase().includes("aniboom")) ||
+      (t.quality_label && String(t.quality_label).includes("1080"))
     ) {
-      return "4K";
+      return "1080p";
     }
-    return "1080";
+    if (
+      t.provider === "kodik" ||
+      t.kodik_iframe ||
+      (t.iframe && String(t.iframe).includes("kodik"))
+    ) {
+      return "720p";
+    }
+    return "1080p";
   };
 
   const getDisplayTitle = (title: string) => {
@@ -526,7 +535,7 @@ const Details: React.FC = () => {
             });
             setIsResolvingStream(false);
             setSelectedPlayer("KamiPlayer (1080p)");
-            console.log(`🔥 [KamiPlayer 4K] Прямой поток AniBoom активирован:`, embedToResolve);
+            console.log(`🔥 [KamiPlayer] Прямой поток AniBoom активирован:`, embedToResolve);
             return;
           }
         }
@@ -549,7 +558,7 @@ const Details: React.FC = () => {
           });
           setIsResolvingStream(false);
           setSelectedPlayer("KamiPlayer (1080p)");
-          console.log(`🔥 [KamiPlayer 4K] AniBoom успешно активирован:`, data.url);
+          console.log(`🔥 [KamiPlayer] AniBoom успешно активирован:`, data.url);
           return;
         }
 
@@ -1413,33 +1422,33 @@ const Details: React.FC = () => {
   );
 
   const seoTitle = isYourName
-    ? `Смотреть Твоё имя (Kimi no Na wa) в 4K онлайн бесплатно`
+    ? `Смотреть Твоё имя (Kimi no Na wa) в Full HD онлайн бесплатно`
     : isSuzume
-      ? `Смотреть Судзумэ, закрывающая двери (Suzume no Tojimari) в 4K онлайн бесплатно`
+      ? `Смотреть Судзумэ, закрывающая двери (Suzume no Tojimari) в Full HD онлайн бесплатно`
       : isWeathering
-        ? `Смотреть Дитя погоды (Tenki no Ko) в 4K онлайн бесплатно`
+        ? `Смотреть Дитя погоды (Tenki no Ko) в Full HD онлайн бесплатно`
         : isGardenOfWords
-          ? `Смотреть Сад изящных слов (Kotonoha no Niwa) в 4K онлайн бесплатно`
+          ? `Смотреть Сад изящных слов (Kotonoha no Niwa) в Full HD онлайн бесплатно`
           : generatedSEO.title;
 
   const seoDescription = isYourName
-    ? `Смотреть аниме Твоё имя (Kimi no Na wa) в ультра-высоком качестве 4K (UHD) онлайн бесплатно. Потрясающая детализация шедевра Макото Синкая без рекламы.`
+    ? `Смотреть аниме Твоё имя (Kimi no Na wa) в отличном качестве Full HD (1080p) онлайн бесплатно. Потрясающая детализация шедевра Макото Синкая без рекламы.`
     : isSuzume
-      ? `Смотреть аниме Судзумэ, закрывающая двери (Suzume no Tojimari) в ультра-высоком качестве 4K (UHD) онлайн бесплатно. Насладитесь потрясающей детализацией шедевра Макото Синкая в 2160p без рекламы.`
+      ? `Смотреть аниме Судзумэ, закрывающая двери (Suzume no Tojimari) в отличном качестве Full HD (1080p) онлайн бесплатно. Насладитесь потрясающей детализацией шедевра Макото Синкая в 1080p без рекламы.`
       : isWeathering
-        ? `Смотреть аниме Дитя погоды (Tenki no Ko) в ультра-высоком качестве 4K (UHD) онлайн бесплатно. Насладитесь потрясающей детализацией шедевра Макото Синкая в 2160p без рекламы.`
+        ? `Смотреть аниме Дитя погоды (Tenki no Ko) в отличном качестве Full HD (1080p) онлайн бесплатно. Насладитесь потрясающей детализацией шедевра Макото Синкая в 1080p без рекламы.`
         : isGardenOfWords
-          ? `Смотреть аниме Сад изящных слов (Kotonoha no Niwa) в ультра-высоком качестве 4K (UHD) онлайн бесплатно. Насладитесь потрясающей детализацией шедевра Макото Синкая в 2160p без рекламы.`
+          ? `Смотреть аниме Сад изящных слов (Kotonoha no Niwa) в отличном качестве Full HD (1080p) онлайн бесплатно. Насладитесь потрясающей детализацией шедевра Макото Синкая в 1080p без рекламы.`
           : generatedSEO.description;
 
   const seoKeywords = isYourName
-    ? `смотреть твоё имя в 4к, твое имя 4k онлайн, kimi no na wa 4k, макото синкай твое имя 4к, смотреть аниме в 4к, ${anime.title}, ${anime.originalName}`
+    ? `смотреть твоё имя в full hd, твое имя 1080p онлайн, kimi no na wa 1080p, макото синкай твое имя 1080, смотреть аниме в 1080p, ${anime.title}, ${anime.originalName}`
     : isSuzume
-      ? `смотреть судзумэ в 4к, судзумэ закрывающая двери 4k онлайн, suzume no tojimari 4k, макото синкай судзумэ 4к, смотреть аниме в 4к, 2160p, uhd, ${anime.title}, ${anime.originalName}`
+      ? `смотреть судзумэ в full hd, судзумэ закрывающая двери 1080p онлайн, suzume no tojimari 1080p, макото синкай судзумэ 1080, смотреть аниме в 1080p, 1080p, fhd, ${anime.title}, ${anime.originalName}`
       : isWeathering
-        ? `смотреть дитя погоды в 4к, дитя погоды 4k онлайн, tenki no ko 4k, макото синкай дитя погоды 4к, смотреть аниме в 4к, 2160p, uhd, ${anime.title}, ${anime.originalName}`
+        ? `смотреть дитя погоды в full hd, дитя погоды 1080p онлайн, tenki no ko 1080p, макото синкай дитя погоды 1080, смотреть аниме в 1080p, 1080p, fhd, ${anime.title}, ${anime.originalName}`
         : isGardenOfWords
-          ? `смотреть сад изящных слов в 4к, сад изящных слов 4k онлайн, kotonoha no niwa 4k, макото синкай сад изящных слов 4к, смотреть аниме в 4к, 2160p, uhd, ${anime.title}, ${anime.originalName}`
+          ? `смотреть сад изящных слов в full hd, сад изящных слов 1080p онлайн, kotonoha no niwa 1080p, макото синкай сад изящных слов 1080, смотреть аниме в 1080p, 1080p, fhd, ${anime.title}, ${anime.originalName}`
           : generatedSEO.keywords;
 
   const isHentai =
@@ -1653,10 +1662,10 @@ const Details: React.FC = () => {
             </span>
           </div>
           <h1 className="text-4xl md:text-6xl font-display font-black text-white leading-tight mb-2 uppercase tracking-tighter drop-shadow-2xl">
-            {isYourName ? "Твоё имя (Kimi no Na wa) в 4K" : 
-             isSuzume ? "Судзумэ, закрывающая двери в 4K" :
-             isWeathering ? "Дитя погоды в 4K" :
-             isGardenOfWords ? "Сад изящных слов в 4K" :
+            {isYourName ? "Твоё имя (Kimi no Na wa)" : 
+             isSuzume ? "Судзумэ, закрывающая двери" :
+             isWeathering ? "Дитя погоды" :
+             isGardenOfWords ? "Сад изящных слов" :
              generatedSEO.h1Text}
           </h1>
           {anime.originalName && (
@@ -1848,7 +1857,7 @@ const Details: React.FC = () => {
 
             <section className="bg-gradient-to-br from-primary/10 via-white/5 to-transparent p-8 md:p-10 rounded-[2.5rem] border border-primary/25 shadow-xl backdrop-blur-sm space-y-4">
               <h3 className="text-xs font-black text-slate-200 uppercase tracking-widest flex items-center gap-2.5">
-                <span className="w-1.5 h-6 bg-primary rounded-full inline-block animate-pulse" /> Где смотреть аниме в 4К и без рекламы казино?
+                <span className="w-1.5 h-6 bg-primary rounded-full inline-block animate-pulse" /> Где смотреть аниме в Full HD и без рекламы казино?
               </h3>
               <p className="text-slate-300 leading-relaxed text-sm md:text-base font-normal">
                 {generatedSEO.promoText.split("**").map((part, index) => 
@@ -1877,7 +1886,7 @@ const Details: React.FC = () => {
                     </span>
                   </div>
                   <p className="text-xs text-slate-300 font-medium mt-1 leading-relaxed max-w-2xl">
-                    Зарегистрируйтесь прямо сейчас и получите <strong>1 месяц Premium</strong> бесплатно: просмотр в 4K качестве, чтение манги с момента конца серии и скачивание в .MP4 без ограничений!
+                    Зарегистрируйтесь прямо сейчас и получите <strong>1 месяц Premium</strong> бесплатно: просмотр в максимальном качестве, чтение манги с момента конца серии и скачивание в .MP4 без ограничений!
                   </p>
                 </div>
               </div>
@@ -2186,7 +2195,7 @@ const Details: React.FC = () => {
                                   </div>
                                   <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#8B5CF6]/20 border border-[#8B5CF6]/40 text-[#A78BFA] text-xs font-black tracking-wider uppercase mb-3">
                                     <Crown className="w-3.5 h-3.5 text-amber-300" />
-                                    {bdripConfig?.badge || "BDRip / 4K"}
+                                    {bdripConfig?.badge || "BDRip"}
                                   </div>
                                   <h3 className="text-xl md:text-2xl font-black text-white mb-2">
                                     Релиз максимального качества (BDRip)
@@ -2478,7 +2487,7 @@ const Details: React.FC = () => {
                               className="w-full bg-black/40 hover:bg-[#25262c] text-white border-l-4 border-l-primary border border-white/5 py-3 px-4 rounded-r-xl cursor-pointer flex items-center justify-between transition-all"
                             >
                               <div className="flex items-center gap-2.5 min-w-0 pr-2">
-                                <Crown className="w-4 h-4 text-primary fill-current shrink-0" />
+                                <Film className="w-4 h-4 text-primary shrink-0" />
                                 <span className="text-xs sm:text-sm font-black uppercase tracking-wider truncate">
                                   {activeCleanTitle}
                                 </span>

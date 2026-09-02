@@ -909,7 +909,6 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
     const artRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const artInstanceRef = useRef<Artplayer | null>(null);
-    const webglInstanceRef = useRef<AnimeWebGL1080p | null>(null);
 
     const { isVip, openPremiumModal } = useAuth();
     const pendingPremiumModalRef = useRef<boolean>(false);
@@ -918,7 +917,7 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
       if (pendingPremiumModalRef.current) {
         pendingPremiumModalRef.current = false;
         setTimeout(() => {
-          openPremiumModal("Просмотр в 4K качестве");
+          openPremiumModal("Full HD качество");
         }, 250);
       }
     }, [openPremiumModal]);
@@ -1380,49 +1379,6 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
         console.log(`🎬 [KamiPlayer Engine] Initializing player instance...`);
         console.log(`🔗 [KamiPlayer Engine] Raw Stream Source URL:`, finalUrl);
 
-        if (maxAudioTracks && src.endsWith(".m3u8")) {
-          try {
-            const res = await fetch(src);
-            const text = await res.text();
-            const baseUrl = src.substring(0, src.lastIndexOf("/") + 1);
-
-            const lines = text.replace(/\r/g, "").split("\n");
-            let audioCount = 0;
-            const newLines = lines
-              .map((line) => {
-                if (line.startsWith("#EXT-X-MEDIA:TYPE=AUDIO")) {
-                  audioCount++;
-                  if (audioCount > maxAudioTracks) return null;
-                }
-                if (line.includes('URI="')) {
-                  return line.replace(/URI="([^"]+)"/, (match, uri) => {
-                    if (!uri.startsWith("http") && !uri.startsWith("/"))
-                      return `URI="${baseUrl}${uri}"`;
-                    return match;
-                  });
-                }
-                if (
-                  line &&
-                  !line.startsWith("#") &&
-                  !line.startsWith("http") &&
-                  !line.startsWith("/")
-                ) {
-                  return baseUrl + line;
-                }
-                return line;
-              })
-              .filter((l) => l !== null);
-
-            const blob = new Blob([newLines.join("\n")], {
-              type: "application/vnd.apple.mpegurl",
-            });
-            blobUrl = URL.createObjectURL(blob);
-            finalUrl = blobUrl;
-          } catch (e) {
-            console.error("Failed to rewrite manifest", e);
-          }
-        }
-
         if (isCancelled || !artRef.current) return;
 
         const isDashStream = Boolean(
@@ -1661,28 +1617,10 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                   // Sort descending
                   nativeList.sort((a, b) => b.height - a.height);
 
-                  const isKodik = Boolean(
-                    !isAniboomStream && (
-                      (provider && provider.toLowerCase().includes("kodik")) ||
-                      src.includes("kodik")
-                    )
-                  );
-                  const hasNative1080 = !isKodik && (maxNativeH >= 1080 || isAniboomStream);
-
-                  const parsedQualities: { html: string; level: number; targetH?: number; isAi?: boolean }[] = [];
-
-                  // RULE:
-                  // 1080p native source (e.g. Aniboom) -> 4K
-                  // 720p native source (e.g. Kodik) -> 1080p
-                  if (hasNative1080) {
-                    parsedQualities.push({ html: "4K", level: 0, targetH: 2160, isAi: true });
-                  } else {
-                    parsedQualities.push({ html: "1080p", level: 0, targetH: 1080, isAi: true });
-                  }
-
+                  const parsedQualities: { html: string; level: number; targetH?: number }[] = [];
                   nativeList.forEach(item => {
                     if (!parsedQualities.some(q => q.html === item.html)) {
-                      parsedQualities.push({ html: item.html, level: item.level, targetH: -1 });
+                      parsedQualities.push({ html: item.html, level: item.level, targetH: item.height });
                     }
                   });
 
@@ -1690,54 +1628,6 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                   setAvailableQualities(parsedQualities);
                 } catch (err) {
                   console.warn("[Dash.js Quality Read Error]", err);
-                }
-              });
-
-              // Bind the Anime4K WebGL Upscaler for pristine 1080p/4K rendering
-              artInstance.on("ready", () => {
-                const videoEl = artInstance.video;
-                const isTv = isTvDevice();
-
-                if (canvasRef.current && videoEl && !isTv) {
-                  try {
-                    const videoContainer = videoEl.parentElement;
-                    if (videoContainer) {
-                      if (!videoContainer.querySelector("canvas.anime-webgl-canvas")) {
-                        videoContainer.appendChild(canvasRef.current);
-                        canvasRef.current.className = "anime-webgl-canvas";
-                        canvasRef.current.setAttribute(
-                          "style",
-                          "position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; pointer-events: none; transition: opacity 0.3s ease; opacity: 0; z-index: 5;",
-                        );
-                      }
-                    }
-
-                    if (webglInstanceRef.current) {
-                      webglInstanceRef.current.destroy();
-                    }
-
-                    const upscaler = new AnimeWebGL1080p(
-                      canvasRef.current,
-                      videoEl,
-                    );
-                    webglInstance = upscaler;
-                    webglInstanceRef.current = upscaler;
-
-                    const curQ = selectedQualityRef.current;
-                    if (curQ.includes("4K")) {
-                      upscaler.setTargetResolution(2160);
-                    } else if (curQ.includes("1080p (Anime4K")) {
-                      upscaler.setTargetResolution(1080);
-                    } else if (curQ === "Авто") {
-                      upscaler.setTargetResolution(0);
-                    } else {
-                      upscaler.setTargetResolution(-1);
-                    }
-
-                    upscaler.start();
-                  } catch (e) {
-                    console.error("Anime WebGL Initialization Error with DASH:", e);
-                  }
                 }
               });
 
@@ -1899,43 +1789,16 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                     }
                   }
 
-                  if (isAniboomStream && maxNativeH < 1080) {
-                    maxNativeH = 1080;
-                    if (!mappedLevels.some(q => q.html === "1080p")) {
-                      mappedLevels.unshift({ html: "1080p", level: 0, height: 1080 });
-                    }
-                  }
-
-                  const isKodik = Boolean(
-                    !isAniboomStream && (
-                      (provider && provider.toLowerCase().includes("kodik")) ||
-                      src.includes("kodik")
-                    )
-                  );
-                  const hasNative1080 = !isKodik && (maxNativeH >= 1080 || isAniboomStream);
-
-                  const finalQuals: { html: string; level: number; targetH?: number; isAi?: boolean }[] = [];
-
-                  const maxLevelIndex = Math.max(0, (levels?.length || 1) - 1);
-
-                  // RULE:
-                  // 1080p native source (e.g. Aniboom) -> 4K
-                  // 720p native source (e.g. Kodik) -> 1080p
-                  if (hasNative1080) {
-                    finalQuals.push({ html: "4K", level: maxLevelIndex, targetH: 2160, isAi: true });
-                  } else {
-                    finalQuals.push({ html: "1080p", level: maxLevelIndex, targetH: 1080, isAi: true });
-                  }
-
+                  const finalQuals: { html: string; level: number; targetH?: number }[] = [];
                   mappedLevels.forEach((item) => {
                     if (!finalQuals.some((q) => q.html === item.html)) {
-                      finalQuals.push({ html: item.html, level: item.level, targetH: -1 });
+                      finalQuals.push({ html: item.html, level: item.level, targetH: item.height });
                     }
                   });
 
                   finalQuals.push({ html: "Авто", level: -1, targetH: 0 });
 
-                  console.log("📺 [HLS Quality Map] Dynamic qualities resolved:", finalQuals);
+                  console.log("📺 [HLS Quality Map] Native qualities resolved:", finalQuals);
                   setAvailableQualities(finalQuals);
                 };
 
@@ -1947,18 +1810,12 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
 
                   const curQ = selectedQualityRef.current;
                   if (curQ && curQ !== "Авто") {
-                    if (curQ.includes("4K") || curQ.includes("1080p (Anime4K")) {
-                      const maxLvl = Math.max(0, parsedLevels.length - 1);
-                      hls.nextLevel = maxLvl;
-                      if (hls.loadLevel !== undefined) hls.loadLevel = maxLvl;
-                    } else {
-                      const numericH = parseInt(curQ.replace(/\D/g, ""), 10);
-                      if (!isNaN(numericH) && numericH > 0) {
-                        const matchedIdx = parsedLevels.findIndex((l: any) => l.height === numericH);
-                        if (matchedIdx !== -1) {
-                          hls.nextLevel = matchedIdx;
-                          if (hls.loadLevel !== undefined) hls.loadLevel = matchedIdx;
-                        }
+                    const numericH = parseInt(curQ.replace(/\D/g, ""), 10);
+                    if (!isNaN(numericH) && numericH > 0) {
+                      const matchedIdx = parsedLevels.findIndex((l: any) => l.height === numericH);
+                      if (matchedIdx !== -1) {
+                        hls.nextLevel = matchedIdx;
+                        if (hls.loadLevel !== undefined) hls.loadLevel = matchedIdx;
                       }
                     }
                   }
@@ -1966,53 +1823,6 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
 
                 hls.on(Hls.Events.LEVEL_SWITCHED, (_, data) => {
                   console.log(`🎬 [HLS] Quality level actively switched to index: ${data.level}`);
-                });
-
-                artInstance.on("ready", () => {
-                  const videoEl = artInstance.video;
-                  const isTv = isTvDevice();
-
-                  if (canvasRef.current && videoEl && !isTv) {
-                    try {
-                      const videoContainer = videoEl.parentElement;
-                      if (videoContainer) {
-                        if (!videoContainer.querySelector("canvas.anime-webgl-canvas")) {
-                          videoContainer.appendChild(canvasRef.current);
-                          canvasRef.current.className = "anime-webgl-canvas";
-                          canvasRef.current.setAttribute(
-                            "style",
-                            "position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; pointer-events: none; transition: opacity 0.3s ease; opacity: 0; z-index: 5;",
-                          );
-                        }
-                      }
-
-                      if (webglInstanceRef.current) {
-                        webglInstanceRef.current.destroy();
-                      }
-
-                      const upscaler = new AnimeWebGL1080p(
-                        canvasRef.current,
-                        videoEl,
-                      );
-                      webglInstance = upscaler;
-                      webglInstanceRef.current = upscaler;
-
-                      const curQ = selectedQualityRef.current;
-                      if (curQ.includes("4K")) {
-                        upscaler.setTargetResolution(2160);
-                      } else if (curQ.includes("1080p (Anime4K")) {
-                        upscaler.setTargetResolution(1080);
-                      } else if (curQ === "Авто") {
-                        upscaler.setTargetResolution(0);
-                      } else {
-                        upscaler.setTargetResolution(-1);
-                      }
-
-                      upscaler.start();
-                    } catch (e) {
-                      console.error("Anime WebGL Initialization Error with HLS:", e);
-                    }
-                  }
                 });
 
                 artInstance.on("destroy", () => {
@@ -2151,12 +1961,6 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
 
       return () => {
         isCancelled = true;
-        if (webglInstanceRef.current) {
-          webglInstanceRef.current.destroy();
-          webglInstanceRef.current = null;
-        } else if (webglInstance) {
-          webglInstance.destroy();
-        }
         if (art) {
           if (art.currentTime > 0) {
             lastPlaybackPosRef.current = art.currentTime;
@@ -2186,57 +1990,7 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
     ]);
 
     // Quality Selection Handler
-    const handleSelectQuality = (item: { html: string; level: number; targetH?: number; isAi?: boolean }) => {
-      const is4K = item.html.includes("4K") || item.targetH === 2160;
-
-      // 4K is Premium only! 1080p and lower is free for everyone
-      if (is4K && !isVip) {
-        const art = artInstanceRef.current;
-        if (art && art.notice) {
-          art.notice.show = "4K доступно с Premium. Переключено на 1080p";
-        }
-        // Mark pending modal to trigger after player / fullscreen is closed
-        pendingPremiumModalRef.current = true;
-
-        // Auto switch to 1080p
-        const item1080 = availableQualities.find((q) => q.html.includes("1080") || q.targetH === 1080) || {
-          html: "1080p",
-          level: 0,
-          targetH: 1080,
-          isAi: true
-        };
-
-        setSelectedQuality(item1080.html);
-        localStorage.setItem("kami_player_selected_quality", item1080.html);
-
-        if (webglInstanceRef.current) {
-          webglInstanceRef.current.setTargetResolution(1080);
-          webglInstanceRef.current.start();
-        }
-
-        if (art && (art as any).hls) {
-          const hls = (art as any).hls;
-          try {
-            let targetLvl = item1080.level >= 0 ? item1080.level : ((hls.levels && hls.levels.length > 0) ? hls.levels.length - 1 : 0);
-            hls.nextLevel = targetLvl;
-            if (hls.loadLevel !== undefined) hls.loadLevel = targetLvl;
-          } catch (_) {}
-        } else if (art && (art as any).dash) {
-          const player = (art as any).dash;
-          try {
-            const bitrates = player.getBitrateInfoListFor("video");
-            if (bitrates && bitrates.length > 0) {
-              const maxB = bitrates.length - 1;
-              player.setQualityFor("video", maxB);
-            }
-          } catch (_) {}
-        }
-
-        setIsSettingsOpen(false);
-        setActiveSubmenu("main");
-        return;
-      }
-
+    const handleSelectQuality = (item: { html: string; level: number; targetH?: number }) => {
       setSelectedQuality(item.html);
       localStorage.setItem("kami_player_selected_quality", item.html);
 
@@ -2244,38 +1998,16 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
       const currentPos = art ? art.currentTime : 0;
       const wasPlaying = art && art.video && !art.video.paused;
 
-      // WebGL Upscaler resolution mode
-      if (webglInstanceRef.current) {
-        if (item.html.includes("4K") || item.targetH === 2160) {
-          webglInstanceRef.current.setTargetResolution(2160);
-          webglInstanceRef.current.start();
-        } else if ((item.html.includes("1080p") && (item.isAi || item.html.includes("CAS") || item.html.includes("Anime4K"))) || item.targetH === 1080) {
-          webglInstanceRef.current.setTargetResolution(1080);
-          webglInstanceRef.current.start();
-        } else if (item.html === "Авто" || item.targetH === 0) {
-          webglInstanceRef.current.setTargetResolution(0); // Auto mode: 1080p source -> 4K (2160p), 720p source -> 1080p
-          webglInstanceRef.current.start();
-        } else {
-          // Standard raw resolution selected without WebGL upscaling
-          webglInstanceRef.current.setTargetResolution(-1);
-        }
-      }
-
       if (art && (art as any).hls) {
         const hls = (art as any).hls;
         try {
           console.log(`[Quality Switch] Applying HLS quality level ${item.level} (${item.html})`);
-          let targetLvl = item.level;
-          if (item.isAi || targetLvl === -1) {
-            targetLvl = (hls.levels && hls.levels.length > 0) ? hls.levels.length - 1 : (item.level >= 0 ? item.level : 0);
-          }
-
-          if (item.level === -1 && !item.isAi) {
+          if (item.level === -1) {
             hls.currentLevel = -1;
             hls.nextLevel = -1;
           } else {
-            hls.nextLevel = targetLvl;
-            if (hls.loadLevel !== undefined) hls.loadLevel = targetLvl;
+            hls.nextLevel = item.level;
+            if (hls.loadLevel !== undefined) hls.loadLevel = item.level;
           }
 
           if (currentPos > 0) {
@@ -2294,7 +2026,7 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
         const player = (art as any).dash;
         try {
           console.log(`[Quality Switch] Applying DASH quality level ${item.level} (${item.html})`);
-          if (item.level === -1 || item.isAi) {
+          if (item.level === -1) {
             if (typeof player.updateSettings === "function") {
               player.updateSettings({
                 streaming: {
@@ -2349,9 +2081,11 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
           console.warn("[Dash.js Quality Switch Error]", err);
         }
       }
+
       if (art && art.notice) {
         art.notice.show = `Качество: ${item.html}`;
       }
+      setIsSettingsOpen(false);
       setActiveSubmenu("main");
     };
 
@@ -2751,7 +2485,6 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                   <div className="space-y-1">
                     {availableQualities.map((q) => {
                       const isSelected = selectedQuality === q.html;
-                      const is4K = q.html.includes("4K") || q.targetH === 2160;
                       return (
                         <button
                           key={q.html}
@@ -2762,15 +2495,7 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                               : "text-slate-300 hover:bg-white/5 hover:text-white"
                           }`}
                         >
-                          <div className="flex items-center gap-2">
-                            <span>{q.html}</span>
-                            {is4K && (
-                              <span className="flex items-center gap-1 text-[9px] uppercase font-black tracking-wider px-2 py-0.5 rounded-full bg-[#8B5CF6]/20 text-[#A78BFA] border border-[#8B5CF6]/30 shadow-sm">
-                                <Crown className="w-3 h-3 text-[#8B5CF6]" />
-                                {!isVip ? 'Premium 4K' : '4K'}
-                              </span>
-                            )}
-                          </div>
+                          <span>{q.html}</span>
                           {isSelected && (
                             <Check className="w-4 h-4 text-[#8B5CF6]" />
                           )}

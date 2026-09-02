@@ -9,7 +9,7 @@ export interface BDRipAnime {
   shikimoriId: string;
   aliases?: string[];
   title: string;
-  badge: '4K UHD BDRip' | '1080p BDRip' | string;
+  badge: 'BDRip' | string;
   qualityLabel: string;
   isMovie?: boolean;
   totalEpisodes?: number;
@@ -20,7 +20,7 @@ export interface BDRipAnime {
 }
 
 /**
- * Единый реестр релизов максимального качества (BDRip / 4K UHD) с хранилища R2.
+ * Единый реестр релизов максимального качества (BDRip) с хранилища R2.
  * Чтобы добавить новое аниме, достаточно добавить запись с его shikimoriId.
  */
 export const BDRIP_CATALOG: Record<string, BDRipAnime> = {
@@ -28,8 +28,8 @@ export const BDRIP_CATALOG: Record<string, BDRipAnime> = {
   '44511': {
     shikimoriId: '44511',
     title: 'Человек-бензопила',
-    badge: '1080p BDRip',
-    qualityLabel: '1080p BDRip (Blu-Ray Master)',
+    badge: 'BDRip',
+    qualityLabel: 'BDRip (Blu-Ray Master)',
     isMovie: false,
     totalEpisodes: 12,
     defaultAudioTrackNames: [
@@ -67,43 +67,33 @@ export const BDRIP_CATALOG: Record<string, BDRipAnime> = {
     shikimoriId: '50594',
     aliases: ['62568'],
     title: 'Судзумэ, закрывающая двери',
-    badge: '4K UHD BDRip',
-    qualityLabel: '4K UHD (2160p BDRip)',
+    badge: 'BDRip',
+    qualityLabel: 'BDRip (Blu-Ray Master)',
     isMovie: true,
     totalEpisodes: 1,
     defaultAudioTrackNames: [
-      'Crunchyroll (Дубляж)',
+      'Bravo Records',
       'Flarrow Films',
       'TVShows',
       'Leviafilm',
       'AniLibria',
-      'Ю. Сербин',
-      'Netflix КЗ.',
-      'Оригинал + Субтитры',
-      'Оригинал',
     ],
-    maxAudioTracks: 5,
     getStreamUrl: () => 'https://cdn1.kamianime.club/suzume/master.m3u8',
   },
   '62568': {
     shikimoriId: '62568',
     title: 'Судзумэ, закрывающая двери',
-    badge: '4K UHD BDRip',
-    qualityLabel: '4K UHD (2160p BDRip)',
+    badge: 'BDRip',
+    qualityLabel: 'BDRip (Blu-Ray Master)',
     isMovie: true,
     totalEpisodes: 1,
     defaultAudioTrackNames: [
-      'Crunchyroll (Дубляж)',
+      'Bravo Records',
       'Flarrow Films',
       'TVShows',
       'Leviafilm',
       'AniLibria',
-      'Ю. Сербин',
-      'Netflix КЗ.',
-      'Оригинал + Субтитры',
-      'Оригинал',
     ],
-    maxAudioTracks: 5,
     getStreamUrl: () => 'https://cdn1.kamianime.club/suzume/master.m3u8',
   },
 
@@ -111,8 +101,8 @@ export const BDRIP_CATALOG: Record<string, BDRipAnime> = {
   '38826': {
     shikimoriId: '38826',
     title: 'Дитя погоды',
-    badge: '4K UHD BDRip',
-    qualityLabel: '4K UHD (2160p BDRip)',
+    badge: 'BDRip',
+    qualityLabel: 'BDRip (Blu-Ray Master)',
     isMovie: true,
     totalEpisodes: 1,
     defaultAudioTrackNames: [
@@ -129,8 +119,8 @@ export const BDRIP_CATALOG: Record<string, BDRipAnime> = {
   '16782': {
     shikimoriId: '16782',
     title: 'Сад изящных слов',
-    badge: '4K UHD BDRip',
-    qualityLabel: '4K UHD (2160p BDRip)',
+    badge: 'BDRip',
+    qualityLabel: 'BDRip (Blu-Ray Master)',
     isMovie: true,
     totalEpisodes: 1,
     defaultAudioTrackNames: [
@@ -146,8 +136,8 @@ export const BDRIP_CATALOG: Record<string, BDRipAnime> = {
   '32281': {
     shikimoriId: '32281',
     title: 'Твоё имя',
-    badge: '4K UHD BDRip',
-    qualityLabel: '4K UHD (2160p BDRip)',
+    badge: 'BDRip',
+    qualityLabel: 'BDRip (Blu-Ray Master)',
     isMovie: true,
     totalEpisodes: 1,
     defaultAudioTrackNames: [

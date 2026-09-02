@@ -644,20 +644,11 @@ const Home: React.FC = () => {
             </div>
           </div>
           <div ref={anime4kRef} className="flex gap-6 overflow-x-auto hide-scrollbar scroll-smooth pb-4 px-1 snap-x min-h-[360px]">
-            {animes4k.length > 0 ? animes4k.map((anime, idx) => {
-              const bdripRelease = getBDRipRelease(anime.id);
-              const badgeText = bdripRelease?.badge || 'BDRip';
-              return (
-                <div key={`bdrip-${anime.id}-${idx}`} className="w-[180px] sm:w-[220px] 3xl:w-[260px] 4xl:w-[300px] flex-none snap-start relative group">
-                  <AnimeCard anime={anime} />
-                  <div className="absolute top-3 right-3 z-20 pointer-events-none">
-                    <span className="px-2 py-0.5 rounded-md bg-black/80 backdrop-blur-md border border-[#8B5CF6]/40 text-[#A78BFA] text-[10px] font-black tracking-wider flex items-center gap-1 shadow-lg">
-                      <Crown className="w-2.5 h-2.5 text-[#8B5CF6]" /> {badgeText}
-                    </span>
-                  </div>
-                </div>
-              );
-            }) : Array.from({length: 6}).map((_, i) => (
+            {animes4k.length > 0 ? animes4k.map((anime, idx) => (
+              <div key={`bdrip-${anime.id}-${idx}`} className="w-[180px] sm:w-[220px] 3xl:w-[260px] 4xl:w-[300px] flex-none snap-start relative group">
+                <AnimeCard anime={anime} />
+              </div>
+            )) : Array.from({length: 6}).map((_, i) => (
               <div key={i} className="w-[180px] sm:w-[220px] 3xl:w-[260px] 4xl:w-[300px] flex-none snap-start animate-pulse">
                   <div className="w-full aspect-[2/3] bg-white/5 rounded-xl mb-3"></div>
                   <div className="h-4 bg-white/5 rounded w-3/4 mb-2"></div>

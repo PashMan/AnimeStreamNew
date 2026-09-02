@@ -75,19 +75,17 @@ export function generateAnimeSEO(
   const formatYear = year ? ` (${year})` : "";
 
   // 1. Optimized Title Tag (Title)
-  // Target: "Смотреть [Название аниме] [номер сезона] сезон в 4к качестве онлайн бесплатно или скачать в mp4"
-  // Target: "В какой озвучке лучше смотреть [Название] без рекламы казино"
   let seoTitle = "";
   if (paramEpisode) {
-    seoTitle = `Смотреть ${baseTitle} ${seasonSuffix} — ${paramEpisode} серия в 4К качестве онлайн или скачать в mp4 бесплатно`;
+    seoTitle = `Смотреть ${baseTitle} ${seasonSuffix} — ${paramEpisode} серия в Full HD онлайн или скачать в mp4 бесплатно`;
   } else {
-    seoTitle = `Смотреть аниме ${baseTitle} ${seasonSuffix} в 4К онлайн бесплатно или скачать все серии в mp4`;
+    seoTitle = `Смотреть аниме ${baseTitle} ${seasonSuffix} в Full HD онлайн бесплатно или скачать все серии в mp4`;
   }
 
   // 2. Optimized H1 Header
   const h1Text = paramEpisode
-    ? `Смотреть аниме ${baseTitle} — ${seasonSuffix} ${paramEpisode} серия в 4К качестве`
-    : `Смотреть аниме ${baseTitle} ${seasonSuffix} онлайн в Ultra HD 4K`;
+    ? `Смотреть аниме ${baseTitle} — ${seasonSuffix} ${paramEpisode} серия в 1080p`
+    : `Смотреть аниме ${baseTitle} ${seasonSuffix} онлайн в Full HD 1080p`;
 
   // 3. Dynamic SEO-Optimized Template description
   // Target low-frequency long tails: "без всплывающей рекламы ставок", "озвучки Анилибрия, DEEP", "в какой озвучке лучше смотреть"
@@ -100,7 +98,7 @@ export function generateAnimeSEO(
     : `Смотреть или скачать аниме ${baseTitle} ${seasonSuffix}${formatYear} все серии на телефон и ПК в хорошем качестве .mp4 бесплатно и без рекламы. Узнайте отзывы, в какой озвучке лучше смотреть (${genres.slice(0, 3).join(", ")}) на KamiAnime!`;
 
   // 4. Promo Text block to render on the page for SEO crawlers (and users wishing to know where to watch)
-  const promoText = `Смотреть аниме «${baseTitle}» в Ultra HD 4K качестве онлайн или скачать напрямую в .mp4 на телефон и ПК — это лучший способ погрузиться в захватывающий сюжет проекта${formatYear}. Мы позаботились о вашем комфорте: у нас вы можете смотреть или скачать любимый тайтл полностью бесплатно и без всплывающей рекламы ставок. Нужна конкретная серия? С помощью быстрого скачивания вы можете за секунды получить любимую серию в формате MP4 для просмотра офлайн. Сомневаетесь, в какой озвучке лучше смотреть? Мы собрали все лучшие релиз-группы на одной странице! Вас ждут озвучки Анилибрия (Anilibria), DEEP, JAM Club, а также оригинальная японская аудиодорожка с качественными русскими субтитрами. Наслаждайтесь плавным просмотром абсолютно бесплатно на KamiAnime!`;
+  const promoText = `Смотреть аниме «${baseTitle}» в Full HD качестве онлайн или скачать напрямую в .mp4 на телефон и ПК — это лучший способ погрузиться в захватывающий сюжет проекта${formatYear}. Мы позаботились о вашем комфорте: у нас вы можете смотреть или скачать любимый тайтл полностью бесплатно и без всплывающей рекламы ставок. Нужна конкретная серия? С помощью быстрого скачивания вы можете за секунды получить любимую серию в формате MP4 для просмотра офлайн. Сомневаетесь, в какой озвучке лучше смотреть? Мы собрали все лучшие релиз-группы на одной странице! Вас ждут озвучки Анилибрия (Anilibria), DEEP, JAM Club, а также оригинальная японская аудиодорожка с качественными русскими субтитрами. Наслаждайтесь плавным просмотром абсолютно бесплатно на KamiAnime!`;
 
   // 5. Long-tail Keywords setup for SEO bots
   const normTitle = baseTitle.toLowerCase();
@@ -113,9 +111,9 @@ export function generateAnimeSEO(
     `скачать ${normTitle} на телефон`,
     `скачать и смотреть ${normTitle} все серии`,
     `скачать торрент ${normTitle}`,
-    `смотреть ${normTitle} в 4к качестве`,
-    `аниме ${normTitle} смотреть онлайн 4k`,
-    `${normTitle} ${seasonSuffix.toLowerCase()} в ультра ашд`,
+    `смотреть ${normTitle} в full hd качестве`,
+    `аниме ${normTitle} смотреть онлайн 1080p`,
+    `${normTitle} ${seasonSuffix.toLowerCase()} в full hd`,
     `${normTitle} в какой озвучке лучше смотреть`,
     `смотреть ${normTitle} бесплатно без рекламы казино`,
     `аниме ${normTitle} без ставок`,
@@ -138,7 +136,7 @@ export function generateAnimeSEO(
       `скачать аниме ${normTitle} ${seasonSuffix.toLowerCase()} ${epDigit} серия в хорошем качестве`,
       `скачать ${normTitle} ${paramEpisode} серия в mp4`,
       `скачать аниме ${normTitle} ${seasonSuffix.toLowerCase()} ${paramEpisode} серия на телефон`,
-      `смотреть ${normTitle} ${seasonSuffix.toLowerCase()} ${paramEpisode} серия 4к`,
+      `смотреть ${normTitle} ${seasonSuffix.toLowerCase()} ${paramEpisode} серия 1080p`,
       `${normTitle} ${paramEpisode} серия без рекламы`
     );
   } else {
