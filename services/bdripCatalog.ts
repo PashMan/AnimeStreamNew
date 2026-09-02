@@ -44,7 +44,7 @@ export const BDRIP_CATALOG: Record<string, BDRipAnime> = {
     ],
     getStreamUrl: (ep = 1) => {
       const epStr = String(ep).padStart(2, '0');
-      return `https://cdn1.kamianime.club/chainsaw_man/ep${epStr}/index.m3u8`;
+      return `https://cdn1.kamianime.club/chainsaw_man/ep${epStr}/master.m3u8`;
     },
     getSubtitles: (ep = 1) => {
       const epStr = String(ep).padStart(2, '0');

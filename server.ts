@@ -3826,6 +3826,11 @@ app.get('/api/proxy-4k', async (c) => {
 
   if (!targetUrl) return c.text('Missing url parameter', 400);
 
+  // Автоматическая подмена index.m3u8 -> master.m3u8 для R2 хранилища kamianime.club
+  if (targetUrl.includes('kamianime.club') && targetUrl.includes('index.m3u8')) {
+    targetUrl = targetUrl.replace('index.m3u8', 'master.m3u8');
+  }
+
   try {
     const refererParam = c.req.query('referer');
     const isAniboomHost = targetUrl.includes('ya-ligh') || targetUrl.includes('aniboom') || targetUrl.includes('boom-img') || targetUrl.includes('.m4s') || targetUrl.includes('.ts') || targetUrl.includes('.mpd');
