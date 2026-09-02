@@ -3945,14 +3945,29 @@ app.get('/api/proxy-4k', async (c) => {
         return `/api/proxy-4k?url=${encodeURIComponent(absUrl)}${safeReferer}`;
       });
       
-      return new Response(rewrittenLines.join('\n'), {
+      let manifestText = rewrittenLines.join('\n');
+
+      // VOD HLS fixes:
+      if (manifestText.includes('#EXTINF')) {
+        if (/#EXT-X-TARGETDURATION:\s*\d+/.test(manifestText)) {
+          manifestText = manifestText.replace(/#EXT-X-TARGETDURATION:\s*\d+/, '#EXT-X-TARGETDURATION:17');
+        } else {
+          manifestText = manifestText.replace('#EXTM3U', '#EXTM3U\n#EXT-X-TARGETDURATION:17');
+        }
+
+        if (!manifestText.includes('#EXT-X-ENDLIST')) {
+          manifestText = manifestText.trim() + '\n#EXT-X-ENDLIST\n';
+        }
+      }
+      
+      return new Response(manifestText, {
         status: 200,
         headers: {
-          'Content-Type': 'application/vnd.apple.mpegurl',
+          'Content-Type': 'application/vnd.apple.mpegurl; charset=utf-8',
           'Access-Control-Allow-Origin': '*',
           'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
           'Access-Control-Allow-Headers': '*',
-          'Cache-Control': 'no-cache, no-store, must-revalidate'
+          'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0'
         }
       });
     }
@@ -5402,7 +5417,7 @@ app.get('/api/media/playlist', async (c) => {
         if (directRes.ok) {
           const m3u8Text = await directRes.text();
           const baseUrl = new URL(cleanTargetUrl);
-          const rewritten = m3u8Text.split('\n').map(line => {
+          let rewritten = m3u8Text.split('\n').map(line => {
             const trimmed = line.trim();
             if (trimmed && !trimmed.startsWith('#')) {
               const absUrl = trimmed.startsWith('http') ? trimmed : new URL(trimmed, baseUrl).toString();
@@ -5411,8 +5426,20 @@ app.get('/api/media/playlist', async (c) => {
             return line;
           }).join('\n');
 
+          if (rewritten.includes('#EXTINF')) {
+            if (/#EXT-X-TARGETDURATION:\s*\d+/.test(rewritten)) {
+              rewritten = rewritten.replace(/#EXT-X-TARGETDURATION:\s*\d+/, '#EXT-X-TARGETDURATION:17');
+            } else {
+              rewritten = rewritten.replace('#EXTM3U', '#EXTM3U\n#EXT-X-TARGETDURATION:17');
+            }
+            if (!rewritten.includes('#EXT-X-ENDLIST')) {
+              rewritten = rewritten.trim() + '\n#EXT-X-ENDLIST\n';
+            }
+          }
+
           c.header('Content-Type', 'application/vnd.apple.mpegurl; charset=utf-8');
           c.header('Access-Control-Allow-Origin', '*');
+          c.header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
           return c.text(rewritten);
         }
       } catch (_) {}
@@ -5656,7 +5683,7 @@ app.get('/api/media/playlist', async (c) => {
         const variantBaseUrl = new URL(variantUrl);
 
         // Rewrite each segment to go through the proxy with Aniboom referer
-        const rewrittenVariant = variantText.split('\n').map(line => {
+        let rewrittenVariant = variantText.split('\n').map(line => {
           const trimmed = line.trim();
           if (trimmed && !trimmed.startsWith('#')) {
             const absSegUrl = trimmed.startsWith('http') ? trimmed : new URL(trimmed, variantBaseUrl).toString();
@@ -5665,8 +5692,20 @@ app.get('/api/media/playlist', async (c) => {
           return line;
         }).join('\n');
 
+        if (rewrittenVariant.includes('#EXTINF')) {
+          if (/#EXT-X-TARGETDURATION:\s*\d+/.test(rewrittenVariant)) {
+            rewrittenVariant = rewrittenVariant.replace(/#EXT-X-TARGETDURATION:\s*\d+/, '#EXT-X-TARGETDURATION:17');
+          } else {
+            rewrittenVariant = rewrittenVariant.replace('#EXTM3U', '#EXTM3U\n#EXT-X-TARGETDURATION:17');
+          }
+          if (!rewrittenVariant.includes('#EXT-X-ENDLIST')) {
+            rewrittenVariant = rewrittenVariant.trim() + '\n#EXT-X-ENDLIST\n';
+          }
+        }
+
         c.header('Content-Type', 'application/vnd.apple.mpegurl; charset=utf-8');
         c.header('Access-Control-Allow-Origin', '*');
+        c.header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
         return c.text(rewrittenVariant);
       } catch (err: any) {
         console.debug(`[Aniboom Quality Playlist Notice]: ${err.message}. Serving master stream redirect.`);
