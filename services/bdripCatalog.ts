@@ -25,6 +25,39 @@ export interface BDRipAnime {
  * Чтобы добавить новое аниме, достаточно добавить запись с его shikimoriId.
  */
 export const BDRIP_CATALOG: Record<string, BDRipAnime> = {
+  // За гранью (Beyond the Boundary / Kyoukai no Kanata)
+  '18153': {
+    shikimoriId: '18153',
+    title: 'За гранью',
+    badge: 'KamiBDRip',
+    qualityLabel: '1080p BDRip',
+    isMovie: false,
+    is4K: false,
+    totalEpisodes: 12,
+    defaultAudioTrackNames: [
+      'Дубляж / MVO',
+      'Studio Band',
+      'AniLibria',
+      'Оригинал + Субтитры',
+      'Оригинал',
+    ],
+    getStreamUrl: (ep = 1) => {
+      const epStr = String(ep).padStart(2, '0');
+      return `https://cdn1.kamianime.club/beyond-horizon/ep${epStr}/master.m3u8`;
+    },
+    getSubtitles: (ep = 1) => {
+      const epStr = String(ep).padStart(2, '0');
+      return [
+        {
+          url: `https://cdn1.kamianime.club/beyond-horizon/ep${epStr}/sub_rus.vtt`,
+          label: 'Русские субтитры',
+          lang: 'ru',
+          default: true,
+        },
+      ];
+    },
+  },
+
   // Судзумэ, закрывающая двери
   '50594': {
     shikimoriId: '50594',

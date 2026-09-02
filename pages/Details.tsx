@@ -254,6 +254,14 @@ const getResolvedIframeUrl = (t: any, epNum: number, defaultUrl?: string | null,
 };
 
 export const R2_4K_CONFIG: Record<string, { title: string; trackNames: string[]; streamUrl: string | ((ep?: number) => string); maxTracks?: number }> = {
+  "18153": {
+    title: "За гранью",
+    trackNames: ["Дубляж / MVO", "Studio Band", "AniLibria", "Оригинал + Субтитры", "Оригинал"],
+    streamUrl: (ep = 1) => {
+      const epStr = String(ep).padStart(2, "0");
+      return `https://cdn1.kamianime.club/beyond-horizon/ep${epStr}/master.m3u8`;
+    }
+  },
   "50594": {
     title: "Судзумэ, закрывающая двери",
     trackNames: ["Crunchyroll", "Flarrow Films", "TVShows", "Leviafilm", "AniLibria", "Ю. Сербин", "Netflix КЗ.", "Оригинал + Субтитры", "Оригинал"],
@@ -1477,24 +1485,15 @@ const Details: React.FC = () => {
 
   let schemaVideoUrl = "";
   if (anime) {
-    const isSuzume = id === "50594" || id === "62568";
-    const isWeathering = id === "38826";
-    const isGardenOfWords = id === "16782";
-    const isKimiNoNaWa = id === "32281";
-
     const origin =
       typeof window !== "undefined"
         ? window.location.origin
         : "https://kamianime.club";
 
-    if (isSuzume || isWeathering || isGardenOfWords || isKimiNoNaWa) {
-      const customRawSrc = isSuzume
-        ? "https://cdn1.kamianime.club/suzume/master.m3u8"
-        : isWeathering
-          ? "https://cdn1.kamianime.club/weathering/master.m3u8"
-          : isGardenOfWords
-            ? "https://cdn1.kamianime.club/garden_of_words/master.m3u8"
-            : "https://cdn.kamianime.club/kimi-no-na-wa/master.m3u8";
+    const bdripForSchema = id ? getBDRipRelease(id) : null;
+    if (bdripForSchema) {
+      const epNum = parseInt(paramEpisode || "1") || 1;
+      const customRawSrc = bdripForSchema.getStreamUrl(epNum);
       schemaVideoUrl = `${origin}/api/proxy-4k?url=${encodeURIComponent(customRawSrc)}`;
     } else {
       const epNum = parseInt(paramEpisode || "1") || 1;
