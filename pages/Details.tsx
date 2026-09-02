@@ -459,15 +459,16 @@ const Details: React.FC = () => {
     ) {
       return t.is_native_4k || t.quality_label === "4K" ? "4K BDRip" : "BDRip";
     }
-    if (
-      t.provider === "kodik" ||
-      t.provider === "Kodik" ||
-      t.kodik_iframe ||
-      (t.iframe && String(t.iframe).includes("kodik"))
-    ) {
-      return t.quality_label && t.quality_label.includes("1080") ? "1080p" : "720p";
+    if (t.is_native_4k || t.quality_label === "4K") {
+      return "4K";
     }
-    return "1080p";
+    if (selectedPlayer === "KamiPlayer" || selectedPlayer === "Aniboom" || t.aniboom_iframe || t.provider === "AniBoom") {
+      return "1080p";
+    }
+    if (selectedPlayer === "Kodik") {
+      return t.quality_label && String(t.quality_label).includes("1080") ? "1080p" : "720p";
+    }
+    return t.quality_label || "1080p";
   };
 
   const getDisplayTitle = (title: string) => {

@@ -1670,6 +1670,7 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                   hls.loadSource(streamUrl);
                 });
 
+                let mediaErrorRetries = 0;
                 hls.on(Hls.Events.ERROR, function (event, data) {
                   if (data.fatal) {
                     console.warn("HLS stream event notice:", data.type, data.details);
@@ -1695,7 +1696,17 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                         hls.startLoad();
                         break;
                       case Hls.ErrorTypes.MEDIA_ERROR:
-                        hls.recoverMediaError();
+                        mediaErrorRetries++;
+                        if (mediaErrorRetries <= 2) {
+                          hls.recoverMediaError();
+                        } else if (mediaErrorRetries === 3) {
+                          hls.swapAudioCodec();
+                          hls.recoverMediaError();
+                        } else {
+                          if (onPlayerErrorRef.current) {
+                            onPlayerErrorRef.current();
+                          }
+                        }
                         break;
                       default:
                         if (artInstance && artInstance.notice) {

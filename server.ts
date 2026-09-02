@@ -3892,10 +3892,6 @@ app.get('/api/proxy-4k', async (c) => {
       }
 
       const parentUrl = targetUrl.substring(0, targetUrl.lastIndexOf('/') + 1);
-      const reqUrlObj = new URL(c.req.url);
-      const proto = c.req.header('x-forwarded-proto') || reqUrlObj.protocol.replace(':', '') || 'http';
-      let host = c.req.header('x-forwarded-host') || c.req.header('host') || reqUrlObj.host || 'localhost:3000';
-      const proxyOrigin = (host.startsWith('http://') || host.startsWith('https://')) ? host : `${proto}://${host}`;
 
       const safeReferer = isAniboomHost 
         ? (refererParam ? `&referer=${encodeURIComponent(refererParam)}` : '&referer=https%3A%2F%2Faniboom.one%2F') 
@@ -3934,7 +3930,7 @@ app.get('/api/proxy-4k', async (c) => {
               if (!p1.startsWith('http')) {
                 absUrl = p1.startsWith('/') ? new URL(p1, targetUrl).toString() : parentUrl + p1;
               }
-              return `URI="${proxyOrigin}/api/proxy-4k?url=${encodeURIComponent(absUrl)}${safeReferer}"`;
+              return `URI="/api/proxy-4k?url=${encodeURIComponent(absUrl)}${safeReferer}"`;
             });
           }
           return line;
@@ -3946,7 +3942,7 @@ app.get('/api/proxy-4k', async (c) => {
             ? new URL(trimmed, targetUrl).toString()
             : parentUrl + trimmed;
         }
-        return `${proxyOrigin}/api/proxy-4k?url=${encodeURIComponent(absUrl)}${safeReferer}`;
+        return `/api/proxy-4k?url=${encodeURIComponent(absUrl)}${safeReferer}`;
       });
       
       return new Response(rewrittenLines.join('\n'), {
@@ -4529,7 +4525,7 @@ function buildAniboomMasterPlaylist(hlsSrc: string, maxQuality: number | string 
 
   availableQualities.forEach(q => {
     masterLines.push(`#EXT-X-STREAM-INF:BANDWIDTH=${q.bandwidth},RESOLUTION=${q.width}x${q.height},NAME="${q.quality}p"`);
-    masterLines.push(`${proxyOrigin}/api/proxy-4k?url=${encodeURIComponent(baseUrl + q.quality + '.m3u8')}`);
+    masterLines.push(`/api/proxy-4k?url=${encodeURIComponent(baseUrl + q.quality + '.m3u8')}`);
   });
 
   return masterLines.join('\n');
@@ -5030,9 +5026,8 @@ const handleAniboomResolve = async (c: any) => {
       message: "Генерация безопасной прокси-ссылки для обхода CORS и заголовков Referer..."
     });
 
-    const proxyOrigin = getProxyOrigin(c);
-    const proxiedHlsUrl = hlsSrc ? `${proxyOrigin}/api/proxy-4k?url=${encodeURIComponent(hlsSrc)}` : undefined;
-    const proxiedDashUrl = dashSrc ? `${proxyOrigin}/api/proxy-4k?url=${encodeURIComponent(dashSrc)}` : undefined;
+    const proxiedHlsUrl = hlsSrc ? `/api/proxy-4k?url=${encodeURIComponent(hlsSrc)}` : undefined;
+    const proxiedDashUrl = dashSrc ? `/api/proxy-4k?url=${encodeURIComponent(dashSrc)}` : undefined;
     const mainProxiedUrl = proxiedHlsUrl || proxiedDashUrl || '';
 
     steps.push({
@@ -5083,8 +5078,7 @@ app.get('/api/media/aniboom/master.m3u8', async (c) => {
   if (!urlParam) {
     return c.text('Error: missing url param', 400);
   }
-  const proxyOrigin = getProxyOrigin(c);
-  return c.redirect(`${proxyOrigin}/api/proxy-4k?url=${encodeURIComponent(urlParam)}`, 302);
+  return c.redirect(`/api/proxy-4k?url=${encodeURIComponent(urlParam)}`, 302);
 });
 
 app.get('/api/media/aniboom/resolve', handleAniboomResolve);
