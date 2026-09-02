@@ -145,7 +145,7 @@ export const PremiumModal: React.FC = () => {
             {/* Header */}
             <div className="text-center">
               <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#8B5CF6]/15 border border-[#8B5CF6]/30 rounded-full text-[#A78BFA] text-[10px] font-black uppercase tracking-widest mb-2">
-                <Crown className="w-3.5 h-3.5 text-[#8B5CF6]" />
+                <Crown className="w-3.5 h-3.5 text-slate-300" />
                 Единая подписка Premium
               </div>
 
@@ -175,7 +175,7 @@ export const PremiumModal: React.FC = () => {
 
             {/* Free Trial Banner */}
             <div className="bg-[#8B5CF6]/10 border border-[#8B5CF6]/30 p-2.5 rounded-2xl flex items-center justify-center gap-2 text-xs font-bold text-slate-200">
-              <Crown className="w-4 h-4 text-[#8B5CF6] shrink-0" />
+              <Crown className="w-4 h-4 text-slate-300 shrink-0" />
               <span>Всем новым пользователям: <strong className="text-white">1 месяц бесплатно</strong> при регистрации!</span>
             </div>
 
@@ -314,7 +314,7 @@ export const PremiumModal: React.FC = () => {
                     </>
                   ) : (
                     <>
-                      <Crown className="w-4 h-4 text-white" />
+                      <Crown className="w-4 h-4 text-slate-300" />
                       <span>Оплатить {selectedPlan.price} ₽ ({selectedPlan.title})</span>
                       <ArrowRight className="w-4 h-4 ml-1" />
                     </>
@@ -326,7 +326,7 @@ export const PremiumModal: React.FC = () => {
                   onClick={handleAction}
                   className="w-full py-3.5 px-4 bg-[#8B5CF6] hover:bg-[#7C3AED] text-white font-black text-xs uppercase tracking-widest rounded-xl shadow-lg shadow-[#8B5CF6]/20 transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99]"
                 >
-                  <Crown className="w-4 h-4" />
+                  <Crown className="w-4 h-4 text-slate-300" />
                   <span>Получить 1 месяц Premium бесплатно</span>
                 </button>
               )}

@@ -49,7 +49,7 @@ export const fetchPlayersClientSide = async (shikimoriId: string, title: string,
     } catch (_) {}
   }
 
-  const cacheKey = `balancer_v23_${shikimoriId}`;
+  const cacheKey = `balancer_v25_${shikimoriId}`;
   const cached = getFromStorage(cacheKey);
 
   // TTL: 6 hours for balancer data
@@ -86,26 +86,26 @@ export const fetchPlayersClientSide = async (shikimoriId: string, title: string,
       const hasTranslations = translationsList.length > 0;
       const hasBDRip = isBDRipAvailable(shikimoriId);
 
-      // Add standard KamiPlayer (1080p)
+      // Add standard KamiPlayer
       if (hasBDRip || hasKodik || hasTranslations) {
-        if (!playersList.some(p => p.name === 'KamiPlayer (1080p)')) {
+        if (!playersList.some(p => p.name === 'KamiPlayer')) {
           playersList.unshift({
-            name: 'KamiPlayer (1080p)',
+            name: 'KamiPlayer',
             iframe: null,
             isCustom: true
           });
         }
       }
 
-      // If BDRip is available from R2, add exclusive KamiPlayer BDRip at the top!
+      // If BDRip is available from R2, add exclusive KamiBDRip at the top!
       if (hasBDRip) {
-        if (!playersList.some(p => p.name === 'KamiPlayer BDRip')) {
+        if (!playersList.some(p => p.name === 'KamiBDRip')) {
           playersList.unshift({
-            name: 'KamiPlayer BDRip',
+            name: 'KamiBDRip',
             iframe: null,
             isCustom: true,
             isBdrip: true,
-            badge: 'BDRip'
+            badge: 'KamiBDRip'
           });
         }
       }

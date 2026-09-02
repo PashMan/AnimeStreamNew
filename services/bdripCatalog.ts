@@ -9,9 +9,10 @@ export interface BDRipAnime {
   shikimoriId: string;
   aliases?: string[];
   title: string;
-  badge: 'BDRip' | string;
+  badge: 'KamiBDRip' | string;
   qualityLabel: string;
   isMovie?: boolean;
+  is4K?: boolean;
   totalEpisodes?: number;
   defaultAudioTrackNames: string[];
   maxAudioTracks?: number;
@@ -20,7 +21,7 @@ export interface BDRipAnime {
 }
 
 /**
- * Единый реестр релизов максимального качества (BDRip) с хранилища R2.
+ * Единый реестр релизов максимального качества (KamiBDRip / 4K) с хранилища R2.
  * Чтобы добавить новое аниме, достаточно добавить запись с его shikimoriId.
  */
 export const BDRIP_CATALOG: Record<string, BDRipAnime> = {
@@ -28,9 +29,10 @@ export const BDRIP_CATALOG: Record<string, BDRipAnime> = {
   '44511': {
     shikimoriId: '44511',
     title: 'Человек-бензопила',
-    badge: 'BDRip',
-    qualityLabel: 'BDRip (Blu-Ray Master)',
+    badge: 'KamiBDRip',
+    qualityLabel: 'KamiBDRip (Blu-Ray Master)',
     isMovie: false,
+    is4K: true,
     totalEpisodes: 12,
     defaultAudioTrackNames: [
       'Японский (Оригинал)',
@@ -67,9 +69,10 @@ export const BDRIP_CATALOG: Record<string, BDRipAnime> = {
     shikimoriId: '50594',
     aliases: ['62568'],
     title: 'Судзумэ, закрывающая двери',
-    badge: 'BDRip',
-    qualityLabel: 'BDRip (Blu-Ray Master)',
+    badge: 'KamiBDRip',
+    qualityLabel: 'KamiBDRip (Blu-Ray Master)',
     isMovie: true,
+    is4K: true,
     totalEpisodes: 1,
     defaultAudioTrackNames: [
       'Bravo Records',
@@ -83,9 +86,10 @@ export const BDRIP_CATALOG: Record<string, BDRipAnime> = {
   '62568': {
     shikimoriId: '62568',
     title: 'Судзумэ, закрывающая двери',
-    badge: 'BDRip',
-    qualityLabel: 'BDRip (Blu-Ray Master)',
+    badge: 'KamiBDRip',
+    qualityLabel: 'KamiBDRip (Blu-Ray Master)',
     isMovie: true,
+    is4K: true,
     totalEpisodes: 1,
     defaultAudioTrackNames: [
       'Bravo Records',
@@ -101,9 +105,10 @@ export const BDRIP_CATALOG: Record<string, BDRipAnime> = {
   '38826': {
     shikimoriId: '38826',
     title: 'Дитя погоды',
-    badge: 'BDRip',
-    qualityLabel: 'BDRip (Blu-Ray Master)',
+    badge: 'KamiBDRip',
+    qualityLabel: 'KamiBDRip (Blu-Ray Master)',
     isMovie: true,
+    is4K: true,
     totalEpisodes: 1,
     defaultAudioTrackNames: [
       'Reanimedia (Дубляж)',
@@ -119,9 +124,10 @@ export const BDRIP_CATALOG: Record<string, BDRipAnime> = {
   '16782': {
     shikimoriId: '16782',
     title: 'Сад изящных слов',
-    badge: 'BDRip',
-    qualityLabel: 'BDRip (Blu-Ray Master)',
+    badge: 'KamiBDRip',
+    qualityLabel: 'KamiBDRip (Blu-Ray Master)',
     isMovie: true,
+    is4K: true,
     totalEpisodes: 1,
     defaultAudioTrackNames: [
       'Reanimedia (Дубляж)',
@@ -136,9 +142,10 @@ export const BDRIP_CATALOG: Record<string, BDRipAnime> = {
   '32281': {
     shikimoriId: '32281',
     title: 'Твоё имя',
-    badge: 'BDRip',
-    qualityLabel: 'BDRip (Blu-Ray Master)',
+    badge: 'KamiBDRip',
+    qualityLabel: 'KamiBDRip (Blu-Ray Master)',
     isMovie: true,
+    is4K: true,
     totalEpisodes: 1,
     defaultAudioTrackNames: [
       'Мосфильм-Мастер (Дубляж)',

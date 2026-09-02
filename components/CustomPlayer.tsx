@@ -2448,7 +2448,7 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                         </span>
                         {!isVip && (
                           <span className="px-1.5 py-0.5 text-[8px] font-black uppercase rounded-full bg-[#8B5CF6]/20 text-[#A78BFA] border border-[#8B5CF6]/30 flex items-center gap-0.5">
-                            <Crown className="w-2.5 h-2.5 text-[#8B5CF6]" /> Premium
+                            <Crown className="w-2.5 h-2.5 text-slate-300" /> Premium
                           </span>
                         )}
                       </div>

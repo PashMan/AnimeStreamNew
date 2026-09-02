@@ -758,8 +758,8 @@ const Profile: React.FC = () => {
                             );
                          })()}
                          {(user.isPremium || isVip) && (
-                           <span className="px-3.5 py-1 text-[10px] font-black uppercase rounded-xl border tracking-widest bg-amber-500/20 text-amber-400 border-amber-500/30 flex items-center gap-1.5 shadow-lg shadow-amber-500/10">
-                             <Crown className="w-3 h-3 text-amber-400 fill-amber-400/30" />
+                           <span className="px-3.5 py-1 text-[10px] font-black uppercase rounded-xl border tracking-widest bg-slate-500/20 text-slate-300 border-slate-500/30 flex items-center gap-1.5 shadow-lg shadow-slate-500/10">
+                             <Crown className="w-3 h-3 text-slate-300 fill-slate-300/30" />
                              Премиум
                            </span>
                          )}

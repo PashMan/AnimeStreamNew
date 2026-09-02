@@ -1193,7 +1193,13 @@ app.get('/api/balancer', async (c) => {
               });
               kodik_translations = Array.from(translationsMap.values());
 
-              const res = kodikData.results[0];
+              // Select the best verified translation for default player iframe
+              const prioritizedRes = kodikData.results.find((r: any) => {
+                const t = (r.translation?.title || '').toLowerCase();
+                return t.includes('anilibria') || t.includes('студийная банда') || t.includes('shiza') || t.includes('дубляж') || t.includes('crunchyroll');
+              }) || kodikData.results[0];
+
+              const res = prioritizedRes;
               let link = res.link.startsWith('//') ? `https:${res.link}` : res.link;
               try {
                 const url = new URL(link);

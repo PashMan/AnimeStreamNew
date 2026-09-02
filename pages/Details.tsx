@@ -253,7 +253,23 @@ const getResolvedIframeUrl = (t: any, epNum: number, defaultUrl?: string | null,
   return getResolvedKodikUrl(t, num, defaultUrl, translationsList);
 };
 
-export const R2_4K_CONFIG: Record<string, { title: string; trackNames: string[]; streamUrl: string; maxTracks?: number }> = {
+export const R2_4K_CONFIG: Record<string, { title: string; trackNames: string[]; streamUrl: string | ((ep?: number) => string); maxTracks?: number }> = {
+  "44511": {
+    title: "Человек-бензопила",
+    trackNames: [
+      "Японский (Оригинал)",
+      "Crunchyroll (Дубляж)",
+      "Studio Band",
+      "Flarrow Films",
+      "Dream Cast",
+      "AniDUB",
+    ],
+    streamUrl: (ep = 1) => {
+      const epStr = String(ep).padStart(2, "0");
+      return `https://cdn1.kamianime.club/chainsaw_man/ep${epStr}/index.m3u8`;
+    },
+    maxTracks: 6,
+  },
   "50594": {
     title: "Судзумэ, закрывающая двери",
     trackNames: ["Crunchyroll", "Flarrow Films", "TVShows", "Leviafilm", "AniLibria", "Ю. Сербин", "Netflix КЗ.", "Оригинал + Субтитры", "Оригинал"],
@@ -302,10 +318,10 @@ const Details: React.FC = () => {
   const similarRef = useRef<HTMLDivElement>(null);
 
   const [anime, setAnime] = useState<Anime | null>(null);
-  const [selectedPlayer, setSelectedPlayer] = useState<string>("KamiPlayer (1080p)");
+  const [selectedPlayer, setSelectedPlayer] = useState<string>("KamiPlayer");
   const [players, setPlayers] = useState<
     { name: string; iframe: string | null; isCustom?: boolean }[]
-  >([{ name: "KamiPlayer (1080p)", iframe: null, isCustom: true }]);
+  >([{ name: "KamiPlayer", iframe: null, isCustom: true }]);
   const [translations, setTranslations] = useState<KodikTranslation[]>([]);
   const standardTranslationsRef = useRef<KodikTranslation[]>([]);
   const [selectedTranslation, setSelectedTranslation] = useState<KodikTranslation | null>(null);
@@ -434,11 +450,24 @@ const Details: React.FC = () => {
   const getTranslationQuality = (t: any) => {
     if (!t) return "1080p";
     if (
+      t.is_native_4k ||
+      (t.quality_label && /4k|4к/i.test(String(t.quality_label))) ||
+      (t.badge && /4k|4к/i.test(String(t.badge))) ||
+      (t.title && /4k|4к/i.test(String(t.title)))
+    ) {
+      return "4K";
+    }
+    if (
+      t.provider === "Kami BDRip R2" ||
+      t.isBdrip ||
+      (t.quality_label && String(t.quality_label).includes("BDRip"))
+    ) {
+      return "KamiBDRip";
+    }
+    if (
       t.provider === "AniBoom" ||
       t.provider === "aniboom" ||
       t.aniboom_iframe ||
-      t.provider === "Kami BDRip R2" ||
-      t.isBdrip ||
       (t.title && String(t.title).toLowerCase().includes("aniboom")) ||
       (t.quality_label && String(t.quality_label).includes("1080"))
     ) {
@@ -476,9 +505,10 @@ const Details: React.FC = () => {
     const isWeathering = id === "38826";
     const isGardenOfWords = id === "16782";
     const isKimiNoNaWa = id === "32281";
-    const isNative1080 = isSuzume || isWeathering || isGardenOfWords || isKimiNoNaWa;
+    const isBDRip = isBDRipAvailable(id);
+    const isNative1080 = isSuzume || isWeathering || isGardenOfWords || isKimiNoNaWa || isBDRip;
 
-    if (isNative1080) {
+    if (isNative1080 && selectedPlayer === "KamiBDRip") {
       setResolvedStream(null);
       setIsResolvingStream(false);
       return;
@@ -506,7 +536,7 @@ const Details: React.FC = () => {
             provider: "kodik"
           });
           setIsResolvingStream(false);
-          setSelectedPlayer("KamiPlayer (1080p)");
+          setSelectedPlayer("KamiPlayer");
         }
       } else {
         if (isCurrent) {
@@ -534,7 +564,7 @@ const Details: React.FC = () => {
               provider: "aniboom"
             });
             setIsResolvingStream(false);
-            setSelectedPlayer("KamiPlayer (1080p)");
+            setSelectedPlayer("KamiPlayer");
             console.log(`🔥 [KamiPlayer] Прямой поток AniBoom активирован:`, embedToResolve);
             return;
           }
@@ -557,7 +587,7 @@ const Details: React.FC = () => {
             provider: "aniboom"
           });
           setIsResolvingStream(false);
-          setSelectedPlayer("KamiPlayer (1080p)");
+          setSelectedPlayer("KamiPlayer");
           console.log(`🔥 [KamiPlayer] AniBoom успешно активирован:`, data.url);
           return;
         }
@@ -577,7 +607,7 @@ const Details: React.FC = () => {
                 streamType: "hls",
                 provider: "kodik"
               });
-              setSelectedPlayer("KamiPlayer (1080p)");
+              setSelectedPlayer("KamiPlayer");
               console.log(`🔄 [KamiPlayer] AniBoom не найден/недоступен, переключено на прямой поток Kodik HLS:`, kodikHlsUrl);
             } else {
               setResolvedStream(null);
@@ -593,7 +623,7 @@ const Details: React.FC = () => {
       isCurrent = false;
       abortController.abort();
     };
-  }, [paramEpisode, selectedTranslation, id, players, translations]);
+  }, [paramEpisode, selectedTranslation, id, players, translations, selectedPlayer]);
 
   useEffect(() => {
     const activeEp = paramEpisode || "1";
@@ -795,8 +825,8 @@ const Details: React.FC = () => {
     if (!selectedPlayer) return;
     const ep = paramEpisode || "1";
     const tr = selectedTranslation?.title || "По умолчанию";
-    if (selectedPlayer === "KamiPlayer (1080p)") {
-      console.log(`🎬 [Player Engine] ACTIVE PLAYER: KamiPlayer (1080p) | Источник: AniBoom HLS | Серия: ${ep} | Озвучка: ${tr}`);
+    if (selectedPlayer === "KamiPlayer") {
+      console.log(`🎬 [Player Engine] ACTIVE PLAYER: KamiPlayer | Источник: AniBoom HLS | Серия: ${ep} | Озвучка: ${tr}`);
     } else if (selectedPlayer === "Collaps") {
       console.log(`🎬 [Player Engine] ACTIVE PLAYER: Collaps Embed | Источник: Collaps | Серия: ${ep} | Озвучка: ${tr}`);
     } else if (selectedPlayer === "Kodik") {
@@ -857,11 +887,11 @@ const Details: React.FC = () => {
       setReviews([]);
       setComments([]);
       setIsDescriptionExpanded(false);
-      setPlayers([{ name: "KamiPlayer (1080p)", iframe: null, isCustom: true }]);
+      setPlayers([{ name: "KamiPlayer", iframe: null, isCustom: true }]);
       setTranslations([]);
       setSelectedTranslation(null);
       setHasFetchedPlayers(false);
-      setSelectedPlayer("KamiPlayer (1080p)");
+      setSelectedPlayer("KamiPlayer");
 
       setShouldLoadRelated(false);
       setShouldLoadSimilar(false);
@@ -1287,8 +1317,8 @@ const Details: React.FC = () => {
                 id: `bdrip_track_${idx}`,
                 title: track,
                 type: "voice",
-                quality_label: bdrip.badge,
-                is_native_4k: bdrip.badge.includes("4K"),
+                quality_label: bdrip.is4K ? "4K" : "KamiBDRip",
+                is_native_4k: !!bdrip.is4K,
                 episodes_count: bdrip.totalEpisodes || (anime?.episodes || 1),
                 last_episode: bdrip.totalEpisodes || (anime?.episodes || 1),
                 provider: "Kami BDRip R2",
@@ -1314,7 +1344,7 @@ const Details: React.FC = () => {
             }
             setHasFetchedPlayers(true);
             const isTv = isTvDevice();
-            const bdripPlayer = playersList.find((p) => p.name === "KamiPlayer BDRip");
+            const bdripPlayer = playersList.find((p) => p.name === "KamiBDRip");
             const customPlayer = playersList.find((p) => p.isCustom);
             const kodikPlayer = playersList.find((p) => p.name === "Kodik");
             
@@ -1325,13 +1355,13 @@ const Details: React.FC = () => {
             } else if (isTv && kodikPlayer) {
               setSelectedPlayer("Kodik");
             } else if (bdripPlayer && isVip) {
-              setSelectedPlayer("KamiPlayer BDRip");
+              setSelectedPlayer("KamiBDRip");
             } else if (customPlayer) {
               setSelectedPlayer(customPlayer.name);
             } else if (playersList.length > 0) {
               setSelectedPlayer(playersList[0].name);
             } else {
-              setSelectedPlayer("KamiPlayer (1080p)");
+              setSelectedPlayer("KamiPlayer");
             }
           } else {
             setHasFetchedPlayers(true);
@@ -1354,13 +1384,13 @@ const Details: React.FC = () => {
   useEffect(() => {
     if (!hasFetchedPlayers) return;
     const bdrip = id ? getBDRipRelease(id) : null;
-    if (selectedPlayer === "KamiPlayer BDRip" && bdrip) {
+    if (selectedPlayer === "KamiBDRip" && bdrip) {
       const bdripTranslations: KodikTranslation[] = (bdrip.defaultAudioTrackNames || []).map((track, idx) => ({
         id: `bdrip_track_${idx}`,
         title: track,
         type: "voice",
-        quality_label: bdrip.badge,
-        is_native_4k: bdrip.badge.includes("4K"),
+        quality_label: bdrip.is4K ? "4K" : "KamiBDRip",
+        is_native_4k: !!bdrip.is4K,
         episodes_count: bdrip.totalEpisodes || (anime?.episodes || 1),
         last_episode: bdrip.totalEpisodes || (anime?.episodes || 1),
         provider: "Kami BDRip R2",
@@ -1875,8 +1905,8 @@ const Details: React.FC = () => {
             {/* Free Premium 1 Month Special Offer Banner */}
             <div className="bg-[#8B5CF6]/10 border border-[#8B5CF6]/25 rounded-3xl p-5 md:p-6 shadow-xl backdrop-blur-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-5 transition-all">
               <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-[#8B5CF6]/20 border border-[#8B5CF6]/30 flex items-center justify-center text-[#A78BFA] shrink-0 shadow-lg shadow-[#8B5CF6]/10">
-                  <Crown className="w-6 h-6 text-[#8B5CF6]" />
+                <div className="w-12 h-12 rounded-2xl bg-[#8B5CF6]/20 border border-[#8B5CF6]/30 flex items-center justify-center text-slate-300 shrink-0 shadow-lg shadow-[#8B5CF6]/10">
+                  <Crown className="w-6 h-6 text-slate-300" />
                 </div>
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -2115,7 +2145,7 @@ const Details: React.FC = () => {
                         .filter((p) => p.name !== "Aniboom")
                         .map((p) => {
                           const isSelected = selectedPlayer === p.name;
-                          const isBdrip = p.name === "KamiPlayer BDRip" || (p as any).isBdrip;
+                          const isBdrip = p.name === "KamiBDRip" || (p as any).isBdrip;
                           const bdripConfig = id ? getBDRipRelease(id) : null;
 
                           if (isBdrip) {
@@ -2130,7 +2160,7 @@ const Details: React.FC = () => {
                                     : "bg-[#8B5CF6]/15 hover:bg-[#8B5CF6]/25 text-[#C4B5FD] hover:text-white border-[#8B5CF6]/30"
                                 }`}
                               >
-                                <Crown className="w-3.5 h-3.5 text-amber-300" />
+                                <Crown className="w-3.5 h-3.5 text-slate-300 drop-shadow-sm" />
                                 {bdripConfig?.badge ? `${bdripConfig.badge}` : p.name}
                               </button>
                             );
@@ -2184,35 +2214,35 @@ const Details: React.FC = () => {
                           const player = players.find(
                             (p) => p.name === selectedPlayer,
                           )!;
-                          if (player.name === "KamiPlayer BDRip" || (player as any).isBdrip) {
+                          if (player.name === "KamiBDRip" || (player as any).isBdrip) {
                             const bdripConfig = id ? getBDRipRelease(id) : null;
 
                             if (!isVip) {
                               return (
                                 <div className="absolute inset-0 bg-gradient-to-b from-[#121318]/95 via-[#0B0C0E]/98 to-black flex flex-col items-center justify-center text-center p-6 z-20">
                                   <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-[#8B5CF6]/30 to-[#EC4899]/30 border border-[#8B5CF6]/40 flex items-center justify-center mb-4 shadow-xl shadow-[#8B5CF6]/20">
-                                    <Crown className="w-8 h-8 text-[#A78BFA] animate-pulse" />
+                                    <Crown className="w-8 h-8 text-slate-300 animate-pulse" />
                                   </div>
                                   <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#8B5CF6]/20 border border-[#8B5CF6]/40 text-[#A78BFA] text-xs font-black tracking-wider uppercase mb-3">
-                                    <Crown className="w-3.5 h-3.5 text-amber-300" />
-                                    {bdripConfig?.badge || "BDRip"}
+                                    <Crown className="w-3.5 h-3.5 text-slate-300 drop-shadow-sm" />
+                                    {bdripConfig?.badge || "KamiBDRip"}
                                   </div>
                                   <h3 className="text-xl md:text-2xl font-black text-white mb-2">
-                                    Релиз максимального качества (BDRip)
+                                    Релиз максимального качества (KamiBDRip)
                                   </h3>
                                   <p className="text-sm text-slate-300 max-w-md mb-6 leading-relaxed">
                                     Оригинальный Blu-Ray Master поток без сжатия, 6 студийных аудиодорожек и субтитры доступны подписчикам KamiAnime Premium.
                                   </p>
                                   <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
                                     <button
-                                      onClick={() => openPremiumModal("Просмотр в качестве BDRip")}
+                                      onClick={() => openPremiumModal("Просмотр в качестве KamiBDRip")}
                                       className="w-full sm:w-auto px-6 py-3 rounded-xl bg-gradient-to-r from-[#8B5CF6] to-[#EC4899] hover:from-[#7C3AED] hover:to-[#DB2777] text-white font-black text-sm tracking-wide shadow-lg shadow-[#8B5CF6]/25 transition-all cursor-pointer flex items-center justify-center gap-2"
                                     >
-                                      <Crown className="w-4 h-4 text-amber-300" />
+                                      <Crown className="w-4 h-4 text-slate-300" />
                                       Оформить Premium
                                     </button>
                                     <button
-                                      onClick={() => setSelectedPlayer("KamiPlayer (1080p)")}
+                                      onClick={() => setSelectedPlayer("KamiPlayer")}
                                       className="w-full sm:w-auto px-6 py-3 rounded-xl bg-white/10 hover:bg-white/15 text-white font-bold text-sm tracking-wide border border-white/10 transition-all cursor-pointer"
                                     >
                                       Смотреть бесплатно
@@ -2275,8 +2305,8 @@ const Details: React.FC = () => {
                                 onOpenDownload={() => setIsDownloadModalOpen(true)}
                                 isWatchTogetherActive={!!roomId}
                                 onPlayerError={() => {
-                                  if (players.some((p) => p.name === "KamiPlayer (1080p)")) {
-                                    setSelectedPlayer("KamiPlayer (1080p)");
+                                  if (players.some((p) => p.name === "KamiPlayer")) {
+                                    setSelectedPlayer("KamiPlayer");
                                   } else if (players.some((p) => p.name === "Kodik")) {
                                     setSelectedPlayer("Kodik");
                                   }
@@ -2294,7 +2324,9 @@ const Details: React.FC = () => {
                               undefined;
 
                             if (r2Config) {
-                              customSrc = `/api/proxy-4k?url=${encodeURIComponent(r2Config.streamUrl)}`;
+                              const currentEp = parseInt(paramEpisode || "1") || 1;
+                              const rawUrl = typeof r2Config.streamUrl === "function" ? r2Config.streamUrl(currentEp) : r2Config.streamUrl;
+                              customSrc = `/api/proxy-4k?url=${encodeURIComponent(rawUrl)}`;
                               maxTracks = r2Config.maxTracks;
                               audioTrackNames = r2Config.trackNames;
                             } else if (resolvedStream && resolvedStream.url) {
@@ -2377,7 +2409,7 @@ const Details: React.FC = () => {
                                         streamType: "hls",
                                         provider: "kodik"
                                       });
-                                      setSelectedPlayer("KamiPlayer (1080p)");
+                                      setSelectedPlayer("KamiPlayer");
                                       console.log(`🔄 [KamiPlayer] Ошибка потока AniBoom. Переключено на поток Kodik HLS:`, kodikHlsUrl);
                                       return;
                                     }

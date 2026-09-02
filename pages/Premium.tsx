@@ -102,8 +102,8 @@ const Premium: React.FC = () => {
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10 text-white">
       {/* Header */}
       <div className="text-center mb-10 space-y-4">
-        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[#8B5CF6]/15 border border-[#8B5CF6]/30 text-[#A78BFA] text-xs font-black uppercase tracking-widest shadow-lg shadow-[#8B5CF6]/10">
-          <Crown className="w-4 h-4 text-[#8B5CF6]" />
+        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[#8B5CF6]/15 border border-[#8B5CF6]/30 text-slate-300 text-xs font-black uppercase tracking-widest shadow-lg shadow-[#8B5CF6]/10">
+          <Crown className="w-4 h-4 text-slate-300" />
           <span>Premium</span>
         </div>
 
@@ -117,7 +117,7 @@ const Premium: React.FC = () => {
 
         {/* Free Registration Banner */}
         <div className="max-w-xl mx-auto mt-6 p-4 rounded-2xl bg-[#8B5CF6]/10 border border-[#8B5CF6]/30 flex items-center justify-center gap-3 text-xs sm:text-sm font-bold text-slate-200 shadow-xl">
-          <Crown className="w-4 h-4 text-[#8B5CF6] shrink-0" />
+          <Crown className="w-4 h-4 text-slate-300 shrink-0" />
           <span>
             Всем новым пользователям: <strong className="text-white underline decoration-[#8B5CF6] underline-offset-4">1 месяц Premium бесплатно</strong> при регистрации!
           </span>
@@ -141,8 +141,8 @@ const Premium: React.FC = () => {
           <div className="absolute -top-24 -right-24 w-64 h-64 bg-[#8B5CF6]/10 rounded-full blur-3xl pointer-events-none" />
           <div className="flex flex-col sm:flex-row items-center justify-between gap-6 relative z-10">
             <div className="flex items-center gap-4 text-center sm:text-left">
-              <div className="w-14 h-14 rounded-2xl bg-[#8B5CF6]/20 border border-[#8B5CF6]/40 flex items-center justify-center text-[#8B5CF6] shrink-0 shadow-lg shadow-[#8B5CF6]/20">
-                <Crown className="w-8 h-8" />
+              <div className="w-14 h-14 rounded-2xl bg-[#8B5CF6]/20 border border-[#8B5CF6]/40 flex items-center justify-center text-slate-300 shrink-0 shadow-lg shadow-[#8B5CF6]/20">
+                <Crown className="w-8 h-8 text-slate-300" />
               </div>
               <div>
                 <div className="flex items-center justify-center sm:justify-start gap-2">
@@ -186,7 +186,7 @@ const Premium: React.FC = () => {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-6">
             <div>
               <div className="inline-flex items-center gap-2 px-3 py-1 bg-[#8B5CF6]/20 border border-[#8B5CF6]/40 rounded-full text-[#A78BFA] text-[10px] font-black uppercase tracking-widest mb-2">
-                <Crown className="w-3.5 h-3.5 text-[#8B5CF6]" />
+                <Crown className="w-3.5 h-3.5 text-slate-300" />
                 Единая подписка
               </div>
               <h2 className="text-2xl sm:text-3xl font-display font-black uppercase tracking-tight text-white">
@@ -269,7 +269,7 @@ const Premium: React.FC = () => {
           {/* ALL INCLUDED FEATURES LIST */}
           <div className="bg-black/35 rounded-2xl p-5 border border-white/5">
             <div className="text-xs font-black uppercase tracking-wider text-slate-300 mb-3 flex items-center gap-2">
-              <Crown className="w-4 h-4 text-[#8B5CF6]" />
+              <Crown className="w-4 h-4 text-slate-300" />
               <span>Что входит в подписку Premium</span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -360,7 +360,7 @@ const Premium: React.FC = () => {
                   </>
                 ) : (
                   <>
-                    <Crown className="w-4 h-4 text-white" />
+                    <Crown className="w-4 h-4 text-slate-300" />
                     <span>Оплатить {selectedPlan.price} ₽ и активировать {selectedPlan.title}</span>
                     <ArrowRight className="w-4 h-4 ml-1" />
                   </>
@@ -373,7 +373,7 @@ const Premium: React.FC = () => {
                   onClick={openAuthModal}
                   className="w-full py-4 px-6 bg-[#8B5CF6] hover:bg-[#7C3AED] text-white font-black text-sm uppercase tracking-widest rounded-2xl shadow-xl shadow-[#8B5CF6]/20 transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99]"
                 >
-                  <Crown className="w-5 h-5" />
+                  <Crown className="w-5 h-5 text-slate-300" />
                   <span>Зарегистрироваться и получить 1 месяц бесплатно</span>
                   <ArrowRight className="w-4 h-4 ml-1" />
                 </button>
@@ -397,7 +397,7 @@ const Premium: React.FC = () => {
             <div>Возможности</div>
             <div className="text-center">Базовый</div>
             <div className="text-center text-[#A78BFA] flex items-center justify-center gap-1">
-              <Crown className="w-3.5 h-3.5 text-[#8B5CF6]" /> Premium
+              <Crown className="w-3.5 h-3.5 text-slate-300" /> Premium
             </div>
           </div>
 

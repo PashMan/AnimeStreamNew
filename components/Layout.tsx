@@ -296,7 +296,7 @@ const Layout: React.FC = () => {
                                 <div className="flex items-center gap-2 text-[9px] font-extrabold uppercase text-slate-500 tracking-wider">
                                   <span className="text-[#8B5CF6]">МАНГА</span>
                                   <span className="w-0.5 h-0.5 rounded-full bg-slate-600"></span>
-                                  <span className="flex items-center gap-0.5 text-yellow-500"><Crown className="w-2.5 h-2.5" /> {item.rating}</span>
+                                  <span className="flex items-center gap-0.5 text-slate-300"><Crown className="w-2.5 h-2.5 text-slate-400" /> {item.rating}</span>
                                 </div>
                               </div>
                             </Link>
@@ -328,7 +328,7 @@ const Layout: React.FC = () => {
                                      item.type}
                                   </span>
                                   <span className="w-0.5 h-0.5 rounded-full bg-slate-600"></span>
-                                  <span className="flex items-center gap-0.5 text-yellow-500"><Crown className="w-2.5 h-2.5" /> {item.rating}</span>
+                                  <span className="flex items-center gap-0.5 text-slate-300"><Crown className="w-2.5 h-2.5 text-slate-400" /> {item.rating}</span>
                                 </div>
                               </div>
                             </Link>
@@ -546,7 +546,7 @@ const Layout: React.FC = () => {
                 }`}
                 title="Премиум подписка"
               >
-                <Crown className={`w-3.5 h-3.5 ${user?.isPremium ? 'text-[#8B5CF6]' : 'text-slate-400'}`} />
+                <Crown className="w-3.5 h-3.5 text-slate-300" />
                 <span>{user?.isPremium ? 'Premium' : 'Premium 0 ₽'}</span>
               </Link>
 
@@ -696,7 +696,7 @@ const Layout: React.FC = () => {
                 className={`p-4 rounded-xl font-black uppercase tracking-widest text-sm transition-colors flex items-center justify-between bg-[#8B5CF6]/10 border border-[#8B5CF6]/25 ${isActive('/premium') ? 'text-white bg-[#8B5CF6]/20' : 'text-slate-200 hover:text-white'}`}
               >
                 <span className="flex items-center gap-2">
-                  <Crown className="w-4 h-4 text-[#8B5CF6]" />
+                  <Crown className="w-4 h-4 text-slate-300" />
                   <span>Premium</span>
                 </span>
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#8B5CF6]/20 border border-[#8B5CF6]/30 text-[#A78BFA]">
@@ -742,7 +742,7 @@ const Layout: React.FC = () => {
                 className={`p-4 rounded-xl font-black uppercase tracking-widest text-sm transition-colors flex items-center justify-between bg-[#8B5CF6]/10 border border-[#8B5CF6]/25 ${isActive('/premium') ? 'text-white bg-[#8B5CF6]/20' : 'text-slate-200 hover:text-white'}`}
               >
                 <span className="flex items-center gap-2">
-                  <Crown className="w-4 h-4 text-[#8B5CF6]" />
+                  <Crown className="w-4 h-4 text-slate-300" />
                   <span>Premium</span>
                 </span>
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#8B5CF6]/20 border border-[#8B5CF6]/30 text-[#A78BFA]">
