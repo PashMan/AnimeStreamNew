@@ -31,11 +31,20 @@ import { MobileAnime4KRenderer } from "../utils/anime4kCanvas";
 
 export { isTvDevice, MobileAnime4KRenderer };
 
+export interface PlayerSubtitle {
+  url: string;
+  label: string;
+  lang?: string;
+  default?: boolean;
+}
+
 interface CustomPlayerProps {
   src: string;
   poster?: string;
   maxAudioTracks?: number;
   audioTrackNames?: string[];
+  subtitles?: PlayerSubtitle[];
+  isBdrip?: boolean;
   autoPlay?: boolean;
   animeId?: string;
   episodeNumber?: string;
@@ -877,6 +886,8 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
       poster,
       maxAudioTracks,
       audioTrackNames,
+      subtitles,
+      isBdrip,
       autoPlay,
       animeId,
       episodeNumber,
@@ -911,6 +922,21 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
         }, 250);
       }
     }, [openPremiumModal]);
+
+    // Subtitle state
+    const [selectedSubtitle, setSelectedSubtitle] = useState<string | null>(() => {
+      const def = subtitles?.find((s) => s.default);
+      return def ? def.url : subtitles && subtitles.length > 0 ? subtitles[0].url : null;
+    });
+
+    useEffect(() => {
+      if (subtitles && subtitles.length > 0) {
+        const def = subtitles.find((s) => s.default) || subtitles[0];
+        setSelectedSubtitle(def.url);
+      } else {
+        setSelectedSubtitle(null);
+      }
+    }, [subtitles]);
 
     // Determine active stream provider for logging
     const activeProvider = (
@@ -964,7 +990,7 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
 
     // Settings Modal State
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-    const [activeSubmenu, setActiveSubmenu] = useState<"main" | "quality" | "speed">("main");
+    const [activeSubmenu, setActiveSubmenu] = useState<"main" | "quality" | "speed" | "subtitles">("main");
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [mangaBridge, setMangaBridge] = useState<{ mappedChapter?: number | string; adaptationSummary?: string } | null>(null);
 
@@ -1405,6 +1431,8 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
           (src.includes("url=") && decodeURIComponent(src).includes(".mpd"))
         );
 
+        const defaultSub = subtitles?.find((s) => s.default) || (subtitles && subtitles.length > 0 ? subtitles[0] : null);
+
         art = new Artplayer({
           container: artRef.current,
           url: finalUrl,
@@ -1416,6 +1444,17 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
             crossOrigin: "anonymous",
           },
           autoplay: autoPlay || false,
+          subtitle: defaultSub ? {
+            url: defaultSub.url,
+            type: "vtt",
+            style: {
+              color: "#ffffff",
+              fontSize: "22px",
+              textShadow: "0 2px 4px rgba(0,0,0,0.95), 0 0 8px rgba(0,0,0,0.85)",
+              fontWeight: "700",
+            },
+            encoding: "utf-8",
+          } : undefined,
           pip: false,
           autoSize: true,
           autoMini: false,
@@ -2525,6 +2564,31 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                     <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-white transition-colors" />
                   </button>
 
+                  {/* 2.5. Субтитры (если доступны) */}
+                  {subtitles && subtitles.length > 0 && (
+                    <button
+                      onClick={() => setActiveSubmenu("subtitles")}
+                      className="flex items-center justify-between py-3 px-2.5 rounded-xl hover:bg-white/5 transition-colors cursor-pointer text-left group"
+                    >
+                      <div className="flex items-center gap-3.5">
+                        <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-white/80 group-hover:text-[#8B5CF6] transition-colors">
+                          <BookOpen className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="text-sm font-bold text-white">
+                            Субтитры
+                          </div>
+                          <div className="text-xs text-slate-400">
+                            {selectedSubtitle
+                              ? (subtitles.find((s) => s.url === selectedSubtitle)?.label || "Включены")
+                              : "Выкл"}
+                          </div>
+                        </div>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-white transition-colors" />
+                    </button>
+                  )}
+
                   <div className="my-2 border-t border-white/5" />
 
                   {/* 3. Авто-переключение */}
@@ -2750,6 +2814,78 @@ export const CustomPlayer = forwardRef<HTMLVideoElement, CustomPlayerProps>(
                           }`}
                         >
                           <span>{opt.label}</span>
+                          {isSelected && (
+                            <Check className="w-4 h-4 text-[#8B5CF6]" />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* SUBMENU: СУБТИТРЫ */}
+              {activeSubmenu === "subtitles" && subtitles && (
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center justify-between pb-3 mb-2 border-b border-white/10">
+                    <button
+                      onClick={() => setActiveSubmenu("main")}
+                      className="flex items-center gap-2 text-sm font-bold text-slate-400 hover:text-white transition-colors cursor-pointer"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                      <span>Субтитры</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setIsSettingsOpen(false);
+                        setActiveSubmenu("main");
+                      }}
+                      className="text-xs sm:text-sm font-bold text-slate-400 hover:text-white transition-colors cursor-pointer px-2 py-1"
+                    >
+                      Готово
+                    </button>
+                  </div>
+
+                  <div className="space-y-1">
+                    <button
+                      onClick={() => {
+                        setSelectedSubtitle(null);
+                        const art = artInstanceRef.current;
+                        if (art) {
+                          art.subtitle.show = false;
+                        }
+                      }}
+                      className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-sm font-bold transition-colors cursor-pointer ${
+                        selectedSubtitle === null
+                          ? "bg-[#8B5CF6]/15 text-[#8B5CF6]"
+                          : "text-slate-300 hover:bg-white/5 hover:text-white"
+                      }`}
+                    >
+                      <span>Выключить</span>
+                      {selectedSubtitle === null && (
+                        <Check className="w-4 h-4 text-[#8B5CF6]" />
+                      )}
+                    </button>
+                    {subtitles.map((sub) => {
+                      const isSelected = selectedSubtitle === sub.url;
+                      return (
+                        <button
+                          key={sub.url}
+                          onClick={() => {
+                            setSelectedSubtitle(sub.url);
+                            const art = artInstanceRef.current;
+                            if (art) {
+                              art.subtitle.switch(sub.url, { name: sub.label });
+                              art.subtitle.show = true;
+                            }
+                          }}
+                          className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-sm font-bold transition-colors cursor-pointer ${
+                            isSelected
+                              ? "bg-[#8B5CF6]/15 text-[#8B5CF6]"
+                              : "text-slate-300 hover:bg-white/5 hover:text-white"
+                          }`}
+                        >
+                          <span>{sub.label}</span>
                           {isSelected && (
                             <Check className="w-4 h-4 text-[#8B5CF6]" />
                           )}

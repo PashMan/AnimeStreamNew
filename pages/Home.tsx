@@ -16,6 +16,7 @@ import { FALLBACK_IMAGE, COLLECTIONS_DATA } from '../constants';
 import CollectionCard from '../components/CollectionCard';
 import CreateCollectionModal from '../components/CreateCollectionModal';
 import Vote4KSection from '../components/Vote4KSection';
+import { getBDRipRelease } from '../services/bdripCatalog';
 import { KodikRecentUpdate, fetchRecentUpdates } from '../services/kodik';
 import { fetchHighResHeroBanner } from '../services/animeImages';
 
@@ -615,22 +616,25 @@ const Home: React.FC = () => {
         {/* 4K Community Voting Section */}
         <Vote4KSection />
 
-        {/* 4K Anime Section (Premium Exclusive) */}
+        {/* BDRip Maximum Quality Section (R2 / Premium Exclusive) */}
         <section>
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6">
             <div>
               <h2 className="text-xl md:text-2xl font-display font-extrabold text-white tracking-tight flex items-center gap-3 border-l-4 border-primary pl-3">
                 <span className="flex items-center gap-2">
-                  4K Аниме
+                  Максимальное качество BDRip
                   <span className="px-2 py-0.5 rounded-full bg-[#8B5CF6]/20 text-[#A78BFA] border border-[#8B5CF6]/40 text-[10px] font-black uppercase flex items-center gap-1">
                     <Crown className="w-3 h-3 text-[#8B5CF6]" /> Premium
                   </span>
                 </span>
               </h2>
+              <p className="text-xs text-slate-400 mt-1 pl-4">
+                Эксклюзивные релизы без потерь в качестве со студийным звуком и оригинальным качеством Blu-Ray
+              </p>
             </div>
             <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
                <Link to="/premium" className="text-[10px] font-black uppercase tracking-widest text-[#8B5CF6] hover:text-white transition-colors flex items-center gap-1.5 mr-3">
-                 {isVip ? 'Доступно с Premium' : 'Смотреть в 4K'} <ChevronRight className="w-4 h-4" />
+                 {isVip ? 'Доступно с Premium' : 'Смотреть в BDRip'} <ChevronRight className="w-4 h-4" />
                </Link>
                <div className="hidden sm:block w-px h-6 bg-white/10" />
                <div className="flex gap-2">
@@ -640,16 +644,20 @@ const Home: React.FC = () => {
             </div>
           </div>
           <div ref={anime4kRef} className="flex gap-6 overflow-x-auto hide-scrollbar scroll-smooth pb-4 px-1 snap-x min-h-[360px]">
-            {animes4k.length > 0 ? animes4k.map((anime, idx) => (
-              <div key={`4k-${anime.id}-${idx}`} className="w-[180px] sm:w-[220px] 3xl:w-[260px] 4xl:w-[300px] flex-none snap-start relative group">
-                <AnimeCard anime={anime} />
-                <div className="absolute top-3 right-3 z-20 pointer-events-none">
-                  <span className="px-2 py-0.5 rounded-md bg-black/80 backdrop-blur-md border border-[#8B5CF6]/40 text-[#A78BFA] text-[10px] font-black tracking-wider flex items-center gap-1 shadow-lg">
-                    <Crown className="w-2.5 h-2.5 text-[#8B5CF6]" /> 4K
-                  </span>
+            {animes4k.length > 0 ? animes4k.map((anime, idx) => {
+              const bdripRelease = getBDRipRelease(anime.id);
+              const badgeText = bdripRelease?.badge || 'BDRip';
+              return (
+                <div key={`bdrip-${anime.id}-${idx}`} className="w-[180px] sm:w-[220px] 3xl:w-[260px] 4xl:w-[300px] flex-none snap-start relative group">
+                  <AnimeCard anime={anime} />
+                  <div className="absolute top-3 right-3 z-20 pointer-events-none">
+                    <span className="px-2 py-0.5 rounded-md bg-black/80 backdrop-blur-md border border-[#8B5CF6]/40 text-[#A78BFA] text-[10px] font-black tracking-wider flex items-center gap-1 shadow-lg">
+                      <Crown className="w-2.5 h-2.5 text-[#8B5CF6]" /> {badgeText}
+                    </span>
+                  </div>
                 </div>
-              </div>
-            )) : Array.from({length: 6}).map((_, i) => (
+              );
+            }) : Array.from({length: 6}).map((_, i) => (
               <div key={i} className="w-[180px] sm:w-[220px] 3xl:w-[260px] 4xl:w-[300px] flex-none snap-start animate-pulse">
                   <div className="w-full aspect-[2/3] bg-white/5 rounded-xl mb-3"></div>
                   <div className="h-4 bg-white/5 rounded w-3/4 mb-2"></div>

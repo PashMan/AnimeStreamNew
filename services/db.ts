@@ -826,18 +826,20 @@ class DatabaseService {
     }
   }
 
-  // Anime 4K
+  // Anime 4K / BDRip
   async getAnime4k(): Promise<string[]> {
-    if (!this.isSupabaseAvailable()) return ['32281', '50594', '38826', '16782'];
+    const defaultIds = ['44511', '50594', '32281', '38826', '16782'];
+    if (!this.isSupabaseAvailable()) return defaultIds;
     try {
       const { data, error } = await supabaseClient.from('anime_4k').select('anime_id');
       if (error || !data || data.length === 0) {
-        // Fallback to hardcoded IDs if table doesn't exist or is empty
-        return ['32281', '50594', '38826', '16782'];
+        return defaultIds;
       }
-      return data.map((d: any) => d.anime_id.toString());
+      const dbIds = data.map((d: any) => d.anime_id.toString());
+      // Merge unique IDs with defaultIds
+      return Array.from(new Set([...defaultIds, ...dbIds]));
     } catch (e) {
-      return ['32281', '50594', '38826', '16782'];
+      return defaultIds;
     }
   }
 

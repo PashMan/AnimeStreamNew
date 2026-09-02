@@ -48,6 +48,7 @@ import {
 import { FALLBACK_IMAGE as PLACEHOLDER_IMAGE, MOCK_ANIME } from "../constants";
 import { db, supabase } from "../services/db";
 import { Anime, Comment, User, Review, StreamProvider } from "../types";
+import { getBDRipRelease, isBDRipAvailable, BDRipAnime } from "../services/bdripCatalog";
 import { Image } from "../components/Image";
 import AnimeCard from "../components/AnimeCard";
 import SEO from "../components/SEO";
@@ -253,6 +254,11 @@ const getResolvedIframeUrl = (t: any, epNum: number, defaultUrl?: string | null,
 };
 
 export const R2_4K_CONFIG: Record<string, { title: string; trackNames: string[]; streamUrl: string; maxTracks?: number }> = {
+  "44511": {
+    title: "Человек-бензопила",
+    trackNames: ["Японский (Оригинал)", "Crunchyroll (Дубляж)", "Studio Band", "Flarrow Films", "Dream Cast", "AniDUB"],
+    streamUrl: "https://cdn1.kamianime.club/chainsaw_man/ep01/index.m3u8",
+  },
   "50594": {
     title: "Судзумэ, закрывающая двери",
     trackNames: ["Crunchyroll", "Flarrow Films", "TVShows", "Leviafilm", "AniLibria", "Ю. Сербин", "Netflix КЗ.", "Оригинал + Субтитры", "Оригинал"],
@@ -306,6 +312,7 @@ const Details: React.FC = () => {
     { name: string; iframe: string | null; isCustom?: boolean }[]
   >([{ name: "KamiPlayer (1080p)", iframe: null, isCustom: true }]);
   const [translations, setTranslations] = useState<KodikTranslation[]>([]);
+  const standardTranslationsRef = useRef<KodikTranslation[]>([]);
   const [selectedTranslation, setSelectedTranslation] = useState<KodikTranslation | null>(null);
   const [hasFetchedPlayers, setHasFetchedPlayers] = useState(false);
   const [isPlayersLoading, setIsPlayersLoading] = useState(false);
@@ -1252,6 +1259,7 @@ const Details: React.FC = () => {
 
           const playersList = data?.players || [];
           const translationsList = data?.kodik_translations || [];
+          standardTranslationsRef.current = translationsList;
 
           if (playersList.length > 0) {
             if (paramEpisode) {
@@ -1269,27 +1277,27 @@ const Details: React.FC = () => {
               });
             }
             setPlayers(playersList);
-            const r2Config = id ? R2_4K_CONFIG[id] : null;
-            if (r2Config) {
-              const r2Translations: KodikTranslation[] = r2Config.trackNames.map((track, idx) => ({
-                id: `r2_track_${idx}`,
+            const bdrip = id ? getBDRipRelease(id) : null;
+            if (bdrip) {
+              const bdripTranslations: KodikTranslation[] = (bdrip.defaultAudioTrackNames || []).map((track, idx) => ({
+                id: `bdrip_track_${idx}`,
                 title: track,
                 type: "voice",
-                quality_label: "4K",
-                is_native_4k: true,
-                episodes_count: 1,
-                last_episode: 1,
-                provider: "Kami 4K R2",
+                quality_label: bdrip.badge,
+                is_native_4k: bdrip.badge.includes("4K"),
+                episodes_count: bdrip.totalEpisodes || (anime?.episodes || 1),
+                last_episode: bdrip.totalEpisodes || (anime?.episodes || 1),
+                provider: "Kami BDRip R2",
                 iframe: "",
                 aniboom_iframe: null,
                 kodik_iframe: null
               }));
-              setTranslations(r2Translations);
-              if (r2Translations.length > 0) {
+              setTranslations(bdripTranslations);
+              if (bdripTranslations.length > 0) {
                 const matchedTranslation = selectedTranslation
-                  ? r2Translations.find((t: any) => getCleanTitle(t.title) === getCleanTitle(selectedTranslation.title))
+                  ? bdripTranslations.find((t: any) => getCleanTitle(t.title) === getCleanTitle(selectedTranslation.title))
                   : null;
-                setSelectedTranslation(matchedTranslation || r2Translations[0]);
+                setSelectedTranslation(matchedTranslation || bdripTranslations[0]);
               }
             } else {
               setTranslations(translationsList);
@@ -1302,6 +1310,7 @@ const Details: React.FC = () => {
             }
             setHasFetchedPlayers(true);
             const isTv = isTvDevice();
+            const bdripPlayer = playersList.find((p) => p.name === "KamiPlayer BDRip");
             const customPlayer = playersList.find((p) => p.isCustom);
             const kodikPlayer = playersList.find((p) => p.name === "Kodik");
             
@@ -1311,6 +1320,8 @@ const Details: React.FC = () => {
               // Сохраняем текущий плеер
             } else if (isTv && kodikPlayer) {
               setSelectedPlayer("Kodik");
+            } else if (bdripPlayer && isVip) {
+              setSelectedPlayer("KamiPlayer BDRip");
             } else if (customPlayer) {
               setSelectedPlayer(customPlayer.name);
             } else if (playersList.length > 0) {
@@ -1335,6 +1346,37 @@ const Details: React.FC = () => {
       fetchPlayers();
     }
   }, [anime, hasFetchedPlayers, isPlayersLoading, playersError, paramEpisode]);
+
+  useEffect(() => {
+    if (!hasFetchedPlayers) return;
+    const bdrip = id ? getBDRipRelease(id) : null;
+    if (selectedPlayer === "KamiPlayer BDRip" && bdrip) {
+      const bdripTranslations: KodikTranslation[] = (bdrip.defaultAudioTrackNames || []).map((track, idx) => ({
+        id: `bdrip_track_${idx}`,
+        title: track,
+        type: "voice",
+        quality_label: bdrip.badge,
+        is_native_4k: bdrip.badge.includes("4K"),
+        episodes_count: bdrip.totalEpisodes || (anime?.episodes || 1),
+        last_episode: bdrip.totalEpisodes || (anime?.episodes || 1),
+        provider: "Kami BDRip R2",
+        iframe: "",
+        aniboom_iframe: null,
+        kodik_iframe: null
+      }));
+      setTranslations(bdripTranslations);
+      setSelectedTranslation((prev) => {
+        const matched = prev ? bdripTranslations.find((t) => getCleanTitle(t.title) === getCleanTitle(prev.title)) : null;
+        return matched || bdripTranslations[0] || null;
+      });
+    } else if (standardTranslationsRef.current.length > 0) {
+      setTranslations(standardTranslationsRef.current);
+      setSelectedTranslation((prev) => {
+        const matched = prev ? standardTranslationsRef.current.find((t) => getCleanTitle(t.title) === getCleanTitle(prev.title)) : null;
+        return matched || standardTranslationsRef.current[0] || null;
+      });
+    }
+  }, [selectedPlayer, hasFetchedPlayers, id, anime]);
 
   if (isMainLoading)
     return (
@@ -2069,6 +2111,27 @@ const Details: React.FC = () => {
                         .filter((p) => p.name !== "Aniboom")
                         .map((p) => {
                           const isSelected = selectedPlayer === p.name;
+                          const isBdrip = p.name === "KamiPlayer BDRip" || (p as any).isBdrip;
+                          const bdripConfig = id ? getBDRipRelease(id) : null;
+
+                          if (isBdrip) {
+                            return (
+                              <button
+                                key={p.name}
+                                id={`select-player-${p.name.replace(/\s+/g, '-').toLowerCase()}`}
+                                onClick={() => setSelectedPlayer(p.name)}
+                                className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer whitespace-nowrap border flex items-center gap-1.5 ${
+                                  isSelected
+                                    ? "bg-gradient-to-r from-[#8B5CF6] to-[#7C3AED] text-white border-[#8B5CF6] shadow-lg shadow-[#8B5CF6]/30"
+                                    : "bg-[#8B5CF6]/15 hover:bg-[#8B5CF6]/25 text-[#C4B5FD] hover:text-white border-[#8B5CF6]/30"
+                                }`}
+                              >
+                                <Crown className="w-3.5 h-3.5 text-amber-300" />
+                                {bdripConfig?.badge ? `${bdripConfig.badge}` : p.name}
+                              </button>
+                            );
+                          }
+
                           return (
                             <button
                               key={p.name}
@@ -2117,6 +2180,107 @@ const Details: React.FC = () => {
                           const player = players.find(
                             (p) => p.name === selectedPlayer,
                           )!;
+                          if (player.name === "KamiPlayer BDRip" || (player as any).isBdrip) {
+                            const bdripConfig = id ? getBDRipRelease(id) : null;
+
+                            if (!isVip) {
+                              return (
+                                <div className="absolute inset-0 bg-gradient-to-b from-[#121318]/95 via-[#0B0C0E]/98 to-black flex flex-col items-center justify-center text-center p-6 z-20">
+                                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-[#8B5CF6]/30 to-[#EC4899]/30 border border-[#8B5CF6]/40 flex items-center justify-center mb-4 shadow-xl shadow-[#8B5CF6]/20">
+                                    <Crown className="w-8 h-8 text-[#A78BFA] animate-pulse" />
+                                  </div>
+                                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#8B5CF6]/20 border border-[#8B5CF6]/40 text-[#A78BFA] text-xs font-black tracking-wider uppercase mb-3">
+                                    <Crown className="w-3.5 h-3.5 text-amber-300" />
+                                    {bdripConfig?.badge || "BDRip / 4K"}
+                                  </div>
+                                  <h3 className="text-xl md:text-2xl font-black text-white mb-2">
+                                    Релиз максимального качества (BDRip)
+                                  </h3>
+                                  <p className="text-sm text-slate-300 max-w-md mb-6 leading-relaxed">
+                                    Оригинальный Blu-Ray Master поток без сжатия, 6 студийных аудиодорожек и субтитры доступны подписчикам KamiAnime Premium.
+                                  </p>
+                                  <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
+                                    <button
+                                      onClick={() => openPremiumModal("Просмотр в качестве BDRip")}
+                                      className="w-full sm:w-auto px-6 py-3 rounded-xl bg-gradient-to-r from-[#8B5CF6] to-[#EC4899] hover:from-[#7C3AED] hover:to-[#DB2777] text-white font-black text-sm tracking-wide shadow-lg shadow-[#8B5CF6]/25 transition-all cursor-pointer flex items-center justify-center gap-2"
+                                    >
+                                      <Crown className="w-4 h-4 text-amber-300" />
+                                      Оформить Premium
+                                    </button>
+                                    <button
+                                      onClick={() => setSelectedPlayer("KamiPlayer (1080p)")}
+                                      className="w-full sm:w-auto px-6 py-3 rounded-xl bg-white/10 hover:bg-white/15 text-white font-bold text-sm tracking-wide border border-white/10 transition-all cursor-pointer"
+                                    >
+                                      Смотреть бесплатно
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            }
+
+                            const currentEpNum = parseInt(paramEpisode || "1") || 1;
+                            const episodesCount = bdripConfig?.totalEpisodes || (anime ? (anime.episodesAired || anime.episodes || 1) : 1);
+                            const rawStreamUrl = bdripConfig ? bdripConfig.getStreamUrl(currentEpNum) : "";
+                            const customSrc = rawStreamUrl ? `/api/proxy-4k?url=${encodeURIComponent(rawStreamUrl)}` : "";
+                            const audioTrackNames = bdripConfig?.defaultAudioTrackNames;
+                            const subtitles = bdripConfig?.getSubtitles ? bdripConfig.getSubtitles(currentEpNum) : undefined;
+                            const maxTracks = bdripConfig?.maxAudioTracks;
+
+                            const handleNextEp = currentEpNum < episodesCount ? () => {
+                              const nextEp = currentEpNum + 1;
+                              let newUrl = `/anime/${paramId}/episode/${nextEp}`;
+                              if (window.location.search) {
+                                newUrl += window.location.search;
+                              }
+                              navigate(newUrl);
+                            } : undefined;
+
+                            const handlePrevEp = currentEpNum > 1 ? () => {
+                              const prevEp = currentEpNum - 1;
+                              let newUrl = `/anime/${paramId}/episode/${prevEp}`;
+                              if (window.location.search) {
+                                newUrl += window.location.search;
+                              }
+                              navigate(newUrl);
+                            } : undefined;
+
+                            return (
+                              <CustomPlayer
+                                ref={nativeVideoRef}
+                                src={customSrc}
+                                streamType="hls"
+                                provider="bdrip"
+                                isBdrip={true}
+                                translationTitle={selectedTranslation?.title}
+                                animeTitle={anime?.title || "KamiAnime"}
+                                poster=""
+                                maxAudioTracks={maxTracks}
+                                audioTrackNames={audioTrackNames}
+                                subtitles={subtitles}
+                                animeId={id}
+                                episodeNumber={paramEpisode || "1"}
+                                onNextEpisode={handleNextEp}
+                                onPrevEpisode={handlePrevEp}
+                                onOpenWatchTogether={() => {
+                                  if (!roomId) {
+                                    handleCreateRoom();
+                                  } else {
+                                    document.getElementById('co-watching-room-panel')?.scrollIntoView({ behavior: 'smooth' });
+                                  }
+                                }}
+                                onOpenDownload={() => setIsDownloadModalOpen(true)}
+                                isWatchTogetherActive={!!roomId}
+                                onPlayerError={() => {
+                                  if (players.some((p) => p.name === "KamiPlayer (1080p)")) {
+                                    setSelectedPlayer("KamiPlayer (1080p)");
+                                  } else if (players.some((p) => p.name === "Kodik")) {
+                                    setSelectedPlayer("Kodik");
+                                  }
+                                }}
+                              />
+                            );
+                          }
+
                           if (player.isCustom || player.name === "Aniboom") {
                             const r2Config = id ? R2_4K_CONFIG[id] : undefined;
 

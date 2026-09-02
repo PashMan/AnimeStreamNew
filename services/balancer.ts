@@ -1,10 +1,13 @@
 import { fetchKodikData } from './kodik';
 import { getFromStorage, saveToStorage } from './cache';
+import { isBDRipAvailable } from './bdripCatalog';
 
 export interface PlayerInfo {
   name: string;
   iframe: string | null;
   isCustom?: boolean;
+  isBdrip?: boolean;
+  badge?: string;
 }
 
 export interface KodikTranslation {
@@ -46,7 +49,7 @@ export const fetchPlayersClientSide = async (shikimoriId: string, title: string,
     } catch (_) {}
   }
 
-  const cacheKey = `balancer_v22_${shikimoriId}`;
+  const cacheKey = `balancer_v23_${shikimoriId}`;
   const cached = getFromStorage(cacheKey);
 
   // TTL: 6 hours for balancer data
@@ -78,17 +81,31 @@ export const fetchPlayersClientSide = async (shikimoriId: string, title: string,
       // Filter out standalone Anilibria and Aniboom (Aniboom streams are extracted into voiceovers for KamiPlayer)
       playersList = playersList.filter(p => p.name !== 'Anilibria' && p.name !== 'Aniboom');
 
-      // Add custom player for 1080p encodes OR any anime containing Kodik/Aniboom stream/voiceovers
+      // Check availability
       const hasKodik = playersList.some(p => p.name === 'Kodik' && p.iframe);
       const hasTranslations = translationsList.length > 0;
-      const isNative1080 = shikimoriId === '32281' || shikimoriId === '50594' || shikimoriId === '62568' || shikimoriId === '38826' || shikimoriId === '16782';
+      const hasBDRip = isBDRipAvailable(shikimoriId);
 
-      if (isNative1080 || hasKodik || hasTranslations) {
+      // Add standard KamiPlayer (1080p)
+      if (hasBDRip || hasKodik || hasTranslations) {
         if (!playersList.some(p => p.name === 'KamiPlayer (1080p)')) {
           playersList.unshift({
             name: 'KamiPlayer (1080p)',
             iframe: null,
             isCustom: true
+          });
+        }
+      }
+
+      // If BDRip is available from R2, add exclusive KamiPlayer BDRip at the top!
+      if (hasBDRip) {
+        if (!playersList.some(p => p.name === 'KamiPlayer BDRip')) {
+          playersList.unshift({
+            name: 'KamiPlayer BDRip',
+            iframe: null,
+            isCustom: true,
+            isBdrip: true,
+            badge: 'BDRip'
           });
         }
       }
