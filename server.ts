@@ -3847,9 +3847,26 @@ app.get('/api/proxy-4k', async (c) => {
       reqHeaders['Range'] = clientRange;
     }
 
-    const res = await fetch(targetUrl, { headers: reqHeaders });
+    const res = await fetch(targetUrl, { 
+      headers: reqHeaders,
+      cache: 'no-store'
+    });
     if (!res.ok && res.status !== 206) {
       return c.text(`Proxy failed with status ${res.status}`, res.status as any);
+    }
+
+    // Если запрос к чанку .ts — отдаем напрямую стримом
+    if (targetUrl.includes('.ts')) {
+      return new Response(res.body, {
+        status: res.status,
+        headers: {
+          'Content-Type': 'video/mp2t',
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+          'Access-Control-Allow-Headers': '*',
+          'Cache-Control': 'public, max-age=86400',
+        },
+      });
     }
 
     const contentType = res.headers.get('content-type') || '';
@@ -3955,9 +3972,9 @@ app.get('/api/proxy-4k', async (c) => {
       // VOD HLS fixes:
       if (manifestText.includes('#EXTINF')) {
         if (/#EXT-X-TARGETDURATION:\s*\d+/.test(manifestText)) {
-          manifestText = manifestText.replace(/#EXT-X-TARGETDURATION:\s*\d+/, '#EXT-X-TARGETDURATION:17');
+          manifestText = manifestText.replace(/#EXT-X-TARGETDURATION:\s*\d+/, '#EXT-X-TARGETDURATION:18');
         } else {
-          manifestText = manifestText.replace('#EXTM3U', '#EXTM3U\n#EXT-X-TARGETDURATION:17');
+          manifestText = manifestText.replace('#EXTM3U', '#EXTM3U\n#EXT-X-TARGETDURATION:18');
         }
 
         if (!manifestText.includes('#EXT-X-ENDLIST')) {
@@ -3972,7 +3989,7 @@ app.get('/api/proxy-4k', async (c) => {
           'Access-Control-Allow-Origin': '*',
           'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
           'Access-Control-Allow-Headers': '*',
-          'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0'
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0'
         }
       });
     }
@@ -5433,9 +5450,9 @@ app.get('/api/media/playlist', async (c) => {
 
           if (rewritten.includes('#EXTINF')) {
             if (/#EXT-X-TARGETDURATION:\s*\d+/.test(rewritten)) {
-              rewritten = rewritten.replace(/#EXT-X-TARGETDURATION:\s*\d+/, '#EXT-X-TARGETDURATION:17');
+              rewritten = rewritten.replace(/#EXT-X-TARGETDURATION:\s*\d+/, '#EXT-X-TARGETDURATION:18');
             } else {
-              rewritten = rewritten.replace('#EXTM3U', '#EXTM3U\n#EXT-X-TARGETDURATION:17');
+              rewritten = rewritten.replace('#EXTM3U', '#EXTM3U\n#EXT-X-TARGETDURATION:18');
             }
             if (!rewritten.includes('#EXT-X-ENDLIST')) {
               rewritten = rewritten.trim() + '\n#EXT-X-ENDLIST\n';
@@ -5444,7 +5461,7 @@ app.get('/api/media/playlist', async (c) => {
 
           c.header('Content-Type', 'application/vnd.apple.mpegurl; charset=utf-8');
           c.header('Access-Control-Allow-Origin', '*');
-          c.header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+          c.header('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
           return c.text(rewritten);
         }
       } catch (_) {}
@@ -5699,9 +5716,9 @@ app.get('/api/media/playlist', async (c) => {
 
         if (rewrittenVariant.includes('#EXTINF')) {
           if (/#EXT-X-TARGETDURATION:\s*\d+/.test(rewrittenVariant)) {
-            rewrittenVariant = rewrittenVariant.replace(/#EXT-X-TARGETDURATION:\s*\d+/, '#EXT-X-TARGETDURATION:17');
+            rewrittenVariant = rewrittenVariant.replace(/#EXT-X-TARGETDURATION:\s*\d+/, '#EXT-X-TARGETDURATION:18');
           } else {
-            rewrittenVariant = rewrittenVariant.replace('#EXTM3U', '#EXTM3U\n#EXT-X-TARGETDURATION:17');
+            rewrittenVariant = rewrittenVariant.replace('#EXTM3U', '#EXTM3U\n#EXT-X-TARGETDURATION:18');
           }
           if (!rewrittenVariant.includes('#EXT-X-ENDLIST')) {
             rewrittenVariant = rewrittenVariant.trim() + '\n#EXT-X-ENDLIST\n';
@@ -5710,7 +5727,7 @@ app.get('/api/media/playlist', async (c) => {
 
         c.header('Content-Type', 'application/vnd.apple.mpegurl; charset=utf-8');
         c.header('Access-Control-Allow-Origin', '*');
-        c.header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+        c.header('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
         return c.text(rewrittenVariant);
       } catch (err: any) {
         console.debug(`[Aniboom Quality Playlist Notice]: ${err.message}. Serving master stream redirect.`);
