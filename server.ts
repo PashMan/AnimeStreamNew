@@ -10,8 +10,9 @@ import { upgradeWebSocket as cfUpgradeWebSocket } from 'hono/cloudflare-workers'
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { exec } from 'node:child_process';
+import { exec, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import * as crypto from 'node:crypto';
 import { resolveAnimeEpisodeWithD1 } from './server/animeBridge';
 import {
   getVote4KState,
@@ -22,6 +23,57 @@ import {
 import { checkIsMangaLicensed, LICENSED_MANGA_LIST } from './data/licensedManga';
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
+
+const tsConversionMap = new Map<string, Promise<void>>();
+
+async function getTranscodedTsSegment(targetUrl: string): Promise<Buffer> {
+  const hash = crypto.createHash('md5').update(targetUrl).digest('hex');
+  const cachePath = path.join('/tmp', `ts_8bit_${hash}.ts`);
+
+  if (fs.existsSync(cachePath)) {
+    return fs.readFileSync(cachePath);
+  }
+
+  if (tsConversionMap.has(cachePath)) {
+    await tsConversionMap.get(cachePath);
+    if (fs.existsSync(cachePath)) {
+      return fs.readFileSync(cachePath);
+    }
+  }
+
+  const conversionPromise = (async () => {
+    try {
+      await execFileAsync('ffmpeg', [
+        '-i', targetUrl,
+        '-c:v', 'libx264',
+        '-preset', 'ultrafast',
+        '-tune', 'zerolatency',
+        '-pix_fmt', 'yuv420p',
+        '-c:a', 'copy',
+        '-map', '0',
+        '-f', 'mpegts',
+        '-y', cachePath
+      ]);
+    } catch (e: any) {
+      console.error(`[TS Transcoder] ffmpeg failed for ${targetUrl}:`, e.message);
+    }
+  })();
+
+  tsConversionMap.set(cachePath, conversionPromise);
+  try {
+    await conversionPromise;
+  } finally {
+    tsConversionMap.delete(cachePath);
+  }
+
+  if (fs.existsSync(cachePath)) {
+    return fs.readFileSync(cachePath);
+  }
+
+  const res = await fetch(targetUrl);
+  return Buffer.from(await res.arrayBuffer());
+}
 
 process.on('uncaughtException', (err) => {
   console.error('[SERVER UNCAUGHT EXCEPTION]:', err);
@@ -3957,10 +4009,33 @@ app.get('/api/proxy-4k', async (c) => {
       });
     }
 
+    if (targetUrl.includes('chainsaw_man') && (targetUrl.endsWith('.ts') || targetUrl.includes('.ts'))) {
+      const buffer = await getTranscodedTsSegment(targetUrl);
+      return new Response(buffer, {
+        status: 200,
+        headers: {
+          'Content-Type': 'video/mp2t',
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+          'Access-Control-Allow-Headers': '*',
+          'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Accept-Ranges',
+          'Cache-Control': 'public, max-age=86400',
+          'Content-Length': String(buffer.length)
+        }
+      });
+    }
+
     const arrayBuffer = await res.arrayBuffer();
 
+    let finalContentType = contentType.toLowerCase();
+    if (targetUrl.endsWith('.ts') || finalContentType.includes('mp2t')) {
+      finalContentType = 'video/mp2t';
+    } else if (targetUrl.endsWith('.m4s') || finalContentType.includes('mp4')) {
+      finalContentType = 'video/mp4';
+    }
+
     const responseHeaders: Record<string, string> = {
-      'Content-Type': contentType || (targetUrl.endsWith('.m4s') ? 'video/mp4' : 'video/mp2t'),
+      'Content-Type': finalContentType || 'application/octet-stream',
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
       'Access-Control-Allow-Headers': '*',
