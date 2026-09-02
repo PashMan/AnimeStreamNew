@@ -455,12 +455,10 @@ const Details: React.FC = () => {
     if (
       t.provider === "Kami BDRip R2" ||
       t.isBdrip ||
+      selectedPlayer === "KamiBDRip" ||
       (t.quality_label && String(t.quality_label).includes("BDRip"))
     ) {
       return t.is_native_4k || t.quality_label === "4K" ? "4K BDRip" : "BDRip";
-    }
-    if (t.is_native_4k || t.quality_label === "4K") {
-      return "4K";
     }
     if (selectedPlayer === "KamiPlayer" || selectedPlayer === "Aniboom" || t.aniboom_iframe || t.provider === "AniBoom") {
       return "1080p";
@@ -468,7 +466,7 @@ const Details: React.FC = () => {
     if (selectedPlayer === "Kodik") {
       return t.quality_label && String(t.quality_label).includes("1080") ? "1080p" : "720p";
     }
-    return t.quality_label || "1080p";
+    return "1080p";
   };
 
   const getDisplayTitle = (title: string) => {
@@ -524,7 +522,7 @@ const Details: React.FC = () => {
             provider: "kodik"
           });
           setIsResolvingStream(false);
-          setSelectedPlayer("KamiPlayer");
+          setSelectedPlayer((prev) => (prev === "KamiBDRip" || prev === "Kodik" || prev === "Collaps" ? prev : "KamiPlayer"));
         }
       } else {
         if (isCurrent) {
@@ -552,7 +550,7 @@ const Details: React.FC = () => {
               provider: "aniboom"
             });
             setIsResolvingStream(false);
-            setSelectedPlayer("KamiPlayer");
+            setSelectedPlayer((prev) => (prev === "KamiBDRip" || prev === "Kodik" || prev === "Collaps" ? prev : "KamiPlayer"));
             console.log(`🔥 [KamiPlayer] Прямой поток AniBoom активирован:`, embedToResolve);
             return;
           }
@@ -575,7 +573,7 @@ const Details: React.FC = () => {
             provider: "aniboom"
           });
           setIsResolvingStream(false);
-          setSelectedPlayer("KamiPlayer");
+          setSelectedPlayer((prev) => (prev === "KamiBDRip" || prev === "Kodik" || prev === "Collaps" ? prev : "KamiPlayer"));
           console.log(`🔥 [KamiPlayer] AniBoom успешно активирован:`, data.url);
           return;
         }
@@ -595,7 +593,7 @@ const Details: React.FC = () => {
                 streamType: "hls",
                 provider: "kodik"
               });
-              setSelectedPlayer("KamiPlayer");
+              setSelectedPlayer((prev) => (prev === "KamiBDRip" || prev === "Kodik" || prev === "Collaps" ? prev : "KamiPlayer"));
               console.log(`🔄 [KamiPlayer] AniBoom не найден/недоступен, переключено на прямой поток Kodik HLS:`, kodikHlsUrl);
             } else {
               setResolvedStream(null);
@@ -611,7 +609,7 @@ const Details: React.FC = () => {
       isCurrent = false;
       abortController.abort();
     };
-  }, [paramEpisode, selectedTranslation, id, players, translations, selectedPlayer]);
+  }, [paramEpisode, selectedTranslation, id, players, translations]);
 
   useEffect(() => {
     const activeEp = paramEpisode || "1";
@@ -2304,20 +2302,11 @@ const Details: React.FC = () => {
                           }
 
                           if (player.isCustom || player.name === "Aniboom") {
-                            const r2Config = id ? R2_4K_CONFIG[id] : undefined;
-
                             let customSrc = "";
                             let maxTracks: number | undefined = undefined;
-                            let audioTrackNames: string[] | undefined =
-                              undefined;
+                            let audioTrackNames: string[] | undefined = undefined;
 
-                            if (r2Config) {
-                              const currentEp = parseInt(paramEpisode || "1") || 1;
-                              const rawUrl = typeof r2Config.streamUrl === "function" ? r2Config.streamUrl(currentEp) : r2Config.streamUrl;
-                              customSrc = `/api/proxy-4k?url=${encodeURIComponent(rawUrl)}`;
-                              maxTracks = r2Config.maxTracks;
-                              audioTrackNames = r2Config.trackNames;
-                            } else if (resolvedStream && resolvedStream.url) {
+                            if (resolvedStream && resolvedStream.url) {
                               customSrc = resolvedStream.url;
                             } else {
                               const epNum = parseInt(paramEpisode || "1") || 1;

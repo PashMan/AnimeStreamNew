@@ -1486,8 +1486,8 @@ app.get('/api/balancer', async (c) => {
           kodik_iframe: kodikIframeTarget,
           episodes_count: Math.max(maxEpisodes, matchedKodik?.episodes_count || 1, matchedKodik?.last_episode || 1),
           last_episode: Math.max(maxEpisodes, matchedKodik?.last_episode || 1, matchedKodik?.episodes_count || 1),
-          quality_label: '4K',
-          is_native_4k: true
+          quality_label: '1080',
+          is_native_4k: false
         });
       });
     }
@@ -1540,8 +1540,8 @@ app.get('/api/balancer', async (c) => {
           kodik_iframe: null,
           episodes_count: maxEpisodes,
           last_episode: maxEpisodes,
-          quality_label: '4K',
-          is_native_4k: true
+          quality_label: '1080',
+          is_native_4k: false
         });
       }
       if (kodik_iframe) {
@@ -1561,14 +1561,14 @@ app.get('/api/balancer', async (c) => {
       }
     }
 
-    // Step 4: Sort translations so 4K (AniBoom) top priority voices come FIRST, then other 4K, then 1080p Kodik
+    // Step 4: Sort translations so AniBoom top priority voices come FIRST, then other AniBoom, then Kodik
     const priorityVoices = ['anilibria', 'дубляж', 'shiza', 'studioband', 'anidub', 'dreamcast', 'субтитры'];
     unifiedTranslations.sort((a, b) => {
-      // 1. AniBoom 4K before Kodik 1080p
-      const aIs4k = a.quality_label === '4K' || a.is_native_4k || a.provider === 'AniBoom';
-      const bIs4k = b.quality_label === '4K' || b.is_native_4k || b.provider === 'AniBoom';
-      if (aIs4k && !bIs4k) return -1;
-      if (!aIs4k && bIs4k) return 1;
+      // 1. AniBoom streams before Kodik-only streams
+      const aHasAniboom = Boolean(a.aniboom_iframe || a.provider === 'AniBoom');
+      const bHasAniboom = Boolean(b.aniboom_iframe || b.provider === 'AniBoom');
+      if (aHasAniboom && !bHasAniboom) return -1;
+      if (!aHasAniboom && bHasAniboom) return 1;
 
       // 2. Priority voice names
       const aNorm = normalizeVoice(a.title);
