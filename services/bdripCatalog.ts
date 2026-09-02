@@ -25,45 +25,6 @@ export interface BDRipAnime {
  * Чтобы добавить новое аниме, достаточно добавить запись с его shikimoriId.
  */
 export const BDRIP_CATALOG: Record<string, BDRipAnime> = {
-  // Человек-бензопила (Chainsaw Man)
-  '44511': {
-    shikimoriId: '44511',
-    title: 'Человек-бензопила',
-    badge: 'KamiBDRip',
-    qualityLabel: '1080p BDRip',
-    isMovie: false,
-    is4K: false,
-    totalEpisodes: 12,
-    defaultAudioTrackNames: [
-      'Японский (Оригинал)',
-      'Crunchyroll (Дубляж)',
-      'Studio Band',
-      'Flarrow Films',
-      'Dream Cast',
-      'AniDUB',
-    ],
-    getStreamUrl: (ep = 1) => {
-      const epStr = String(ep).padStart(2, '0');
-      return `https://cdn1.kamianime.club/chainsaw_man/ep${epStr}/master.m3u8`;
-    },
-    getSubtitles: (ep = 1) => {
-      const epStr = String(ep).padStart(2, '0');
-      return [
-        {
-          url: `https://cdn1.kamianime.club/chainsaw_man/ep${epStr}/sub_rus_${epStr}.vtt`,
-          label: 'Русские субтитры',
-          lang: 'ru',
-          default: true,
-        },
-        {
-          url: `https://cdn1.kamianime.club/chainsaw_man/ep${epStr}/sub_eng_${epStr}.vtt`,
-          label: 'English Subtitles',
-          lang: 'en',
-        },
-      ];
-    },
-  },
-
   // Судзумэ, закрывающая двери
   '50594': {
     shikimoriId: '50594',

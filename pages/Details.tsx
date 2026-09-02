@@ -254,22 +254,6 @@ const getResolvedIframeUrl = (t: any, epNum: number, defaultUrl?: string | null,
 };
 
 export const R2_4K_CONFIG: Record<string, { title: string; trackNames: string[]; streamUrl: string | ((ep?: number) => string); maxTracks?: number }> = {
-  "44511": {
-    title: "Человек-бензопила",
-    trackNames: [
-      "Японский (Оригинал)",
-      "Crunchyroll (Дубляж)",
-      "Studio Band",
-      "Flarrow Films",
-      "Dream Cast",
-      "AniDUB",
-    ],
-    streamUrl: (ep = 1) => {
-      const epStr = String(ep).padStart(2, "0");
-      return `https://cdn1.kamianime.club/chainsaw_man/ep${epStr}/master.m3u8`;
-    },
-    maxTracks: 6,
-  },
   "50594": {
     title: "Судзумэ, закрывающая двери",
     trackNames: ["Crunchyroll", "Flarrow Films", "TVShows", "Leviafilm", "AniLibria", "Ю. Сербин", "Netflix КЗ.", "Оригинал + Субтитры", "Оригинал"],

@@ -828,7 +828,7 @@ class DatabaseService {
 
   // Anime 4K / BDRip
   async getAnime4k(): Promise<string[]> {
-    const defaultIds = ['44511', '50594', '32281', '38826', '16782'];
+    const defaultIds = ['50594', '32281', '38826', '16782'];
     if (!this.isSupabaseAvailable()) return defaultIds;
     try {
       const { data, error } = await supabaseClient.from('anime_4k').select('anime_id');
